@@ -33,12 +33,14 @@ import itertools
 import math
 import re
 from io import BytesIO
-from typing import Literal
+from typing import Literal, Tuple
+from functools import lru_cache
 
 import numpy as np
 import pybase64
 import torch
 from PIL import Image
+import math
 
 from sglang.srt.distributed import (
     get_tensor_model_parallel_rank,
@@ -658,5 +660,132 @@ def run_dp_sharded_mrope_vision_model(
                 ]
                 embed_start += img_patches
             current_idx += count
+    out_embeddings = torch.cat(original_order_embeddings, dim=0)
+    return out_embeddings
+
+
+@lru_cache(maxsize=200)
+def get_adaptive_pool_size(h: int, w: int, scale: int = 20) -> Tuple[int, int]:
+    r = 1.0 / math.sqrt(scale)
+    return max(1, int(np.round(h * r))), max(1, int(np.round(w * r)))
+
+def run_dp_sharded_beebee_vision_model(
+    vision_model: torch.nn.Module,
+    pixel_values: torch.Tensor,
+    grid_thw_list: list,
+    downsample_ratio: int = 8,
+    merge_size: int = 2,
+):
+ 
+    from sglang.srt.layers.dp_attention import (
+        get_attention_tp_group,
+        get_attention_tp_rank,
+        get_attention_tp_size,
+    )
+    from sglang.srt.multimodal.mm_utils import get_dp_encoder_lb_assignment
+
+    tp_size = get_attention_tp_size()
+    if tp_size == 1:
+        # 单卡模式下，直接调用模型的 lm_encode 或 forward，注意它返回的是 (features, seq_lens)
+        # 这里假设你传入的是 BeeBeeVLVisionModel
+        features, _ = vision_model.lm_encode(pixel_values, grid_thw=torch.tensor(grid_thw_list))
+        return features
+
+    tp_rank_local = get_attention_tp_rank()
+
+    patches_per_image = [math.prod(grid_thw) for grid_thw in grid_thw_list]
+    cum_patches_per_image = [0, *itertools.accumulate(patches_per_image)]
+    
+    # 提前精确计算每张图经过 DynamicAvgPool 后的【输出 Token 数量】
+    out_tokens_per_image = []
+    for t, h, w in grid_thw_list:
+        h_m, w_m = h // merge_size, w // merge_size
+        Mh, Nw = get_adaptive_pool_size(h_m, w_m, scale=downsample_ratio)
+        out_tokens_per_image.append(t * Mh * Nw)
+
+    image_to_tp_rank, gpu_sample_counts, _ = get_dp_encoder_lb_assignment(patches_per_image, tp_size)
+    cum_gpu_sample_counts = [0, *itertools.accumulate(gpu_sample_counts)]
+
+    # 找到分配给当前 GPU 的图像索引
+    image_idxs_local = image_to_tp_rank[
+        cum_gpu_sample_counts[tp_rank_local] : cum_gpu_sample_counts[tp_rank_local + 1]
+    ]
+
+    # 获取局部像素和局部 thw
+    if len(image_idxs_local) > 0:
+        pixel_values_local = torch.cat(
+            [
+                pixel_values[cum_patches_per_image[i] : cum_patches_per_image[i + 1]]
+                for i in image_idxs_local
+            ]
+        )
+    else:
+        pixel_values_local = torch.empty(
+            (0, pixel_values.shape[1]), device=pixel_values.device, dtype=pixel_values.dtype
+        )
+        
+    local_grid_thw_list = [grid_thw_list[i] for i in image_idxs_local]
+
+    # 4. 核心修改：计算每个 Rank 的输出长度，并找到 max_len_per_rank 用于 Padding
+    grouped_output_len = [0] * tp_size
+    current_idx = 0
+    for rank in range(tp_size):
+        count = gpu_sample_counts[rank]
+        rank_imgs = image_to_tp_rank[current_idx : current_idx + count]
+        grouped_output_len[rank] = sum(out_tokens_per_image[i] for i in rank_imgs)
+        current_idx += count
+
+    max_len_per_rank = max(grouped_output_len)
+
+    # 5. 运行局部的 Vision Model
+    if pixel_values_local.shape[0] > 0:
+        # 注意：BeeBeeVLVisionModel 的 lm_encode 返回 (features, seq_lens)
+        image_embeds_local, _ = vision_model.lm_encode(
+            pixel_values_local, torch.tensor(local_grid_thw_list, device=pixel_values.device)
+        )
+    else:
+        image_embeds_local = torch.empty(
+            (0, vision_model.config.output_size),
+            device=pixel_values.device,
+            dtype=pixel_values.dtype,
+        )
+
+    # 6. Padding 到 max_len_per_rank 以支持 All-Gather
+    current_len = image_embeds_local.shape[0]
+    if current_len < max_len_per_rank:
+        padding_size = max_len_per_rank - current_len
+        padding = torch.empty(
+            (padding_size, image_embeds_local.shape[1]),
+            dtype=image_embeds_local.dtype,
+            device=image_embeds_local.device,
+        )
+        image_embeds_local_padded = torch.cat([image_embeds_local, padding], dim=0)
+    else:
+        image_embeds_local_padded = image_embeds_local
+
+    # 7. 全局收集所有 GPU 的输出
+    gathered_embeds = get_attention_tp_group().all_gather(image_embeds_local_padded, dim=0)
+
+    # 8. 核心修改：根据准确的 grouped_output_len 去除 Padding，并还原到原始图片顺序
+    rank_embeddings = []
+    for rank in range(tp_size):
+        start_idx = rank * max_len_per_rank
+        end_idx = start_idx + grouped_output_len[rank]
+        rank_embeddings.append(gathered_embeds[start_idx:end_idx])
+
+    original_order_embeddings = [None] * len(grid_thw_list)
+    current_idx = 0
+    for rank in range(tp_size):
+        count = gpu_sample_counts[rank]
+        if count > 0:
+            rank_images = image_to_tp_rank[current_idx : current_idx + count]
+            rank_embed = rank_embeddings[rank]
+            embed_start = 0
+            for img_idx in rank_images:
+                img_out_tokens = out_tokens_per_image[img_idx]
+                original_order_embeddings[img_idx] = rank_embed[embed_start : embed_start + img_out_tokens]
+                embed_start += img_out_tokens
+            current_idx += count
+
     out_embeddings = torch.cat(original_order_embeddings, dim=0)
     return out_embeddings

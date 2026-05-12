@@ -40,7 +40,7 @@ from sglang.srt.model_executor.forward_batch_info import ForwardBatch
 from sglang.srt.model_loader.weight_utils import default_weight_loader
 from sglang.srt.models.deepseek import DeepseekForCausalLM
 from sglang.srt.models.deepseek_v2 import DeepseekV2ForCausalLM, DeepseekV3ForCausalLM
-from sglang.srt.models.transformers import maybe_prefix
+from sglang.srt.models.sgl_transformers import maybe_prefix
 
 NestedTensors: TypeAlias = Union[
     list["NestedTensors"],

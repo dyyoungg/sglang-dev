@@ -273,28 +273,28 @@ set(SOURCES
     "csrc/elementwise/rope.cu"
     "csrc/elementwise/pos_enc.cu"
     "csrc/elementwise/topk.cu"
-    "csrc/expert_specialization/es_fp8_blockwise.cu"
-    "csrc/expert_specialization/es_sm100_mxfp8_blockscaled.cu"
-    "csrc/expert_specialization/es_sm100_mxfp8_blockscaled_group_quant.cu"
+    #"csrc/expert_specialization/es_fp8_blockwise.cu"
+    #"csrc/expert_specialization/es_sm100_mxfp8_blockscaled.cu"
+    #"csrc/expert_specialization/es_sm100_mxfp8_blockscaled_group_quant.cu"
 
     "csrc/gemm/awq_kernel.cu"
-    "csrc/gemm/bmm_fp8.cu"
+    #"csrc/gemm/bmm_fp8.cu"
     "csrc/gemm/dsv3_fused_a_gemm.cu"
     "csrc/gemm/dsv3_router_gemm_bf16_out.cu"
     "csrc/gemm/dsv3_router_gemm_entry.cu"
     "csrc/gemm/dsv3_router_gemm_float_out.cu"
-    "csrc/gemm/fp8_blockwise_gemm_kernel.cu"
-    "csrc/gemm/fp8_gemm_kernel.cu"
+    #"csrc/gemm/fp8_blockwise_gemm_kernel.cu"
+    #"csrc/gemm/fp8_gemm_kernel.cu"
     "csrc/gemm/int8_gemm_kernel.cu"
-    "csrc/gemm/nvfp4_expert_quant.cu"
-    "csrc/gemm/nvfp4_quant_entry.cu"
-    "csrc/gemm/nvfp4_quant_kernels.cu"
-    "csrc/gemm/nvfp4_scaled_mm_entry.cu"
-    "csrc/gemm/nvfp4_scaled_mm_kernels.cu"
-    "csrc/gemm/per_tensor_quant_fp8.cu"
+    #"csrc/gemm/nvfp4_expert_quant.cu"
+    #"csrc/gemm/nvfp4_quant_entry.cu"
+    #"#csrc/gemm/nvfp4_quant_kernels.cu"
+    #"csrc/gemm/nvfp4_scaled_mm_entry.cu"
+    #"csrc/gemm/nvfp4_scaled_mm_kernels.cu"
+    #"csrc/gemm/per_tensor_quant_fp8.cu"
     "csrc/gemm/per_token_group_quant_8bit.cu"
     "csrc/gemm/per_token_group_quant_8bit_v2.cu"
-    "csrc/gemm/per_token_quant_fp8.cu"
+    #"csrc/gemm/per_token_quant_fp8.cu"
     "csrc/gemm/qserve_w4a8_per_chn_gemm.cu"
     "csrc/gemm/qserve_w4a8_per_group_gemm.cu"
     "csrc/gemm/marlin/gptq_marlin.cu"
@@ -320,8 +320,8 @@ set(SOURCES
     "csrc/moe/moe_sum_reduce.cu"
     "csrc/moe/moe_topk_softmax_kernels.cu"
     "csrc/moe/moe_topk_sigmoid_kernels.cu"
-    "csrc/moe/nvfp4_blockwise_moe.cu"
-    "csrc/moe/fp8_blockwise_moe_kernel.cu"
+    ##"csrc/moe/nvfp4_blockwise_moe.cu"
+    #"csrc/moe/fp8_blockwise_moe_kernel.cu"
     "csrc/moe/prepare_moe_input.cu"
 
     "csrc/quantization/gguf/gguf_kernel.cu"
@@ -529,7 +529,7 @@ target_link_libraries(spatial_ops PRIVATE ${TORCH_LIBRARIES} c10 cuda)
 install(TARGETS spatial_ops LIBRARY DESTINATION sgl_kernel)
 
 # ============================ Extra Install: FLashMLA ============================= #
-include(${CMAKE_CURRENT_LIST_DIR}/cmake/flashmla.cmake)
+# include(${CMAKE_CURRENT_LIST_DIR}/cmake/flashmla.cmake)
 
 # ============================ Extra Install: DeepGEMM (JIT) ============================= #
 # Create a separate library for DeepGEMM's Python API.
