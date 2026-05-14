@@ -69,6 +69,7 @@ from sglang.srt.configs import (
     Qwen3NextConfig,
     Step3p5Config,
     Step3VLConfig,
+    BeeBeeOmniConfig
 )
 from sglang.srt.configs.deepseek_ocr import DeepseekVLV2Config
 from sglang.srt.configs.internvl import InternVLChatConfig
@@ -105,6 +106,7 @@ _CONFIG_REGISTRY: List[Type[PretrainedConfig]] = [
     JetVLMConfig,
     KimiK25Config,
     Step3p5Config,
+    BeeBeeOmniConfig
 ]
 
 _CONFIG_REGISTRY = {
@@ -342,6 +344,7 @@ def get_config(
             "patch_size": 14,
         }
         config.vision_config = SiglipVisionConfig(**vision_config)
+    
     text_config = get_hf_text_config(config=config)
 
     if isinstance(model, str) and text_config is not None:

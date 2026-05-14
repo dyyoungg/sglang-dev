@@ -132,6 +132,7 @@ class ModelConfig:
             **kwargs,
         )
         self.hf_text_config = get_hf_text_config(self.hf_config)
+
         self.hf_generation_config = get_generation_config(
             self.model_path,
             trust_remote_code=trust_remote_code,

@@ -53,5 +53,3 @@ def get_mm_processor(
         f"No processor registered for architecture: {hf_config.architectures}.\n"
         f"Registered architectures: {[model_cls.__name__ for model_cls in PROCESSOR_MAPPING.keys()]}"
     )
-import_processors("sglang.srt.multimodal.processors")
-print(PROCESSOR_MAPPING)

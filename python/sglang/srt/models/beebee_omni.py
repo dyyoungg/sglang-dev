@@ -28,7 +28,7 @@ from sglang.srt.distributed import (
     get_tensor_model_parallel_rank,
     get_tensor_model_parallel_world_size,
 )
-from sglang.srt.distributed.parallel_state import get_pp_group
+from sglang.srt.distributed.parallel_state import get_pp_group, init_distributed_environment, initialize_model_parallel
 from sglang.srt.environ import envs
 from sglang.srt.layers.activation import SiluAndMul
 from sglang.srt.layers.attention.vision import VisionAttention
@@ -59,7 +59,7 @@ from sglang.srt.configs.beebeeomni_config import BeeBeeOmniConfig, BeeBeeAudioCo
 from sglang.srt.models.utils import RotaryPosMixin, WeightsMapper, permute_inv
 from sglang.srt.multimodal.mm_utils import run_dp_sharded_beebee_vision_model
 from sglang.srt.multimodal.vit_cuda_graph_runner import ViTCudaGraphRunner
-from sglang.srt.server_args import get_global_server_args
+from sglang.srt.server_args import get_global_server_args, set_global_server_args_for_scheduler, ServerArgs
 from sglang.srt.utils import add_prefix, is_cuda, is_npu
 
 _is_cuda = is_cuda()
@@ -140,6 +140,8 @@ class WhisperEncoderLayer(nn.Module):
         self.self_attn = WhisperAttention(d, config.encoder_attention_heads)
         self.self_attn_layer_norm = nn.LayerNorm(d)
         self.activation_fn = ACT2FN[config.activation_function]
+        self.activation_dropout = config.activation_dropout
+        self.dropout = config.dropout
         self.fc1 = nn.Linear(d, config.encoder_ffn_dim)
         self.fc2 = nn.Linear(config.encoder_ffn_dim, d)
         self.final_layer_norm = nn.LayerNorm(d)
@@ -157,8 +159,13 @@ class WhisperEncoderLayer(nn.Module):
         hidden_states = self.self_attn_layer_norm(hidden_states)
         hidden_states = self.self_attn(
             hidden_states,
-            cu_seqlens_q=cu_seqlens_q,  cu_seqlens_kv=cu_seqlens_kv,
-            max_seqlen_q=max_seqlen_q,  max_seqlen_kv=max_seqlen_kv,
+            cu_seqlens_q=cu_seqlens_q,  
+            cu_seqlens_kv=cu_seqlens_kv,
+            max_seqlen_q=max_seqlen_q,  
+            max_seqlen_kv=max_seqlen_kv,
+        )
+        hidden_states = nn.functional.dropout(
+            hidden_states, p=self.dropout, training=self.training
         )
         hidden_states = residual + hidden_states
  
@@ -166,7 +173,13 @@ class WhisperEncoderLayer(nn.Module):
         residual = hidden_states
         hidden_states = self.final_layer_norm(hidden_states)
         hidden_states = self.activation_fn(self.fc1(hidden_states))
+        hidden_states = nn.functional.dropout(
+            hidden_states, p=self.activation_dropout, training=self.training
+        )
         hidden_states = self.fc2(hidden_states)
+        hidden_states = nn.functional.dropout(
+            hidden_states, p=self.dropout, training=self.training
+        )
         hidden_states = residual + hidden_states
  
         # fp16 overflow guard
@@ -200,7 +213,7 @@ class WhisperEncoder(nn.Module):
         super().__init__()
         d = config.d_model
         self.max_source_positions = config.max_source_positions
- 
+        self.dropout = config.dropout
         # Two 1-D convolutions: conv2 has stride=2 → 2× time downsampling
         self.conv1 = nn.Conv1d(self.NUM_MEL_BINS, d, kernel_size=3, padding=1)
         self.conv2 = nn.Conv1d(d, d, kernel_size=3, stride=2, padding=1)
@@ -230,48 +243,60 @@ class WhisperEncoder(nn.Module):
     ) -> torch.Tensor:
         # ── Conv feature extraction ──────────────────────────────────────
         # [B, D, T] after both convolutions;  conv2 halves T
-        x = F.gelu(self.conv1(input_features))
-        x = F.gelu(self.conv2(x))
-        T_out = x.shape[-1]
-        x = x.permute(0, 2, 1)                        # [B, T_out, D]
-        x = x + self.embed_positions.weight[:T_out]   # fixed sinusoidal PE
- 
-        # ── Build varlen args when seq lengths are supplied ───────────────
-        # input_seq_lens are counts of *mel frames* (before this encoder).
-        # After conv1 (kernel=3,stride=1) + conv2 (kernel=3,stride=2) the
-        # output length per sample is  ceil((mel_len - 1) / 2 + 1) ≈ mel_len // 2.
-        # We compute it the same way Whisper's _get_feat_extract_output_lengths does:
-        #   out_len = (mel_len - 1) // 2 + 1
+        inputs_embeds = F.gelu(self.conv1(input_features))
+        inputs_embeds = F.gelu(self.conv2(inputs_embeds))
+        T_out = inputs_embeds.shape[-1]
+        inputs_embeds = inputs_embeds.permute(0, 2, 1)                        # [B, T_out, D]
+        hidden_states = inputs_embeds + self.embed_positions.weight[:T_out]   # fixed sinusoidal PE
+        hidden_states = nn.functional.dropout(hidden_states, p=self.dropout, training=self.training)
+       
         if input_seq_lens is not None:
-            conv_lens = ((input_seq_lens.long() - 1) // 2 + 1).clamp(max=T_out)
-            B = x.shape[0]
-            cu_seqlens = torch.zeros(B + 1, dtype=torch.int32, device=x.device)
-            cu_seqlens[1:] = conv_lens.cumsum(0).to(torch.int32)
-            max_seqlen = int(conv_lens.max().item())
- 
-            # Pack valid frames into flat [total_tokens, D]
-            chunks = [x[i, : int(conv_lens[i].item()), :] for i in range(B)]
-            x = torch.cat(chunks, dim=0)
+            # build cu_seqlens_q, cu_seqlens_kv, max_seqlen_q, max_seqlen_kv and q, k, v by seq_lens
+            B, S, D = hidden_states.shape
+            cu_seqlens_q = torch.zeros(B + 1, dtype=torch.int32).to(
+                hidden_states.device
+            )
+            cu_seqlens_kv = torch.zeros(B + 1, dtype=torch.int32).to(
+                hidden_states.device
+            )
+            max_seqlen_q = torch.max(input_seq_lens).to(hidden_states.device)
+            max_seqlen_kv = torch.max(input_seq_lens).to(hidden_states.device)
+
+            hidden_states_collect = []
+            for i in range(B):
+                hidden_states_collect.append(hidden_states[i, : input_seq_lens[i], :])
+                cu_seqlens_q[i + 1] = cu_seqlens_q[i] + input_seq_lens[i]
+                cu_seqlens_kv[i + 1] = cu_seqlens_kv[i] + input_seq_lens[i]
+                max_seqlen_q = max(max_seqlen_q, input_seq_lens[i])
+                max_seqlen_kv = max(max_seqlen_kv, input_seq_lens[i])
+
+            hidden_states = torch.cat(hidden_states_collect, dim=0)
+
         else:
-            cu_seqlens = None
-            max_seqlen = None
- 
+            cu_seqlens_q = None
+            cu_seqlens_kv = None
+            max_seqlen_q = None
+            max_seqlen_kv = None
         # ── Transformer layers ────────────────────────────────────────────
         for layer in self.layers:
-            x = layer(
-                x,
-                cu_seqlens_q=cu_seqlens,   cu_seqlens_kv=cu_seqlens,
-                max_seqlen_q=max_seqlen,   max_seqlen_kv=max_seqlen,
+            hidden_states = layer(
+                hidden_states,
+                cu_seqlens_q=cu_seqlens_q,   
+                cu_seqlens_kv=cu_seqlens_kv,
+                max_seqlen_q=max_seqlen_q,   
+                max_seqlen_kv=max_seqlen_kv,
             )
  
         # ── Unpack back to padded batch ───────────────────────────────────
-        if cu_seqlens is not None:
-            split_sizes = (cu_seqlens[1:] - cu_seqlens[:-1]).tolist()
-            x = torch.split(x, [int(s) for s in split_sizes], dim=0)
-            x = pad_sequence(x, batch_first=True)   # [B, max_valid_T, D]
+        if input_seq_lens is not None:
+            # recover the hidden_states, split by seq_lens and then pad&cat
+            hidden_states = torch.split(
+                hidden_states, input_seq_lens.detach().cpu().numpy().tolist(), dim=0
+            )
+            hidden_states = pad_sequence(hidden_states, batch_first=True)
  
-        x = self.layer_norm(x)
-        return x   # [B, T_out, d_model]
+        hidden_states = self.layer_norm(hidden_states)
+        return hidden_states   # [B, T_out, d_model]
  
  
 class AudioConvUpScaleProjector(nn.Module):
@@ -287,9 +312,9 @@ class AudioConvUpScaleProjector(nn.Module):
  
     Checkpoint keys
     ---------------
-    audio_encoder.mm_projector.afeat_1d_conv.*
-    audio_encoder.mm_projector.linear1.*
-    audio_encoder.mm_projector.linear2.*
+    audio_encoder.audio_projector.afeat_1d_conv.*
+    audio_encoder.audio_projector.linear1.*
+    audio_encoder.audio_projector.linear2.*
     """
  
     def __init__(self, encoder_hidden: int, out_hidden: int, downsample_ratio: int = 4):
@@ -321,27 +346,19 @@ class AudioConvUpScaleProjector(nn.Module):
         B, seq_len, D = x.shape
  
         # Pad seq_len to a multiple of linear_compress_ratio
-        remainder = seq_len % self.linear_compress_ratio
-        if remainder:
-            pad_len = self.linear_compress_ratio - remainder
-            x = torch.cat(
-                [x, torch.zeros(B, pad_len, D, device=x.device, dtype=x.dtype)], dim=1
-            )
-            seq_len = seq_len + pad_len
+        target_seq_len = math.ceil((seq_len + self.audio_downsample_ratio - 1) / self.audio_downsample_ratio) * self.audio_downsample_ratio
+        pad_len = target_seq_len - seq_len
+
+        if pad_len > 0:
+            pad_tensor = torch.zeros(B, pad_len, D, device=x.device, dtype=x.dtype)
+            x = torch.cat([x, pad_tensor], dim=1)  # 在时间维度 padding
  
-        # Group frames: [B, seq_len // lcr, D * lcr]
-        x = x.reshape(B, seq_len // self.linear_compress_ratio,
-                       D * self.linear_compress_ratio)
- 
-        # MLP projection
+        new_seq_len = target_seq_len // self.linear_compress_ratio
+        x = x.reshape(B, new_seq_len, D * self.linear_compress_ratio)
         x = self.linear2(self.gelu(self.linear1(x)))   # [B, compressed_T, out_hidden]
  
-        # Compute valid output-token count per sample and flatten
-        # feature_lengths are original mel-frame counts;
-        # total downsampling = audio_downsample_ratio
-        num_tokens = [
-            math.ceil(l / self.audio_downsample_ratio) for l in feature_lengths
-        ]
+        num_tokens = [(l + self.audio_downsample_ratio - 1)// self.audio_downsample_ratio for l in feature_lengths]
+        print(x.shape, num_tokens)
         parts = [x[i, : num_tokens[i], :] for i in range(B)]
         out = torch.cat(parts, dim=0)   # [total_tokens, out_hidden]
         return out, num_tokens
@@ -400,14 +417,17 @@ class BeeBeeAudioEncoder(nn.Module):
  
         # Convert mel lengths to Whisper-encoder output lengths for varlen attention
         # WhisperEncoder internally computes conv_len = (mel_len - 1) // 2 + 1
-        input_seq_lens = torch.tensor(feature_lengths, dtype=torch.long, device=self.device)
+        if isinstance(feature_lengths, List):
+            input_seq_lens = torch.tensor(feature_lengths, dtype=torch.long, device=self.device)
+        elif isinstance(feature_lengths, torch.Tensor):
+            input_seq_lens = feature_lengths.to(dtype=torch.long, device=self.device)
  
         # WhisperEncoder: [B, mel, T] -> [B, T//2, d_model]
         whisper_out = self.encoder(input_features, input_seq_lens=input_seq_lens)
  
         # AudioConvUpScaleProjector: [B, T//2, d_model] -> [N_tokens, llm_hidden]
-        audio_embeds, num_tokens = self.mm_projector(whisper_out, feature_lengths)
-        return audio_embeds, num_tokens
+        audio_embeds, num_tokens = self.audio_projector(whisper_out, feature_lengths)
+        return audio_embeds
 
 
 
@@ -705,7 +725,7 @@ class BeeBeeVisionTransformer(nn.Module, RotaryPosMixin):
 
     def __init__(
         self,
-        vision_config: Qwen2_5_VLVisionConfig,
+        vision_config: BeeBeeVisionConfig,
         norm_eps: float = 1e-6,
         quant_config: Optional[QuantizationConfig] = None,
         prefix: str = "",
@@ -729,7 +749,7 @@ class BeeBeeVisionTransformer(nn.Module, RotaryPosMixin):
         self.patch_size = vision_config.patch_size
         mlp_hidden_size: int = ((vision_config.intermediate_size + 7) // 8) * 8
         self.use_data_parallel = use_data_parallel
-        self.out_hidden_size = vision_config.out_hidden_size
+       
         self.patch_embed = Qwen2_5_VisionPatchEmbed(
             patch_size=patch_size,
             temporal_patch_size=temporal_patch_size,
@@ -761,10 +781,10 @@ class BeeBeeVisionTransformer(nn.Module, RotaryPosMixin):
             spatial_merge_size=self.spatial_merge_size,
         )
 
-        self.embed_dim = hidden_size * (self.spatial_merge_unit**2)
+        self.embed_dim = hidden_size * self.spatial_merge_unit
         self.mm_projector = DynamicAvgPoolProjector(
             encoder_hidden=self.embed_dim,
-            out_hidden=vision_config.out_hidden_size,
+            out_hidden=vision_config.output_size,
             downsample_ratio=downsample_ratio,
             quant_config=quant_config,
             prefix=add_prefix("mm_projector", prefix),
@@ -892,16 +912,13 @@ class BeeBeeVisionTransformer(nn.Module, RotaryPosMixin):
             position_embeddings[1].to(x.device, x.dtype),
         )
 
-        # compute cu_seqlens - move cu_seqlens to GPU and make it int32
-        cu_seqlens = torch.cat(
-            [
-                torch.tensor([0], device=x.device, dtype=torch.int32),
-                (grid_thw[:, 0] * grid_thw[:, 1] * grid_thw[:, 2])
-                .cumsum(dim=0)
-                .to(device=x.device, dtype=torch.int32),
-            ]
-        )
+       
+        cu_seqlens = torch.repeat_interleave(
+            grid_thw[:, 1] * grid_thw[:, 2], 
+            grid_thw[:, 0]
+        ).cumsum(dim=0).to(device=x.device, dtype=torch.int32)
         cu_seqlens = torch.cat([cu_seqlens.new_zeros(1), cu_seqlens])
+
         # cu_seqlens must be on cpu because of npu_flash_attention_unpad operator restriction
         if is_npu():
             cu_seqlens = cu_seqlens.to("cpu")
@@ -1055,7 +1072,6 @@ class BeeBeeOmniForConditionalGeneration(nn.Module):
         self.pp_group = get_pp_group()
         self.config = config
         self.use_data_parallel = get_global_server_args().mm_enable_dp_encoder
-
         self.text_config = self.config.text_config
         self.vision_config = self.config.vision_config
         self.audio_config = self.config.audio_config
@@ -1085,7 +1101,7 @@ class BeeBeeOmniForConditionalGeneration(nn.Module):
             quant_config=quant_config,
             prefix=add_prefix("image_encoder", prefix),
             use_data_parallel=self.use_data_parallel,
-            max_context_len=self.config.max_position_embeddings,
+            # max_context_len=self.vision_config.max_position_embeddings,
         )
 
   
@@ -1094,9 +1110,9 @@ class BeeBeeOmniForConditionalGeneration(nn.Module):
             out_hidden_size=self.text_config.hidden_size,
         )
         
-        self.is_mrope_enabled = "mrope_section" in self.config.rope_scaling
+        self.is_mrope_enabled = False
 
-        self.logits_processor = LogitsProcessor(config)
+        self.logits_processor = LogitsProcessor(self.text_config)
         self.pooler = Pooler(pooling_type=PoolingType.LAST, normalize=True)
 
         # For EAGLE3 support
@@ -1316,11 +1332,7 @@ class BeeBeeOmniForConditionalGeneration(nn.Module):
             ):
                 continue
 
-            # 3. GPTQ/AWQ 量化模型兼容
-            # 跳过权重中残留但当前网络结构不需要的 bias
-            if name.endswith(".bias") and name not in params_dict:
-                continue
-
+ 
             if (
                 self.config.tie_word_embeddings
                 and self.pp_group.is_last_rank
@@ -1335,8 +1347,7 @@ class BeeBeeOmniForConditionalGeneration(nn.Module):
             if name.startswith("image_encoder."):
                 name = name.replace("attn.qkv.", "attn.qkv_proj.")
 
-            # 6. Audio Encoder 结构层级注入
-            # safetensor 叫 audio_encoder.conv1，代码中叫 audio_encoder.encoder.conv1
+    
             if name.startswith("audio_encoder.") and not name.startswith("audio_encoder.audio_projector."):
                 name = name.replace("audio_encoder.", "audio_encoder.encoder.", 1)
 
@@ -1396,25 +1407,25 @@ if __name__ == "__main__":
     import torch
     from safetensors import safe_open
     
-  
-    MODEL_PATH = "mnt/afs/share/llava_qwen2_14B-veomni-down16" 
+    init_distributed_environment()
+    initialize_model_parallel()
+    MODEL_PATH = "/mnt/afs/share/llava_qwen2_14B-veomni-down16" 
     
-   
-    from sglang.srt.server_args import ServerArgs
     dummy_args = ServerArgs(model_path=MODEL_PATH, mm_enable_dp_encoder=False)
-   
+    set_global_server_args_for_scheduler(dummy_args)
 
     print("Initializing models...")
     
-    from veomni.models.custom.llava_qwen2.modeling_llava_qwen2 import LlavaQwen2ForCausalLM as TrainBeeBeeOmni
+    from veomni.models.custom.llava_qwen2.modeling_llava_qwen2 import LlavaQwen2ForCausalLM
     
     
     config = BeeBeeOmniConfig.from_pretrained(MODEL_PATH)
+    
     sglang_model = BeeBeeOmniForConditionalGeneration(config).to(torch.bfloat16).cuda()
     sglang_model.eval()
 
     # 初始化原始模型
-    train_model = TrainBeeBeeOmni.from_pretrained(MODEL_PATH, torch_dtype=torch.bfloat16).cuda()
+    train_model = LlavaQwen2ForCausalLM.from_pretrained(MODEL_PATH, torch_dtype=torch.bfloat16).cuda()
     train_model.eval()
 
     # ---------------------------------------------------------
@@ -1430,30 +1441,71 @@ if __name__ == "__main__":
         with safe_open(f, framework="pt", device="cpu") as st:
             for k in st.keys():
                 weights_iterator.append((k, st.get_tensor(k)))
-    
-    # 调用我们刚刚重写的 load_weights 逻辑
+
     sglang_model.load_weights(weights_iterator)
     
-    # 将加载好权重的 SGLang 模型移到 GPU
     sglang_model = sglang_model.cuda()
+
+
+    print("\n--- 🔍 Checking Model Weights (Tensor Values) ---")
+    
+    orig_state_dict = train_model.state_dict()
+    sgl_state_dict = sglang_model.state_dict()
+
+ 
+    all_matched = True
+    for orig_name, _ in orig_state_dict.items():
+        print(orig_name,)
+        # if "audio_encoder." in orig_name and "audio_encoder.audio_projector." not in orig_name:
+        #     sgl_name = orig_name.replace("audio_encoder.", "audio_encoder.encoder.")
+        # else:
+        #     sgl_name = orig_name
+        if "audio_encoder." in orig_name or "image_encoder." in orig_name:
+            continue
+
+        if "attn." in orig_name or "self_attn." in orig_name or "gate_proj." in orig_name or "up_proj." in orig_name:
+            continue
+        sgl_name= orig_name
+        t_orig = orig_state_dict[orig_name]
+        t_sgl = sgl_state_dict[sgl_name]
+
+        if t_orig.shape != t_sgl.shape:
+            print(f"❌ [Shape Mismatch] {orig_name} ({t_orig.shape}) vs {sgl_name} ({t_sgl.shape})")
+            all_matched = False
+            continue
+
+        # 计算权重的最大绝对误差
+        max_diff = torch.max(torch.abs(t_orig - t_sgl)).item()
+        
+        if max_diff < 1e-5:
+            print(f"✅ [Matched] {orig_name.split('.')[-3:]} -> Diff: {max_diff:.6f}")
+        else:
+            print(f"❌ [Value Differs] {orig_name} -> Max Diff: {max_diff:.6f}")
+            all_matched = False
+
+    if all_matched:
+        print("🎉 抽样核心权重全部完美对齐！")
+    else:
+        print("⚠️ 存在未对齐的权重，请检查上面的报错信息。")
+    print("-------------------------------------------------\n")
 
     # ---------------------------------------------------------
     # 4. 测试 1：视觉编码器 (Image Encoder) 精度对比
     # ---------------------------------------------------------
     print("\n--- Testing Vision Encoder ---")
-    # 构造 dummy vision 输入 (参照 Qwen2.5-VL 规范)
-    # 假设一张图被 patchify 成了 256 个 patch，每个 patch 维度 1176 (3通道 * 14 * 14 * 2合并)
-    dummy_pixel_values = torch.randn(256, 1176, dtype=torch.bfloat16, device="cuda")
-    # 对应网格 T=1, H=16, W=16 (16*16 = 256)
-    dummy_image_grid_thw = torch.tensor([[1, 16, 16]], dtype=torch.int32, device="cuda")
+ 
+    dummy_pixel_values = torch.randn(1536, 1176, dtype=torch.bfloat16, device="cuda")
+  
+    dummy_image_grid_thw = torch.tensor([[1, 32, 48]], dtype=torch.int32, device="cuda")
 
     with torch.no_grad():
         # SGLang 视觉前向
         sgl_vision_out = sglang_model.image_encoder(dummy_pixel_values, dummy_image_grid_thw)
         
-        # 原始模型视觉前向 (此处根据你原始模型的方法名可能需要微调，比如 train_model.visual)
-        # 假设原始模型的视觉提取入口和 SGLang 保持一致
-        orig_vision_out = train_model.image_encoder(dummy_pixel_values, dummy_image_grid_thw)
+        orig_vision_out, _ = train_model.image_encoder.lm_encode(dummy_pixel_values, dummy_image_grid_thw)
+
+        print(sgl_vision_out.shape, orig_vision_out.shape)
+
 
     v_max_diff = torch.max(torch.abs(sgl_vision_out - orig_vision_out)).item()
     v_mean_diff = torch.mean(torch.abs(sgl_vision_out - orig_vision_out)).item()
@@ -1472,15 +1524,15 @@ if __name__ == "__main__":
     # 构造 dummy audio 输入 (参照 Whisper 规范)
     # 假设输入为 1 条音频，包含 1 个 chunk，128个mel bins，长度为 3000
     dummy_mel = torch.randn(1, 128, 3000, dtype=torch.bfloat16, device="cuda")
-    dummy_mel_lengths = [3000]
+    dummy_mel_lengths = torch.tensor([300], device="cuda")
 
     with torch.no_grad():
-        # SGLang 音频前向
-        sgl_audio_out, _ = sglang_model.audio_encoder(dummy_mel, dummy_mel_lengths)
+       
+        sgl_audio_out = sglang_model.audio_encoder(dummy_mel, dummy_mel_lengths)
         
-        # 原始模型音频前向 
-        # 注意：这里需要调用你原始模型中真正跑音频 forward 的逻辑
-        orig_audio_out, _ = train_model.audio_encoder(dummy_mel, dummy_mel_lengths)
+        orig_audio_out, _ = train_model.audio_encoder.lm_encode(dummy_mel, dummy_mel_lengths)
+
+        print(sgl_audio_out.shape, orig_audio_out.shape)
 
     a_max_diff = torch.max(torch.abs(sgl_audio_out - orig_audio_out)).item()
     a_mean_diff = torch.mean(torch.abs(sgl_audio_out - orig_audio_out)).item()

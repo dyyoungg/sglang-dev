@@ -852,12 +852,12 @@ def _set_envs_and_config(server_args: ServerArgs):
                 "reinstall the latest version by following the instructions "
                 "at https://docs.flashinfer.ai/installation.html.",
             )
-        if _is_cuda:
-            assert_pkg_version(
-                "sgl-kernel",
-                "0.3.21",
-                "Please reinstall the latest version with `pip install sgl-kernel --force-reinstall`",
-            )
+        # if _is_cuda:
+        #     assert_pkg_version(
+        #         "sgl-kernel",
+        #         "0.3.21",
+        #         "Please reinstall the latest version with `pip install sgl-kernel --force-reinstall`",
+        #     )
 
     if server_args.custom_sigquit_handler is None:
         # Register the signal handler.

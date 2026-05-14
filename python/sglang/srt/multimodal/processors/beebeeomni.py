@@ -17,7 +17,7 @@ Position IDs: standard 1-D sequential (no mrope)
 import math
 import re
 import time
-from typing import List, Optional, Tuple, Union
+from typing import List, Optional, Tuple, Union, Dict
 import io
 import base64
 import cv2
@@ -37,7 +37,6 @@ from concurrent.futures import ThreadPoolExecutor
 from sglang.srt.managers.schedule_batch import (
     Modality,
     MultimodalDataItem,
-    MultimodalProcessorOutput,
     MultimodalInputFormat
 )
 from sglang.srt.multimodal.processors.base_processor import (
@@ -71,6 +70,7 @@ def compute_image_num_tokens_dynamic(
     """
     r = 1.0 / math.sqrt(downsample_ratio)
     counts = []
+    
     for thw in grid_thw:
         t  = int(thw[0].item())
         h_patches = int(thw[1].item())
@@ -78,10 +78,10 @@ def compute_image_num_tokens_dynamic(
 
         M = h_patches / spatial_merge_size
         N = w_patches / spatial_merge_size
-
+        
         Mh  = max(1, int(np.round(M * r)))
         Nw  = max(1, int(np.round(N * r)))
-
+      
         total_tokens = t * (Mh * Nw)
         half_tokens = total_tokens // 2
         
@@ -157,17 +157,17 @@ def fast_load_image_to_numpy(image_file) -> np.ndarray:
 
 class BeeBeeOmniProcessor(SGLangBaseProcessor):
 
-    @classmethod
-    def _get_model_classes(cls):
-        from sglang.srt.models.beebee_omni import BeeBeeOmniForConditionalGeneration
-        return [BeeBeeOmniForConditionalGeneration]
+    from sglang.srt.models.beebee_omni import BeeBeeOmniForConditionalGeneration
 
-    models = property(lambda self: self._get_model_classes())
+    models = [BeeBeeOmniForConditionalGeneration]
     gpu_image_decode = False
 
     def __init__(self, hf_config, server_args, _processor, *args, **kwargs):
         super().__init__(hf_config, server_args, _processor, *args, **kwargs)
-
+        if hasattr(self._processor, "tokenizer"):
+            self._tokenizer = self._processor.tokenizer
+        else:
+            self._tokenizer = self._processor
         vis_cfg = getattr(hf_config, "vision_config", None) 
         
         self._spatial_merge_size: int = getattr(vis_cfg, "spatial_merge_size", 2)
@@ -445,7 +445,7 @@ class BeeBeeOmniProcessor(SGLangBaseProcessor):
         hf_ret["pixel_values"] = ordered_pixel_values 
         hf_ret["image_grid_thw"] = torch.cat(ordered_grids, dim=0)
 
-        logger.debug(f"Bucket-Optimized Image Preprocess cost: {(time.perf_counter() - t_vision_start)*1000:.2f} ms")
+        logger.debug(f"Optimized Image Preprocess cost: {(time.perf_counter() - t_vision_start)*1000:.2f} ms")
 
         # 返回 items 为空，input_ids 为 None，由外层 process_mm_data_async 统一处理包装
         return [], None, hf_ret
@@ -565,7 +565,7 @@ class BeeBeeOmniProcessor(SGLangBaseProcessor):
         request_obj,
         *args,
         **kwargs,
-    ) -> MultimodalProcessorOutput:
+    ) -> Dict:
         t0 = time.perf_counter()
         loop = asyncio.get_running_loop()
 
@@ -600,12 +600,13 @@ class BeeBeeOmniProcessor(SGLangBaseProcessor):
         image_grid_thw: Optional[torch.Tensor] = hf_ret.get("image_grid_thw")
         pixel_values: Optional[torch.Tensor] = hf_ret.get("pixel_values")
 
-        image_num_tokens: List[int] = []
+        image_num_tokens = []
         if image_grid_thw is not None and len(image_grid_thw) > 0:
             image_num_tokens = compute_image_num_tokens_dynamic(
                 image_grid_thw, self._spatial_merge_size, self.image_downsample_ratio
             )
-
+       
+        audio_num_tokens = []
         if base_output.audios:
             # mel_list 为 [num_chunks, 128, 3000] 的列表
             audio_num_tokens = compute_audio_num_tokens(
@@ -635,7 +636,6 @@ class BeeBeeOmniProcessor(SGLangBaseProcessor):
                     modality=Modality.IMAGE, 
                     offsets=[new_offset], 
                     feature=feat,
-                    image_grid_thw=thw, 
                     hash=None, 
                     model_specific_data={"image_grid_thw": thw},
                 ))
@@ -660,14 +660,14 @@ class BeeBeeOmniProcessor(SGLangBaseProcessor):
         logger.debug(f"[BeeBeeLlavaProcessor Perf] Process completed in {1e3*t_total:.1f}ms")
 
         # 返回，完美融入 SGLang 底层运转流
-        return MultimodalProcessorOutput(
-            input_ids=expanded_ids,
-            mm_items=mm_items,
-            im_start_id=None,
-            im_end_id=None,
-            im_token_id=self.image_token_id,
-            video_token_id=None,
-            audio_token_id=self.audio_token_id,
-            mrope_positions=None,
-            mrope_position_delta=None,
-        )
+        return {
+            "input_ids": expanded_ids,
+            "mm_items": mm_items,
+            "im_start_id": None,
+            "im_end_id": None,
+            "im_token_id": self.image_token_id,
+            "video_token_id": None,
+            "audio_token_id": self.audio_token_id,
+            "mrope_positions": None,
+            "mrope_position_delta": None,
+        }

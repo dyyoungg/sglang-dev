@@ -10,11 +10,11 @@ Follows the same flat sub-config pattern as Qwen2_5_VLConfig:
 
 import inspect
 from typing import Any, Dict, Optional, Union
+from copy import deepcopy
 
 from transformers import AutoConfig, PretrainedConfig
 from transformers.models.qwen2_5_vl.configuration_qwen2_5_vl import Qwen2_5_VLVisionConfig
 from transformers.models.whisper.configuration_whisper import WhisperConfig
-
 
 class BeeBeeVisionConfig(Qwen2_5_VLVisionConfig):
     """
@@ -35,15 +35,15 @@ class BeeBeeVisionConfig(Qwen2_5_VLVisionConfig):
     def __init__(
         self,
         image_projector_type: str   = "dynamic_avgpool",
-        image_downsample_ratio: int  = 8,
-        out_hidden_size: int            = 6144,
+        image_downsample_ratio: int  = 16,
+        output_size: int            = 5120,
         return_hidden_states: bool  = False,
         **kwargs,
     ):
         super().__init__(**kwargs)
         self.image_projector_type   = image_projector_type
         self.image_downsample_ratio  = image_downsample_ratio
-        self.out_hidden_size            = out_hidden_size
+        self.output_size            = output_size
         self.return_hidden_states   = return_hidden_states
 
 
@@ -67,7 +67,7 @@ class BeeBeeAudioConfig(WhisperConfig):
         self,
         audio_projector_type: str    = "conv_channel_upscale",
         audio_downsample_ratio: int  = 10,
-        output_hidden_size: int             = 6144,
+        output_size: int             = 5120,
         return_hidden_states: bool   = False,
         **kwargs,
     ):
@@ -75,26 +75,69 @@ class BeeBeeAudioConfig(WhisperConfig):
         self.audio_downsample_ratio = audio_downsample_ratio
         self.audio_projector_type   = audio_projector_type
         self.audio_downsample_ratio = audio_downsample_ratio
-        self.output_hidden_size            = output_hidden_size
+        self.output_size            = output_size
         self.return_hidden_states   = return_hidden_states
+
+
+def _init_config(config_dict: Optional[Dict[str, Any] | PretrainedConfig]) -> Optional["PretrainedConfig"]:
+    """
+    Initialize a Hugging Face PretrainedConfig from a plain dictionary using AutoConfig.
+    Returns a bare PretrainedConfig if input is None or the model_type is empty.
+    """
+    if config_dict is None:
+        return PretrainedConfig()
+    if isinstance(config_dict, PretrainedConfig):
+        return config_dict
+
+    config_copy = deepcopy(config_dict)
+    model_type = config_copy.pop("model_type", "")
+    if model_type == "":
+        return PretrainedConfig()
+    return AutoConfig.for_model(model_type, **config_copy)
+
+# ── Encoder wrapper ───────────────────────────────────────────────────────────
+
+class BeeBeeOmniEncoderConfig(PretrainedConfig):
+  
+    model_type = "llavaqwen2_encoder"
+    sub_configs = {
+        "image_config": BeeBeeVisionConfig,
+        "audio_config": BeeBeeAudioConfig,
+    }
+
+    def __init__(
+        self,
+        image_config: Optional[Union[Dict[str, Any], BeeBeeVisionConfig]] = None,
+        audio_config: Optional[Union[Dict[str, Any], BeeBeeAudioConfig]]  = None,
+        encode_input:  bool  = True,
+        encode_output: bool  = False,
+        initializer_range: float = 0.02,
+        **kwargs,
+    ):
+        # Pass dedicated defaults so bare dicts get the right class
+        self.image_config = _init_config(image_config)
+        self.audio_config = _init_config(audio_config)
+        self.encode_input      = encode_input
+        self.encode_output     = encode_output
+        self.initializer_range = initializer_range
+        super().__init__(**kwargs)
+
 
 
 class BeeBeeOmniConfig(PretrainedConfig):
   
-    model_type = "beebee_omni"
-    sub_configs = {
-        "vision_config": BeeBeeVisionConfig,
-        "audio_config":  BeeBeeAudioConfig,
+    model_type = "llavaqwen2_omni"
+    sub_configs  = {
+        "encoder_config":    BeeBeeOmniEncoderConfig,
+        "foundation_config": AutoConfig,
     }
     keys_to_ignore_at_inference = ["past_key_values"]
 
     def __init__(
         self,
         # ── Sub-configs ───────────────────────────────────────────────────
-        vision_config: Optional[Union[Dict[str, Any], BeeBeeVisionConfig]] = None,
-        audio_config:  Optional[Union[Dict[str, Any], BeeBeeAudioConfig]]  = None,
-        text_config:   Optional[Union[Dict[str, Any], PretrainedConfig]]   = None,
-
+        encoder_config:    Optional[Union[Dict[str, Any], BeeBeeOmniEncoderConfig]] = None,
+        foundation_config: Optional[Union[Dict[str, Any], PretrainedConfig]]=None,   
         # ── Vision token IDs ─────────────────────────────────────────────
         image_token_id:        int = 151655,
         video_token_id:        int = 151656,
@@ -106,32 +149,29 @@ class BeeBeeOmniConfig(PretrainedConfig):
         **kwargs,
     ):
         # ── vision_config ─────────────────────────────────────────────────
-        if isinstance(vision_config, dict):
-            self.vision_config = BeeBeeVisionConfig(**vision_config)
-        elif vision_config is None:
-            self.vision_config = BeeBeeVisionConfig()
+        if isinstance(encoder_config, BeeBeeOmniEncoderConfig):
+           encoder_config = encoder_config
+        elif isinstance(encoder_config, dict):
+            encoder_config = BeeBeeOmniEncoderConfig(**encoder_config)
         else:
-            self.vision_config = vision_config
+            # encoder_config is None → bare defaults
+            encoder_config = BeeBeeOmniEncoderConfig()
 
-        # ── audio_config ──────────────────────────────────────────────────
-        if isinstance(audio_config, dict):
-            self.audio_config = BeeBeeAudioConfig(**audio_config)
-        elif audio_config is None:
-            self.audio_config = BeeBeeAudioConfig()
-        else:
-            self.audio_config = audio_config
+        self.vision_config = encoder_config.image_config
+   
+        self.audio_config = encoder_config.audio_config
 
         # ── text_config ───────────────────────────────────────────────────
         # Mirrors Qwen2_5_VLConfig: if text_config is None we try to pick up
         # known text-backbone kwargs that were passed in as flat kwargs, then
         # delegate to AutoConfig so any Qwen2/Qwen3/… backbone works.
-        if isinstance(text_config, PretrainedConfig):
-            self.text_config = text_config
-        elif isinstance(text_config, dict):
-            model_type = text_config.get("model_type", "")
+        if isinstance(foundation_config, PretrainedConfig):
+            self.text_config = foundation_config
+        elif isinstance(foundation_config, dict):
+            model_type = foundation_config.get("model_type", "")
             self.text_config = (
-                AutoConfig.for_model(model_type, **{k: v for k, v in text_config.items() if k != "model_type"})
-                if model_type else PretrainedConfig(**text_config)
+                AutoConfig.for_model(model_type, **{k: v for k, v in foundation_config.items() if k != "model_type"})
+                if model_type else PretrainedConfig(**foundation_config)
             )
         else:
             # text_config is None – absorb any LLM kwargs that were passed flat
@@ -152,13 +192,10 @@ class BeeBeeOmniConfig(PretrainedConfig):
   
         self.tie_word_embeddings = tie_word_embeddings
         self.initializer_range   = initializer_range
-
+        kwargs.pop("architectures", None)  # 先把原有的删掉
         super().__init__(
             tie_word_embeddings=tie_word_embeddings,
-            architectures=kwargs.pop(
-                "architectures",
-                ["BeeBeeOmniForConditionalGeneration"],
-            ),
+            architectures=["BeeBeeOmniForConditionalGeneration"],
             **kwargs,
         )
 
@@ -173,7 +210,7 @@ class BeeBeeOmniConfig(PretrainedConfig):
 
 AutoConfig.register("beebee_vision_model", BeeBeeVisionConfig,  exist_ok=True)
 AutoConfig.register("beebee_audio_model",      BeeBeeAudioConfig,   exist_ok=True)
-AutoConfig.register("beebee_omni",         BeeBeeOmniConfig,    exist_ok=True)
+AutoConfig.register("llavaqwen2_omni",         BeeBeeOmniConfig,    exist_ok=True)
 
 
 
@@ -181,63 +218,6 @@ if __name__ == "__main__":
     import tempfile
     from transformers import Qwen2Config
 
-    image_cfg = BeeBeeVisionConfig(
-        hidden_size=1280,
-        num_heads=16,
-        depth=32,
-        patch_size=14,
-        temporal_patch_size=2,
-        spatial_merge_size=2,
-        image_downsample_size=8,
-        output_size=6144,
-    )
+    config = BeeBeeOmniConfig.from_pretrained("/mnt/afs/share/llava_qwen2_14B-veomni-down16")
 
-    audio_cfg = BeeBeeAudioConfig(
-        d_model=1280,
-        encoder_layers=32,
-        encoder_attention_heads=20,
-        encoder_ffn_dim=5120,
-        max_source_positions=1500,
-        audio_downsample_ratio=4,
-        output_size=6144,
-    )
-
-    text_cfg = Qwen2Config(
-        vocab_size=151936,
-        hidden_size=6144,
-        intermediate_size=16384,
-        num_hidden_layers=28,
-        num_attention_heads=48,
-        num_key_value_heads=8,
-        tie_word_embeddings=False,
-    )
-
-    cfg = BeeBeeOmniConfig(
-        vision_config=image_cfg,
-        audio_config=audio_cfg,
-        text_config=text_cfg,
-    )
-
-    # round-trip
-    with tempfile.TemporaryDirectory() as d:
-        cfg.save_pretrained(d)
-        loaded = BeeBeeOmniConfig.from_pretrained(d)
-
-    assert loaded.model_type                          == "beebee_omni"
-    assert loaded.vision_config.model_type            == "beebee_vision_model"
-    assert loaded.audio_config.model_type             == "beebee_audio_model"
-    assert loaded.vision_config.image_downsample_ratio == 8      # alias
-    assert loaded.audio_config.audio_downsample_ratio  == 4
-    assert loaded.image_token_id                      == 151655
-    assert loaded.get_text_config().hidden_size       == 6144
-    assert loaded.architectures == ["BeeBeeOmniForConditionalGeneration"]
-
-    # training-side alias: audio_downsample_size= should map to audio_downsample_ratio
-    compat = BeeBeeAudioConfig(audio_downsample_size=10, output_size=6144)
-    assert compat.audio_downsample_ratio == 10
-
-    print("All assertions passed ✓")
-    print(f"  vision  model_type : {loaded.vision_config.model_type}")
-    print(f"  audio   model_type : {loaded.audio_config.model_type}")
-    print(f"  text    model_type : {loaded.text_config.model_type}")
-    print(f"  architectures      : {loaded.architectures}")
+    print(config)
