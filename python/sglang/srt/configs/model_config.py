@@ -204,6 +204,7 @@ class ModelConfig:
             **kwargs,
         )
         self.hf_text_config = get_hf_text_config(self.hf_config)
+
         self.hf_generation_config = get_generation_config(
             self.model_path,
             trust_remote_code=trust_remote_code,
@@ -1533,6 +1534,7 @@ multimodal_model_archs = [
     "MiDashengLMModel",
     "StepVLForConditionalGeneration",
     "KimiK25ForConditionalGeneration",
+    "BeeBeeOmniForConditionalGeneration"
 ]
 
 piecewise_cuda_graph_disabled_model_archs = [

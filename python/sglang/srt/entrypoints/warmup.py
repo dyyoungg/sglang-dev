@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, List
 
+
 import numpy as np
 import tqdm
 
@@ -125,3 +126,45 @@ async def voice_chat(disaggregation_mode: str, tokenizer_manager: TokenizerManag
             generate_req_input.bootstrap_host = FAKE_BOOTSTRAP_HOST
 
         await tokenizer_manager.generate_request(generate_req_input, None).__anext__()
+
+
+@warmup("beebee_omni_warmup")
+async def beebee_omni_warmup(disaggregation_mode: str, tokenizer_manager):
+    import io
+    from PIL import Image
+    import base64
+    import wave
+    logger.info("🚀 Start BeeBeeOmni warmup")
+
+    if disaggregation_mode == "decode":
+        logger.info("当前为 Decode 节点，跳过多模态预热。")
+        return
+
+    dummy_img = Image.new("RGB", (644, 364), (0, 0, 0))
+    img_buffer = io.BytesIO()
+    dummy_img.save(img_buffer, format="JPEG")
+    img_b64_str = base64.b64encode(img_buffer.getvalue()).decode("utf-8")
+    dummy_image_input = f"data:image/jpeg;base64,{img_b64_str}"
+
+    audio_buffer = io.BytesIO()
+    with wave.open(audio_buffer, 'wb') as wav_file:
+        wav_file.setnchannels(1)                # 单声道
+        wav_file.setsampwidth(2)                # 16-bit (2 bytes)
+        wav_file.setframerate(16000)            # 16kHz
+        wav_file.writeframes(b'\x00\x00' * 16000)
+    
+    audio_b64_str = base64.b64encode(audio_buffer.getvalue()).decode("utf-8")
+    dummy_audio_input = f"data:audio/wav;base64,{audio_b64_str}"
+    try:
+       
+        req_vision = GenerateReqInput(
+            text="<image>"*16 + "<audio>"*8 + "请描述这段画面。",
+            image_data=[dummy_image_input]*16,
+            audio_data=[dummy_audio_input]*8,
+            sampling_params={"max_new_tokens": 1}
+        )
+        await tokenizer_manager.generate_request(req_vision, None).__anext__()
+               
+        logger.info("✅ warmup successfully!!")
+    except Exception as e:
+        logger.error(f"❌ warmup failed! error:{e}")

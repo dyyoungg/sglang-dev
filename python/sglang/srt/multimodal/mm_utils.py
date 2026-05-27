@@ -33,12 +33,14 @@ import itertools
 import math
 import re
 from io import BytesIO
-from typing import Literal
+from typing import Literal, Tuple
+from functools import lru_cache
 
 import numpy as np
 import pybase64
 import torch
 from PIL import Image
+import math
 
 from sglang.srt.distributed import (
     get_tensor_model_parallel_rank,
@@ -668,3 +670,243 @@ def run_dp_sharded_mrope_vision_model(
             current_idx += count
     out_embeddings = torch.cat(original_order_embeddings, dim=0)
     return out_embeddings
+
+
+@lru_cache(maxsize=200)
+def get_adaptive_pool_size(h: int, w: int, scale: int = 20) -> Tuple[int, int]:
+    r = 1.0 / math.sqrt(scale)
+    return max(1, int(np.round(h * r))), max(1, int(np.round(w * r)))
+
+def run_dp_sharded_beebee_vision_model(
+    vision_model: torch.nn.Module,
+    pixel_values: torch.Tensor,
+    grid_thw_list: list,
+    downsample_ratio: int = 16,
+    merge_size: int = 2,
+):
+ 
+    from sglang.srt.layers.dp_attention import (
+        get_attention_tp_group,
+        get_attention_tp_rank,
+        get_attention_tp_size,
+    )
+    from sglang.srt.multimodal.mm_utils import get_dp_encoder_lb_assignment
+
+    tp_size = get_attention_tp_size()
+    if tp_size == 1:
+        # 单卡模式下，直接调用模型的 lm_encode 或 forward，注意它返回的是 (features, seq_lens)
+        features, _ = vision_model(pixel_values, grid_thw=torch.tensor(grid_thw_list))
+        return features
+
+    tp_rank_local = get_attention_tp_rank()
+
+    patches_per_image = [math.prod(grid_thw) for grid_thw in grid_thw_list]
+    cum_patches_per_image = [0, *itertools.accumulate(patches_per_image)]
+    
+    # 提前精确计算每张图经过 DynamicAvgPool 后的【输出 Token 数量】
+    out_tokens_per_image = []
+    for t, h, w in grid_thw_list:
+        h_m, w_m = h // merge_size, w // merge_size
+        Mh, Nw = get_adaptive_pool_size(h_m, w_m, scale=downsample_ratio)
+        out_tokens_per_image.append(t * Mh * Nw)
+
+    image_to_tp_rank, gpu_sample_counts, _ = get_dp_encoder_lb_assignment(patches_per_image, tp_size)
+    cum_gpu_sample_counts = [0, *itertools.accumulate(gpu_sample_counts)]
+
+    # 找到分配给当前 GPU 的图像索引
+    image_idxs_local = image_to_tp_rank[
+        cum_gpu_sample_counts[tp_rank_local] : cum_gpu_sample_counts[tp_rank_local + 1]
+    ]
+
+    # 获取局部像素和局部 thw
+    if len(image_idxs_local) > 0:
+        pixel_values_local = torch.cat(
+            [
+                pixel_values[cum_patches_per_image[i] : cum_patches_per_image[i + 1]]
+                for i in image_idxs_local
+            ]
+        )
+    else:
+        pixel_values_local = torch.empty(
+            (0, pixel_values.shape[1]), device=pixel_values.device, dtype=pixel_values.dtype
+        )
+        
+    local_grid_thw_list = [grid_thw_list[i] for i in image_idxs_local]
+
+    # 4. 核心修改：计算每个 Rank 的输出长度，并找到 max_len_per_rank 用于 Padding
+    grouped_output_len = [0] * tp_size
+    current_idx = 0
+    for rank in range(tp_size):
+        count = gpu_sample_counts[rank]
+        rank_imgs = image_to_tp_rank[current_idx : current_idx + count]
+        grouped_output_len[rank] = sum(out_tokens_per_image[i] for i in rank_imgs)
+        current_idx += count
+
+    max_len_per_rank = max(grouped_output_len)
+
+    # 5. 运行局部的 Vision Model
+    if pixel_values_local.shape[0] > 0:
+       
+        image_embeds_local, _ = vision_model(
+            pixel_values_local, torch.tensor(local_grid_thw_list, device=pixel_values.device)
+        )
+    else:
+        image_embeds_local = torch.empty(
+            (0, vision_model.config.output_size),
+            device=pixel_values.device,
+            dtype=pixel_values.dtype,
+        )
+
+    # 6. Padding 到 max_len_per_rank 以支持 All-Gather
+    current_len = image_embeds_local.shape[0]
+    if current_len < max_len_per_rank:
+        padding_size = max_len_per_rank - current_len
+        padding = torch.empty(
+            (padding_size, image_embeds_local.shape[1]),
+            dtype=image_embeds_local.dtype,
+            device=image_embeds_local.device,
+        )
+        image_embeds_local_padded = torch.cat([image_embeds_local, padding], dim=0)
+    else:
+        image_embeds_local_padded = image_embeds_local
+
+    # 7. 全局收集所有 GPU 的输出
+    gathered_embeds = get_attention_tp_group().all_gather(image_embeds_local_padded, dim=0)
+
+    # 8. 核心修改：根据准确的 grouped_output_len 去除 Padding，并还原到原始图片顺序
+    rank_embeddings = []
+    for rank in range(tp_size):
+        start_idx = rank * max_len_per_rank
+        end_idx = start_idx + grouped_output_len[rank]
+        rank_embeddings.append(gathered_embeds[start_idx:end_idx])
+
+    original_order_embeddings = [None] * len(grid_thw_list)
+    current_idx = 0
+    for rank in range(tp_size):
+        count = gpu_sample_counts[rank]
+        if count > 0:
+            rank_images = image_to_tp_rank[current_idx : current_idx + count]
+            rank_embed = rank_embeddings[rank]
+            embed_start = 0
+            for img_idx in rank_images:
+                img_out_tokens = out_tokens_per_image[img_idx]
+                original_order_embeddings[img_idx] = rank_embed[embed_start : embed_start + img_out_tokens]
+                embed_start += img_out_tokens
+            current_idx += count
+
+    out_embeddings = torch.cat(original_order_embeddings, dim=0)
+    return out_embeddings
+
+
+def run_dp_sharded_audio_model(
+    audio_encoder: torch.nn.Module,
+    items_mel_chunks: list[torch.Tensor],
+    items_chunk_lengths: list[list[int]],
+):
+    from sglang.srt.layers.dp_attention import (
+        get_attention_tp_group,
+        get_attention_tp_rank,
+        get_attention_tp_size,
+    )
+    from sglang.srt.multimodal.mm_utils import get_dp_encoder_lb_assignment
+
+    tp_size = get_attention_tp_size()
+    if tp_size == 1:
+        batched_mel_chunks = torch.cat(items_mel_chunks, dim=0)
+        flat_chunk_lengths = [l for lengths in items_chunk_lengths for l in lengths]
+        chunk_embeds, _ = audio_encoder(batched_mel_chunks, flat_chunk_lengths)
+        return chunk_embeds
+
+    tp_rank_local = get_attention_tp_rank()
+    device = items_mel_chunks[0].device
+    dtype = items_mel_chunks[0].dtype
+
+    # 1. 负载均衡：按每条音频的 chunk 数量划分
+    chunks_per_item = [len(lengths) for lengths in items_chunk_lengths]
+    item_to_tp_rank, gpu_sample_counts, _ = get_dp_encoder_lb_assignment(chunks_per_item, tp_size)
+    cum_gpu_sample_counts = [0, *itertools.accumulate(gpu_sample_counts)]
+
+    # 2. 找到分配给当前 GPU 的音频索引，准备局部数据
+    item_idxs_local = item_to_tp_rank[
+        cum_gpu_sample_counts[tp_rank_local]: cum_gpu_sample_counts[tp_rank_local + 1]
+    ]
+
+    local_mel_chunks = []
+    local_chunk_lengths = []
+    for i in item_idxs_local:
+        local_mel_chunks.append(items_mel_chunks[i])
+        local_chunk_lengths.extend(items_chunk_lengths[i])
+
+    # 3. 运行局部 Audio Model
+    if len(local_mel_chunks) > 0:
+        batched_local_mel_chunks = torch.cat(local_mel_chunks, dim=0)
+        local_embeds, local_token_nums = audio_encoder(batched_local_mel_chunks, local_chunk_lengths)
+    else:
+        hidden_size = audio_encoder.out_hidden_size
+        local_embeds = torch.empty((0, hidden_size), device=device, dtype=dtype)
+        local_token_nums = []
+    # 4. 统计每条音频的局部 token 数，通过 all_reduce 广播全局分布
+    local_tokens_per_item = []
+    ptr = 0
+    for i in item_idxs_local:
+        num_chunks = len(items_chunk_lengths[i])
+        item_tokens = sum(local_token_nums[ptr: ptr + num_chunks])
+        local_tokens_per_item.append(item_tokens)
+        ptr += num_chunks
+
+    global_tokens_per_item = torch.zeros(len(items_mel_chunks), dtype=torch.float32, device=device)
+    for idx, item_idx in enumerate(item_idxs_local):
+        global_tokens_per_item[item_idx] = local_tokens_per_item[idx]
+
+    global_tokens_per_item = get_attention_tp_group().all_reduce(global_tokens_per_item)
+    out_tokens_per_item = global_tokens_per_item.long().tolist()
+
+    # 5. 计算每个 rank 的输出总长度，找到 max_len_per_rank 用于 padding
+    grouped_output_len = [0] * tp_size
+    current_idx = 0
+    for rank in range(tp_size):
+        count = gpu_sample_counts[rank]
+        rank_items = item_to_tp_rank[current_idx: current_idx + count]
+        grouped_output_len[rank] = sum(out_tokens_per_item[i] for i in rank_items)
+        current_idx += count
+
+    max_len_per_rank = max(grouped_output_len)
+
+    # 6. Padding 到 max_len_per_rank 以支持 all_gather
+    current_len = local_embeds.shape[0]
+    if current_len < max_len_per_rank:
+        padding = torch.empty(
+            (max_len_per_rank - current_len, local_embeds.shape[1]),
+            dtype=local_embeds.dtype,
+            device=local_embeds.device,
+        )
+        local_embeds_padded = torch.cat([local_embeds, padding], dim=0)
+    else:
+        local_embeds_padded = local_embeds
+
+    # 7. 全局收集所有 GPU 的 embedding
+    gathered_embeds = get_attention_tp_group().all_gather(local_embeds_padded, dim=0)
+
+    # 8. 剔除 padding，还原到原始音频顺序
+    rank_embeddings = []
+    for rank in range(tp_size):
+        start_idx = rank * max_len_per_rank
+        end_idx = start_idx + grouped_output_len[rank]
+        rank_embeddings.append(gathered_embeds[start_idx:end_idx])
+
+    original_order_embeddings = [None] * len(items_mel_chunks)
+    current_idx = 0
+    for rank in range(tp_size):
+        count = gpu_sample_counts[rank]
+        if count > 0:
+            rank_items = item_to_tp_rank[current_idx: current_idx + count]
+            rank_embed = rank_embeddings[rank]
+            embed_start = 0
+            for item_idx in rank_items:
+                item_out_tokens = out_tokens_per_item[item_idx]
+                original_order_embeddings[item_idx] = rank_embed[embed_start: embed_start + item_out_tokens]
+                embed_start += item_out_tokens
+            current_idx += count
+  
+    features = torch.cat(original_order_embeddings, dim=0)
+    return features

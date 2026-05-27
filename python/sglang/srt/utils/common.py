@@ -735,7 +735,13 @@ def load_audio(
     elif isinstance(audio_file, str) and audio_file.startswith("file://"):
         source = unquote(urlparse(audio_file).path)
     elif isinstance(audio_file, str):
-        source = audio_file
+        if os.path.exists(audio_file):
+            source = audio_file
+        else:
+            try:  
+                source = pybase64.b64decode(audio_file, validate=True)
+            except Exception:
+                source = audio_file
     else:
         raise ValueError(f"Invalid audio format: {audio_file}")
 

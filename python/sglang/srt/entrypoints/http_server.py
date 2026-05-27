@@ -734,6 +734,33 @@ async def generate_request(obj: GenerateReqInput, request: Request):
             logger.error(f"[http_server] Error: {e}")
             return _create_error_response(e)
 
+@app.api_route(
+    "/generate_stream",
+    methods=["POST", "PUT"],
+    response_class=SGLangORJSONResponse,
+)
+async def generate_request(obj: GenerateReqInput, request: Request):
+    """Handle a generate request."""
+    obj.stream = True
+    async def stream_results() -> AsyncIterator[bytes]:
+        try:
+            async for out in _global_state.tokenizer_manager.generate_request(
+                obj, request
+            ):
+                yield b"data: " + dumps_json(out) + b"\n\n"
+        except ValueError as e:
+            out = {"error": {"message": str(e)}}
+            logger.error(f"[http_server] Error: {e}")
+            yield b"data: " + dumps_json(out) + b"\n\n"
+        yield b"data: [DONE]\n\n"
+
+    return StreamingResponse(
+        stream_results(),
+        media_type="text/event-stream",
+        background=_global_state.tokenizer_manager.create_abort_task(obj),
+    )
+    
+
 
 @app.api_route("/encode", methods=["POST", "PUT"])
 async def encode_request(obj: EmbeddingReqInput, request: Request):

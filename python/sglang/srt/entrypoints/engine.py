@@ -1207,6 +1207,7 @@ def _set_envs_and_config(server_args: ServerArgs):
                 "0.4.2.post1",
                 "Please reinstall the latest version with `pip install sglang-kernel --force-reinstall`",
             )
+      
 
     # Signal handlers can only be registered from the main thread.
     if threading.current_thread() is threading.main_thread():
