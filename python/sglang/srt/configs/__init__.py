@@ -35,6 +35,7 @@ from sglang.srt.configs.step3_vl import (
 )
 from sglang.srt.configs.step3p5 import Step3p5Config
 from sglang.srt.configs.beebeeomni_config import BeeBeeOmniConfig
+from sglang.srt.configs.beebeeomni_moe_config import BeeBeeMoEOmniConfig
 
 __all__ = [
     "AfmoeConfig",
@@ -70,5 +71,6 @@ __all__ = [
     "JetVLMConfig",
     "Step3p5Config",
     "Qwen3ASRConfig",
-    "BeeBeeOmniConfig"
+    "BeeBeeOmniConfig",
+    "BeeBeeMoEOmniConfig"
 ]

@@ -749,6 +749,9 @@ class Qwen2MoeModel(nn.Module):
         self.layers_to_capture = layers_to_capture
         for layer_id in self.layers_to_capture:
             setattr(self.layers[layer_id], "_is_layer_to_capture", True)
+    
+    def get_input_embeddings(self):
+        return self.embed_tokens
 
     def forward(
         self,

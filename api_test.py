@@ -250,7 +250,7 @@ class MultiModalClient:
             self._logger(f"Error during request: {e}")
 
 
-def construct_prompt(query, image_num, have_audio=False, system_prompt="You are a helpful AI assistant."):
+def construct_prompt(query, image_num, audio_nums=0, system_prompt="You are a helpful AI assistant."):
 
     system_prompt_format = "<|im_start|>system\n{}<|im_end|>"
     user_format = "\n<|im_start|>user\n{content}<|im_end|>\n<|im_start|>assistant\n"
@@ -258,10 +258,10 @@ def construct_prompt(query, image_num, have_audio=False, system_prompt="You are 
 
     system = system_prompt_format.format(system_prompt)
 
-    if not have_audio:
+    if audio_nums == 0:
         user_prompt = user_format.format(content=query)
     else:
-        user_prompt = user_format.format(content="<audio>")  # audio token
+        user_prompt = user_format.format(content="<audio>" * audio_nums)  # audio token
     if image_num > 0:
         image_prompt = "<|vision_start|>" + "<image>" * image_num + "<|vision_end|>"
     else:
@@ -338,7 +338,7 @@ def extract_frames_from_video(video_path, max_frames=8):
 
 
 async def main():
-    # 更新了请求地址及 SGLang 的采样参数名称
+   
     client = MultiModalClient(
         url="http://127.0.0.1:18003/generate_stream",
         default_sampling_params={
@@ -369,7 +369,7 @@ async def main():
     ]
     # test_video = "s3://gamedata/PLM_video_splits/1v9ZMmYS4aE_7340988604434350080.mp4"
     
-    target_sizes = [(644, 364)] * 256
+    target_sizes = [(448, 448)] * 256
     max_frames = 16  # 你可以改为任意数量
 
     for video in test_video:
@@ -387,12 +387,12 @@ async def main():
         time.sleep(1)
 
     # print("\n\n=== 测试多模态推理 (图像+音频) ===")
-    audios = ["/mnt/afs/yangdeyu/dependency/lightllm-dev/longaudio.wav"]  # 音频文件路径
+    audios = ["/mnt/afs/yangdeyu/dependency/sglang/07039219.wav"] * 5 + ["/mnt/afs/yangdeyu/dependency/sglang/22d5e544df0c397fe3fcbd171bf8327a.wav"]*10  # 音频文件路径
 
     # 测试多模态推理
     t1 = time.time()
     first_time = 0
-    prompt = construct_prompt(query="", image_num=len(images), have_audio=True)
+    prompt = construct_prompt(query="", image_num=len(images), audio_nums=len(audios))
     async for token in client.generate(prompt, images=images, audios=audios, target_sizes=target_sizes):
         if first_time == 0:
             first_time = time.time() - t1

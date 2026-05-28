@@ -2,7 +2,7 @@
 import logging
 import re
 from functools import partial, lru_cache
-from typing import Iterable, List, Optional, Tuple, Type
+from typing import Iterable, List, Optional, Tuple, Type, Callable
 import io
 import wave
 
@@ -17,10 +17,6 @@ from PIL import Image
 
 from einops import rearrange
 from transformers.activations import ACT2FN
-from transformers.models.qwen2_5_vl.modeling_qwen2_5_vl import (
-    Qwen2_5_VisionPatchEmbed,
-    Qwen2_5_VisionRotaryEmbedding,
-)
 from transformers.models.whisper.configuration_whisper import WhisperConfig
 from flash_attn import flash_attn_func, flash_attn_varlen_func
 
@@ -30,24 +26,31 @@ from sglang.srt.distributed import (
 )
 from sglang.srt.distributed.parallel_state import get_pp_group, init_distributed_environment, initialize_model_parallel
 from sglang.srt.environ import envs
-from sglang.srt.layers.activation import SiluAndMul
-from sglang.srt.layers.attention.vision import VisionAttention
-from sglang.srt.layers.layernorm import RMSNorm
+from sglang.srt.layers.rotary_embedding import get_rope
+from sglang.srt.layers.attention.vision import VisionAttention, BATCH_BUCKETS, FLASHINFER_MAX_SEQLEN_BUCKETS, FLASHINFER_WORKSPACE_SIZE_BYTES
 from sglang.srt.layers.linear import (
     ColumnParallelLinear,
     MergedColumnParallelLinear,
     RowParallelLinear,
     QKVParallelLinear
 )
+from sglang.srt.layers.conv import Conv3dLayer
+from sglang.srt.layers.dp_attention import (
+    get_attention_tp_rank,
+    get_attention_tp_size,
+    is_dp_attention_enabled,
+)
 from sglang.srt.layers.logits_processor import LogitsProcessor
 from sglang.srt.layers.pooler import Pooler, PoolingType
 from sglang.srt.layers.quantization.base_config import QuantizationConfig
 from sglang.srt.layers.utils import PPMissingLayer, get_layer_id
-from sglang.srt.layers.vocab_parallel_embedding import ParallelLMHead
+from sglang.srt.layers.vocab_parallel_embedding import ParallelLMHead, VocabParallelEmbedding
+from sglang.srt.layers.moe.fused_moe_triton.layer import FusedMoE
 from sglang.srt.managers.mm_utils import (
     MultiModalityDataPaddingPatternMultimodalTokens,
     general_mm_embed_routine,
 )
+
 from sglang.srt.managers.schedule_batch import (
     Modality,
     MultimodalDataItem,
@@ -55,18 +58,18 @@ from sglang.srt.managers.schedule_batch import (
 )
 from sglang.srt.model_executor.forward_batch_info import ForwardBatch, PPProxyTensors
 from sglang.srt.model_loader.weight_utils import default_weight_loader
-from sglang.srt.models.qwen2 import Qwen2Model
-from sglang.srt.configs.beebeeomni_config import BeeBeeOmniConfig, BeeBeeAudioConfig, BeeBeeVisionConfig
-from sglang.srt.models.utils import RotaryPosMixin, WeightsMapper, permute_inv
+from sglang.srt.models.qwen3_moe import Qwen3MoeModel
+from sglang.srt.configs.beebeeomni_moe_config import BeeBeeMoEOmniConfig, BeeBeeAudioConfig, BeeBeeMoEVisionConfig
+from sglang.srt.models.utils import RotaryPosMixin, WeightsMapper, compute_cu_seqlens_from_grid_numpy
 from sglang.srt.multimodal.mm_utils import run_dp_sharded_beebee_vision_model, run_dp_sharded_audio_model
 from sglang.srt.multimodal.vit_cuda_graph_runner import ViTCudaGraphRunner
 from sglang.srt.server_args import get_global_server_args, set_global_server_args_for_scheduler, ServerArgs
-from sglang.srt.utils import add_prefix, is_cuda, is_npu
+from sglang.srt.utils import add_prefix, is_cuda, is_npu, is_cpu, round_up
 from sglang.srt.entrypoints.warmup import warmup
 from sglang.srt.managers.io_struct import GenerateReqInput
 
 _is_cuda = is_cuda()
-
+_is_npu = is_npu()
 logger = logging.getLogger(__name__)
 
 
@@ -446,11 +449,12 @@ class BeeBeeAudioEncoder(nn.Module):
 
 
 
-class Qwen2_5_VLMLP(nn.Module):
+class Qwen3_VisionMLP(nn.Module):
+
     def __init__(
         self,
         in_features: int,
-        hidden_features: int = None,
+        hidden_features: int,
         bias: bool = True,
         hidden_act="silu",
         quant_config: Optional[QuantizationConfig] = None,
@@ -458,82 +462,109 @@ class Qwen2_5_VLMLP(nn.Module):
         use_data_parallel: bool = False,
     ):
         super().__init__()
-        self.tp_size = 1 if use_data_parallel else get_tensor_model_parallel_world_size()
-        self.tp_rank = 0 if use_data_parallel else get_tensor_model_parallel_rank()
-        self.gate_up_proj = MergedColumnParallelLinear(
-            input_size=in_features,
-            output_sizes=[hidden_features] * 2,  # [gate_proj, up_proj]
+        self.tp_size = 1 if use_data_parallel else get_attention_tp_size()
+        self.tp_rank = 0 if use_data_parallel else get_attention_tp_rank()
+        self.linear_fc1 = ColumnParallelLinear(
+            in_features,
+            hidden_features,
             bias=bias,
             quant_config=quant_config,
-            prefix=add_prefix("gate_up_proj", prefix),
+            prefix=add_prefix("linear_fc1", prefix),
             tp_size=self.tp_size,
             tp_rank=self.tp_rank,
         )
-        self.down_proj = RowParallelLinear(
+        self.linear_fc2 = RowParallelLinear(
             hidden_features,
             in_features,
             bias=bias,
             quant_config=quant_config,
-            prefix=add_prefix("down_proj", prefix),
+            prefix=add_prefix("linear_fc2", prefix),
             tp_size=self.tp_size,
             tp_rank=self.tp_rank,
+            use_dp_attention_reduce=is_dp_attention_enabled(),
         )
-        self.hidden_act = hidden_act
-        if self.hidden_act == "silu":
-            self.act = SiluAndMul()
-        else:
-            base_act = ACT2FN[self.hidden_act]
+        self.act = ACT2FN[hidden_act]
 
-            def _act_fn(x: torch.Tensor) -> torch.Tensor:
-                gate, up = x.chunk(2, dim=-1)
-                return base_act(gate) * up
+    def forward(self, x: torch.Tensor):
+        x_fc1, _ = self.linear_fc1(x)
+        mlp_output, _ = self.linear_fc2(self.act(x_fc1))
+        return mlp_output
 
-            self.act = _act_fn
+    
+class Qwen3VLVisionPatchEmbed(nn.Module):
+    def __init__(self, config) -> None:
+        super().__init__()
+        self.patch_size = config.patch_size
+        self.temporal_patch_size = config.temporal_patch_size
+        self.in_channels = config.in_channels
+        self.embed_dim = config.hidden_size
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        gate_up, _ = self.gate_up_proj(x)
-        x = self.act(gate_up)
-        x_down, _ = self.down_proj(x)
-        return x_down
+        kernel_size = [self.temporal_patch_size, self.patch_size, self.patch_size]
+        self.proj = Conv3dLayer(
+            self.in_channels,
+            self.embed_dim,
+            kernel_size=kernel_size,
+            stride=kernel_size,
+            bias=True,
+        )
+
+    def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
+        target_dtype = self.proj.weight.dtype
+        hidden_states = hidden_states.view(
+            -1,
+            self.in_channels,
+            self.temporal_patch_size,
+            self.patch_size,
+            self.patch_size,
+        )
+        hidden_states = self.proj(hidden_states.to(dtype=target_dtype)).view(
+            -1, self.embed_dim
+        )
+        return hidden_states
 
 
-class Qwen2_5_VisionBlock(nn.Module):
+class Qwen3_VisionBlock(nn.Module):
 
     def __init__(
         self,
         dim: int,
-        intermediate_dim: int,
         num_heads: int,
+        intermediate_dim: int,
+        head_size: Optional[int] = None,
         hidden_act="silu",
-        norm_layer: Type[nn.Module] = None,
+        norm_layer: Optional[Callable[[int], nn.Module]] = None,
         quant_config: Optional[QuantizationConfig] = None,
         prefix: str = "",
-        num_dummy_heads: int = 0,
-        rms_norm_eps: float = 1e-6,
         use_data_parallel: bool = False,
+        workspace_buffer: torch.Tensor | None = None,
     ) -> None:
         super().__init__()
-        self.norm1 = RMSNorm(dim, eps=rms_norm_eps)
-        self.norm2 = RMSNorm(dim, eps=rms_norm_eps)
+        if norm_layer is None:
+            norm_layer = partial(nn.LayerNorm, eps=1e-6)
+        self.norm1 = norm_layer(dim)
+        self.norm2 = norm_layer(dim)
 
         self.attn = VisionAttention(
             embed_dim=dim,
             num_heads=num_heads,
-            projection_size=dim,
+            head_dim=head_size,
+            projection_size=num_heads * head_size,
             use_qkv_parallel=True,
             proj_bias=True,
             flatten_batch=True,
             quant_config=quant_config,
             prefix=add_prefix("attn", prefix),
-            num_dummy_heads=num_dummy_heads,
             use_data_parallel=use_data_parallel,
+            use_dp_attention_reduce=is_dp_attention_enabled(),
+            workspace_buffer=workspace_buffer,
         )
-        self.mlp = Qwen2_5_VLMLP(
+        self.mlp = Qwen3_VisionMLP(
             dim,
             intermediate_dim,
             hidden_act=hidden_act,
+            bias=True,
             quant_config=quant_config,
-            prefix=add_prefix("mlp", prefix),
+            prefix=f"{prefix}.mlp",
             use_data_parallel=use_data_parallel,
         )
 
@@ -541,53 +572,40 @@ class Qwen2_5_VisionBlock(nn.Module):
         self,
         x: torch.Tensor,
         cu_seqlens: torch.Tensor,
-        position_embeddings: torch.Tensor,
-        output_ws=None,
+        rotary_pos_emb_cos: torch.Tensor,
+        rotary_pos_emb_sin: torch.Tensor,
+        output_ws: Optional[torch.Tensor] = None,
+        max_seqlen: Optional[torch.Tensor] = None,
+        sequence_lengths: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
-        S, B, H = x.shape
-        # norm1: flatten to 2D -> [S*B, H], then reshape back
-        x2d = x.reshape(-1, H)
-        hidden_states = self.norm1(x2d).reshape(S, B, H)
-
-        # Attention expects [B, S, H]
-        hidden_states = rearrange(hidden_states, "s b h -> b s h")
+        hidden_states = self.norm1(x)
+        hidden_states = rearrange(hidden_states, "s b ... -> b s ...")
         attn = self.attn(
             hidden_states,
             cu_seqlens=cu_seqlens,
-            position_embeddings=position_embeddings,
+            rotary_pos_emb_cos=rotary_pos_emb_cos,
+            rotary_pos_emb_sin=rotary_pos_emb_sin,
             output_ws=output_ws,
+            max_seqlen=max_seqlen,
+            sequence_lengths=sequence_lengths,
         )
-        attn = rearrange(attn, "b s h -> s b h")
-
-        # norm2 with fused residual-add: also 2D
-        attn2d = attn.reshape(-1, H)
-        x_norm_2d, x_after_add_2d = self.norm2(x2d, residual=attn2d)
-        x_norm = x_norm_2d.reshape(S, B, H)
-        x_after_add = x_after_add_2d.reshape(S, B, H)
-
-        # MLP and final residual
-        mlp_out = self.mlp(x_norm)
-        x = x_after_add + mlp_out
+        attn = rearrange(attn, "b s ... -> s b ...")
+        x += attn
+        norm2 = self.norm2(x)
+        mlp = self.mlp(norm2)
+        x += mlp
         return x
-
-
-class BeeBeeVLPatchMerger(nn.Module):
-    """
-    Norm-only merger: RMSNorm → reshape patches into spatial_merge_unit groups.
-    Weight: image_encoder.merger.ln_q.*
-    """
+    
+class Qwen35VisionPatchMerger(nn.Module):
 
     def __init__(self, context_dim: int, spatial_merge_size: int = 2) -> None:
         super().__init__()
         self.hidden_size = context_dim * (spatial_merge_size ** 2)
-        self.ln_q = RMSNorm(context_dim, eps=1e-6)
+        self.norm = nn.LayerNorm(context_dim, eps=1e-6)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        S, B, D = x.shape
-        x2d = x.reshape(-1, D)
-        x2d = self.ln_q(x2d)
-        x2d = x2d.view(-1, self.hidden_size)
-        return x2d
+        # x is typically [S, B, D] or [seq_len, hidden] depending on upstream
+        return self.norm(x).view(-1, self.hidden_size)
     
 
 @lru_cache(maxsize=200)
@@ -660,7 +678,6 @@ class DynamicAvgPoolProjector(nn.Module):
 
             # [t, h_m, w_m, D] -> [D, t, h_m, w_m]
             img_feat = img_seq.view(t, h_m, w_m, -1).permute(3, 0, 1, 2)
-            
             Mh, Nw = _adaptive_pool_size(h_m, w_m, scale=self.mm_downsample_ratio)
             
             pooled = F.adaptive_avg_pool2d(img_feat, (Mh, Nw))
@@ -681,122 +698,97 @@ class DynamicAvgPoolProjector(nn.Module):
         hidden_states, _ = mlp_fc2(hidden_states)
 
         return hidden_states, seq_len_list
+    
 
-class Qwen2_5_VisionPatchMerger(nn.Module):
-
-    def __init__(
-        self,
-        dim: int,
-        context_dim: int,
-        spatial_merge_size: int = 2,
-        quant_config: Optional[QuantizationConfig] = None,
-        prefix: str = "",
-        use_data_parallel: bool = False,
-    ) -> None:
-        super().__init__()
-        self.hidden_size = context_dim * (spatial_merge_size**2)
-        self.ln_q = RMSNorm(context_dim, eps=1e-6)
-        tp_size = 1 if use_data_parallel else get_tensor_model_parallel_world_size()
-        tp_rank = 0 if use_data_parallel else get_tensor_model_parallel_rank()
-        self.mlp = nn.ModuleList(
-            [
-                ColumnParallelLinear(
-                    self.hidden_size,
-                    self.hidden_size,
-                    bias=True,
-                    quant_config=quant_config,
-                    prefix=add_prefix("mlp.0", prefix),
-                    tp_size=tp_size,
-                    tp_rank=tp_rank,
-                ),
-                nn.GELU(),
-                RowParallelLinear(
-                    self.hidden_size,
-                    dim,
-                    bias=True,
-                    quant_config=quant_config,
-                    prefix=add_prefix("mlp.2", prefix),
-                    tp_size=tp_size,
-                    tp_rank=tp_rank,
-                ),
-            ]
-        )
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        # x expected shape: [S, B, context_dim]
-        S, B, D = x.shape
-        x2d = x.reshape(-1, D)
-        x2d = self.ln_q(x2d)  # RMSNorm expects 2D
-        x2d = x2d.view(-1, self.hidden_size)  # group into spatial_merge_unit
-        mlp_fc1, mlp_act, mlp_fc2 = self.mlp
-        x_parallel, _ = mlp_fc1(x2d)
-        x_parallel = mlp_act(x_parallel)
-        out, _ = mlp_fc2(x_parallel)
-        return out
-
-
-class BeeBeeVisionTransformer(nn.Module, RotaryPosMixin):
+class BeeBeeQwen3MoeVisionModel(nn.Module, RotaryPosMixin):
 
     def __init__(
         self,
-        vision_config: BeeBeeVisionConfig,
+        vision_config: BeeBeeMoEVisionConfig,
         norm_eps: float = 1e-6,
         quant_config: Optional[QuantizationConfig] = None,
         prefix: str = "",
         downsample_ratio: int = 16,
         use_data_parallel: bool = False,
-        max_context_len: Optional[int] = None,
     ) -> None:
         super().__init__()
-        self.config = vision_config
-        self.downsample_ratio = downsample_ratio
-        patch_size: int = vision_config.patch_size
-        temporal_patch_size: int = vision_config.temporal_patch_size
-        spatial_merge_size: int = vision_config.spatial_merge_size
-        self.spatial_merge_size = spatial_merge_size
-        self.spatial_merge_unit: int = spatial_merge_size * spatial_merge_size
-        in_channels: int = vision_config.in_channels
-        hidden_size: int = vision_config.hidden_size
-        depth: int = vision_config.depth
-        num_heads: int = vision_config.num_heads
-        self.fullatt_block_indexes = vision_config.fullatt_block_indexes
-        self.window_size = vision_config.window_size
-        self.patch_size = vision_config.patch_size
-        mlp_hidden_size: int = ((vision_config.intermediate_size + 7) // 8) * 8
-        self.use_data_parallel = use_data_parallel
-       
-        self.patch_embed = Qwen2_5_VisionPatchEmbed(
-            patch_size=patch_size,
-            temporal_patch_size=temporal_patch_size,
-            in_channels=in_channels,
-            embed_dim=hidden_size,
+        self.pp_group = get_pp_group()
+        self.hidden_size = vision_config.hidden_size
+        self.num_heads = vision_config.num_heads
+        self.num_position_embeddings = vision_config.num_position_embeddings
+        self.num_grid_per_side = int(self.num_position_embeddings**0.5)
+        self.num_grid = self.num_grid_per_side * self.num_grid_per_side
+        self.align_corners = (
+            get_global_server_args().enable_precise_embedding_interpolation
         )
+        self.patch_size = vision_config.patch_size
+        self.spatial_merge_size = vision_config.spatial_merge_size
+        self.spatial_merge_unit = self.spatial_merge_size**2
+        self.temporal_patch_size = vision_config.temporal_patch_size
+        self.use_data_parallel = use_data_parallel
+
+        self.patch_embed = Qwen3VLVisionPatchEmbed(config=vision_config)
+
+        if self.pp_group.is_first_rank:
+            self.pos_embed = VocabParallelEmbedding(
+                self.num_position_embeddings,
+                self.hidden_size,
+                quant_config=quant_config,
+                enable_tp=not use_data_parallel,
+                use_attn_tp_group=is_dp_attention_enabled() and not use_data_parallel,
+                prefix=add_prefix("pos_embed", prefix),
+            )
+        else:
+            self.pos_embed = PPMissingLayer()
 
         norm_layer = partial(nn.LayerNorm, eps=norm_eps)
-        head_dim = hidden_size // num_heads
-        self.rotary_pos_emb = Qwen2_5_VisionRotaryEmbedding(head_dim // 2)
+
+        if is_cpu() and hasattr(vision_config, "original_num_heads"):
+            head_dim = self.hidden_size // vision_config.original_num_heads
+        else:
+            head_dim = self.hidden_size // self.num_heads
+
+        self.rotary_pos_emb = get_rope(
+            head_size=head_dim,
+            rotary_dim=head_dim // 2,
+            max_position=8192,
+            base=10000.0,
+            is_neox_style=True,
+        )
+        workspace_buffer = None
+        if get_global_server_args().mm_attention_backend == "flashinfer_cudnn":
+            if torch.cuda.is_available() and (not _is_npu):
+                ws_device = torch.device("cuda", torch.cuda.current_device())
+            else:
+                ws_device = self.device
+            workspace_buffer = torch.empty(
+                FLASHINFER_WORKSPACE_SIZE_BYTES,
+                dtype=torch.uint8,
+                device=ws_device,
+            )
+
         self.blocks = nn.ModuleList(
             [
-                Qwen2_5_VisionBlock(
-                    dim=hidden_size,
-                    intermediate_dim=mlp_hidden_size,
-                    num_heads=num_heads,
+                Qwen3_VisionBlock(
+                    dim=self.hidden_size,
+                    num_heads=self.num_heads,
+                    intermediate_dim=vision_config.intermediate_size,
+                    head_size=head_dim,
                     hidden_act=vision_config.hidden_act,
                     norm_layer=norm_layer,
                     quant_config=quant_config,
-                    prefix=add_prefix(f"blocks.{i}", prefix),
+                    prefix=add_prefix(f"blocks.{layer_idx}", prefix),
                     use_data_parallel=use_data_parallel,
+                    workspace_buffer=workspace_buffer,
                 )
-                for i in range(depth)
+                for layer_idx in range(vision_config.depth)
             ]
         )
-
-        self.merger = BeeBeeVLPatchMerger(
-            context_dim=hidden_size,
+        self.merger = Qwen35VisionPatchMerger(
+            context_dim=self.hidden_size,
             spatial_merge_size=self.spatial_merge_size,
         )
-
-        self.embed_dim = hidden_size * self.spatial_merge_unit
+        self.embed_dim = self.hidden_size * self.spatial_merge_unit
         self.mm_projector = DynamicAvgPoolProjector(
             encoder_hidden=self.embed_dim,
             out_hidden=vision_config.output_size,
@@ -804,60 +796,11 @@ class BeeBeeVisionTransformer(nn.Module, RotaryPosMixin):
             quant_config=quant_config,
             prefix=add_prefix("mm_projector", prefix),
         )
-
-        # Resource prepared for vit cuda graph
         self.tp_size = 1 if use_data_parallel else get_tensor_model_parallel_world_size()
-        self.max_context_len = max_context_len
         self.enable_cg = _is_cuda and envs.SGLANG_VIT_ENABLE_CUDA_GRAPH.get()
-
         self.cuda_graph_runner: Optional[ViTCudaGraphRunner] = None
         if self.enable_cg:
             self.cuda_graph_runner = ViTCudaGraphRunner(self)
-
-    def get_window_index(self, grid_thw):
-        cu_window_seqlens: list = [0]
-        window_index_id = 0
-        vit_merger_window_size = (
-            self.window_size // self.spatial_merge_size // self.patch_size
-        )
-        window_index: list = []
-        for grid_t, grid_h, grid_w in grid_thw:
-            llm_grid_h, llm_grid_w = (
-                grid_h // self.spatial_merge_size,
-                grid_w // self.spatial_merge_size,
-            )
-            index = torch.arange(grid_t * llm_grid_h * llm_grid_w).reshape(
-                grid_t, llm_grid_h, llm_grid_w
-            )
-            pad_h = vit_merger_window_size - llm_grid_h % vit_merger_window_size
-            pad_w = vit_merger_window_size - llm_grid_w % vit_merger_window_size
-            num_windows_h = (llm_grid_h + pad_h) // vit_merger_window_size
-            num_windows_w = (llm_grid_w + pad_w) // vit_merger_window_size
-            index_padded = F.pad(index, (0, pad_w, 0, pad_h), "constant", -100)
-            index_padded = index_padded.reshape(
-                grid_t,
-                num_windows_h,
-                vit_merger_window_size,
-                num_windows_w,
-                vit_merger_window_size,
-            )
-            index_padded = index_padded.permute(0, 1, 3, 2, 4).reshape(
-                grid_t,
-                num_windows_h * num_windows_w,
-                vit_merger_window_size,
-                vit_merger_window_size,
-            )
-            seqlens = (index_padded != -100).sum([2, 3]).reshape(-1)
-            index_padded = index_padded.reshape(-1)
-            index_new = index_padded[index_padded != -100]
-            window_index.append(index_new + window_index_id)
-            cu_seqlens_tmp = (
-                seqlens.cumsum(0) * self.spatial_merge_unit + cu_window_seqlens[-1]
-            )
-            cu_window_seqlens.extend(cu_seqlens_tmp.tolist())
-            window_index_id += (grid_t * llm_grid_h * llm_grid_w).item()
-        window_index = torch.cat(window_index, dim=0)
-        return window_index, cu_window_seqlens
 
     @property
     def dtype(self) -> torch.dtype:
@@ -866,18 +809,398 @@ class BeeBeeVisionTransformer(nn.Module, RotaryPosMixin):
     @property
     def device(self) -> torch.device:
         return self.patch_embed.proj.weight.device
-
-    def rot_pos_emb(self, grid_thw: torch.Tensor) -> torch.Tensor:
+    
+    def rot_pos_emb(
+        self, grid_thw: list[list[int]]
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         pos_ids = []
         for t, h, w in grid_thw:
             base = self.rot_pos_ids(h, w, self.spatial_merge_size)
             pos_ids.append(base if t == 1 else base.repeat(t, 1))
 
-        pos_ids = torch.cat(pos_ids, dim=0)
-        max_grid_size = grid_thw[:, 1:].max()
-        rotary_pos_emb_full = self.rotary_pos_emb(max_grid_size)
-        rotary_pos_emb = rotary_pos_emb_full[pos_ids].flatten(1)
-        return rotary_pos_emb
+        pos_ids = torch.cat(pos_ids, dim=0).to(self.device, non_blocking=True)
+        max_grid_size = max(max(h, w) for _, h, w in grid_thw)
+
+        # Use pre-computed cos_sin_cache from RotaryEmbedding
+        cos, sin = self.rotary_pos_emb.get_cos_sin(max_grid_size)
+
+        cos_combined = cos[pos_ids].flatten(1)
+        sin_combined = sin[pos_ids].flatten(1)
+
+        return cos_combined, sin_combined
+    
+    def _get_interpolation_indices(self, dim_size: int) -> torch.Tensor:
+        """
+        Compute continuous interpolation indices for a single dimension.
+
+        Returns continuous indices.
+        """
+        if self.align_corners:
+            indices = np.linspace(
+                0, self.num_grid_per_side - 1, dim_size, dtype=np.float32
+            )
+        else:
+            indices = (np.arange(dim_size, dtype=np.float32) + 0.5) * (
+                self.num_grid_per_side / dim_size
+            ) - 0.5
+            indices = np.clip(indices, 0, self.num_grid_per_side - 1)
+        return indices
+
+    def _get_interpolation_indices(self, dim_size: int) -> torch.Tensor:
+        """
+        Compute continuous interpolation indices for a single dimension.
+
+        Returns continuous indices.
+        """
+        if self.align_corners:
+            indices = np.linspace(
+                0, self.num_grid_per_side - 1, dim_size, dtype=np.float32
+            )
+        else:
+            indices = (np.arange(dim_size, dtype=np.float32) + 0.5) * (
+                self.num_grid_per_side / dim_size
+            ) - 0.5
+            indices = np.clip(indices, 0, self.num_grid_per_side - 1)
+        return indices
+
+    def _calculate_indices_and_weights(self, h_idxs, w_idxs):
+        """
+        Compute bilinear interpolation indices and weights.
+
+        Returns tuple of (indices, weights), each as 4 numpy arrays for the 4 corner points.
+        """
+        h_f = np.floor(h_idxs).astype(np.int64)
+        h_c = np.clip(h_f + 1, 0, self.num_grid_per_side - 1)
+        dh = h_idxs - h_f
+
+        w_f = np.floor(w_idxs).astype(np.int64)
+        w_c = np.clip(w_f + 1, 0, self.num_grid_per_side - 1)
+        dw = w_idxs - w_f
+
+        side = self.num_grid_per_side
+
+        indices = [
+            (h_f[:, None] * side + w_f).flatten(),
+            (h_f[:, None] * side + w_c).flatten(),
+            (h_c[:, None] * side + w_f).flatten(),
+            (h_c[:, None] * side + w_c).flatten(),
+        ]
+        weights = [
+            ((1 - dh)[:, None] * (1 - dw)).flatten(),
+            ((1 - dh)[:, None] * dw).flatten(),
+            (dh[:, None] * (1 - dw)).flatten(),
+            (dh[:, None] * dw).flatten(),
+        ]
+        return indices, weights
+
+    def _get_position_embedding(self, patch_pos_embeds, grid_ts, grid_hs, grid_ws):
+        """
+        Tile and reorganize position embeddings to align with the token sequence.
+        """
+        result_parts = []
+        merge_size = self.spatial_merge_size
+
+        for pos_embed, t, h, w in zip(patch_pos_embeds, grid_ts, grid_hs, grid_ws):
+            pos_embed = pos_embed.repeat(t, 1)
+
+            h_merge = h // merge_size
+            w_merge = w // merge_size
+
+            pos_embed = (
+                pos_embed.view(t, h_merge, merge_size, w_merge, merge_size, -1)
+                .permute(0, 1, 3, 2, 4, 5)
+                .flatten(0, 4)
+            )
+
+            result_parts.append(pos_embed)
+
+        return torch.cat(result_parts, dim=0)
+
+    def _torch_interp_indices(
+        self, dim_size: int, device: torch.device
+    ) -> torch.Tensor:
+        side = self.num_grid_per_side
+        if self.align_corners:
+            # align_corners=True
+            return torch.linspace(
+                0, side - 1, dim_size, dtype=torch.float32, device=device
+            )
+        else:
+            # align_corners=False  (match _get_interpolation_indices)
+            idx = (torch.arange(dim_size, dtype=torch.float32, device=device) + 0.5) * (
+                side / dim_size
+            ) - 0.5
+            return idx.clamp_(0, side - 1)
+
+    def fast_pos_embed_interpolate_from_list(self, grid_thw):
+        num_grid_per_side = self.num_grid_per_side
+        m_size = self.spatial_merge_size
+        hidden_dim = self.pos_embed.embedding_dim
+
+        outputs = []
+        for t, h, w in grid_thw:
+            h_idxs = torch.linspace(
+                0, num_grid_per_side - 1, h, dtype=torch.float32, device=self.device
+            )
+            w_idxs = torch.linspace(
+                0, num_grid_per_side - 1, w, dtype=torch.float32, device=self.device
+            )
+
+            h_floor = h_idxs.to(torch.long)
+            w_floor = w_idxs.to(torch.long)
+            h_ceil = torch.clamp(h_floor + 1, max=num_grid_per_side - 1)
+            w_ceil = torch.clamp(w_floor + 1, max=num_grid_per_side - 1)
+
+            dh = h_idxs - h_floor
+            dw = w_idxs - w_floor
+
+            # Create meshgrid view for all h, w vars
+            dh_grid, dw_grid = torch.meshgrid(dh, dw, indexing="ij")
+            h_floor_grid, w_floor_grid = torch.meshgrid(h_floor, w_floor, indexing="ij")
+            h_ceil_grid, w_ceil_grid = torch.meshgrid(h_ceil, w_ceil, indexing="ij")
+
+            # original computation of weights
+            # w00 = (1 - dh_grid) * (1 - dw_grid)
+            # w01 = (1 - dh_grid) * dw_grid
+            # w10 = dh_grid * (1 - dw_grid)
+            # w11 = dh_grid * dw_grid
+            # we reuse w11 here to avoid duplicate
+            # dh_grid * dw_grid computation
+            w11 = dh_grid * dw_grid
+            w10 = dh_grid - w11
+            w01 = dw_grid - w11
+            w00 = 1 - dh_grid - w01
+
+            h_grid = torch.stack([h_floor_grid, h_floor_grid, h_ceil_grid, h_ceil_grid])
+            w_grid = torch.stack([w_floor_grid, w_ceil_grid, w_floor_grid, w_ceil_grid])
+            h_grid_idx = h_grid * num_grid_per_side
+
+            indices = (h_grid_idx + w_grid).reshape(4, -1)
+            weights = torch.stack([w00, w01, w10, w11], dim=0).reshape(4, -1, 1)
+            weights = weights.to(dtype=self.dtype)
+
+            embeds = self.pos_embed(indices)
+            embeds *= weights
+            combined = embeds.sum(dim=0)
+
+            combined = combined.reshape(
+                h // m_size, m_size, w // m_size, m_size, hidden_dim
+            )
+            combined = combined.permute(0, 2, 1, 3, 4).reshape(1, -1, hidden_dim)
+            repeated = combined.expand(t, -1, -1).reshape(-1, hidden_dim)
+            outputs.append(repeated)
+
+        return torch.cat(outputs, dim=0)
+
+    def add_padding_to_fi_seqlens(
+        self, seq: np.ndarray, batch_size: int, padding_value: int
+    ) -> np.ndarray:
+        batch_size_padded = next(
+            (b for b in BATCH_BUCKETS if b >= batch_size),
+            # For large batches (> max bucket), round up to a multiple of
+            # the base bucket size to avoid negative pad length.
+            round_up(batch_size, BATCH_BUCKETS[0]),
+        )
+        if batch_size_padded == batch_size:
+            return seq
+        return np.concatenate(
+            [
+                seq,
+                np.full(
+                    (batch_size_padded - batch_size,), padding_value, dtype=seq.dtype
+                ),
+            ]
+        )
+
+    def bucket_flashinfer_max_seqlen(self, real_max_seqlen: int) -> int:
+        if real_max_seqlen <= 0:
+            return FLASHINFER_MAX_SEQLEN_BUCKETS[0]
+        return next(
+            (s for s in FLASHINFER_MAX_SEQLEN_BUCKETS if s >= real_max_seqlen),
+            # For large sequences (> max bucket), round up to a multiple of
+            # the largest bucket to avoid under-estimation.
+            round_up(real_max_seqlen, FLASHINFER_MAX_SEQLEN_BUCKETS[-1]),
+        )
+
+    def fast_pos_embed_interpolate(self, grid_thw):
+        """Interpolate position embeddings for (batch, 3) size input dimensions.
+
+        Performs bilinear interpolation on spatial dimensions (height, width) and replicates
+        along temporal dimension. The result is reorganized according to spatial_merge_size.
+
+        Args:
+            grid_thw: Tensor of shape [batch_size, 3] with (temporal, height, width) dimensions
+                     in patches for each sample.
+
+        Returns:
+            Interpolated position embeddings tensor.
+        """
+        grid_thw_cpu = grid_thw.cpu().numpy()
+
+        # transfer data to CPU before loop
+        temporal_dims = grid_thw_cpu[:, 0].tolist()
+        height_dims = grid_thw_cpu[:, 1].tolist()
+        width_dims = grid_thw_cpu[:, 2].tolist()
+
+        device = self.pos_embed.weight.device
+        dtype = self.pos_embed.weight.dtype
+
+        patches_size = [h * w for h, w in zip(height_dims, width_dims)]
+        total_patches = sum(patches_size)
+        all_indices_np = np.zeros((4, total_patches), dtype=np.int64)
+        all_weights_np = np.zeros((4, total_patches), dtype=np.float32)
+
+        current_idx = 0
+
+        # calculate indices and weights on CPU
+        for t, h, w in zip(temporal_dims, height_dims, width_dims):
+            h_idxs = self._get_interpolation_indices(h)
+            w_idxs = self._get_interpolation_indices(w)
+
+            indices, weights = self._calculate_indices_and_weights(h_idxs, w_idxs)
+
+            end_idx = current_idx + h * w
+            for i in range(4):
+                all_indices_np[i, current_idx:end_idx] = indices[i]
+                all_weights_np[i, current_idx:end_idx] = weights[i]
+            current_idx = end_idx
+
+        idx_tensor = torch.from_numpy(all_indices_np).to(device)
+        weight_tensor = torch.from_numpy(all_weights_np).to(dtype=dtype, device=device)
+
+        # calculate interpolation
+        pos_embeds = self.pos_embed(idx_tensor.view(-1))
+        pos_embeds = pos_embeds.view(4, total_patches, -1)
+        patch_pos_embeds = (pos_embeds * weight_tensor.unsqueeze(-1)).sum(dim=0)
+        patch_pos_embeds = patch_pos_embeds.split(patches_size)
+        return self._get_position_embedding(
+            patch_pos_embeds, temporal_dims, height_dims, width_dims
+        )
+
+    def compute_flashinfer_batch_offsets_packed(
+        self,
+        token_cu_seqlens: np.ndarray,
+        *,
+        elem_per_token: int,
+    ) -> np.ndarray:
+        """
+        Build packed *element* indptrs for FlashInfer cuDNN prefill.
+
+        Input:
+        token_cu_seqlens: (B+1,) token indptr
+        elem_per_token: per-token element width on THIS TP rank
+                        (usually hidden_size / attn_tp_size)
+
+        Output:
+        packed_offsets: (3 * (B_padded + 1),) int32
+            [qk_indptr, v_indptr, o_indptr] concatenated,
+            each indptr is (B_padded + 1,) in element units.
+        """
+        assert token_cu_seqlens.ndim == 1 and token_cu_seqlens.size >= 2
+        B = int(token_cu_seqlens.size - 1)
+        B_padded = self.bucket_flashinfer_batch_size(B)
+
+        # token indptr -> pad to (B_padded+1,) by appending total_tokens for extra empty sequences
+        token_indptr = token_cu_seqlens.astype(np.int64, copy=False)  # (B+1,)
+        if B_padded != B:
+            pad = np.full((B_padded - B,), token_indptr[-1], dtype=token_indptr.dtype)
+            token_indptr = np.concatenate([token_indptr, pad], axis=0)  # (B_padded+1,)
+
+        # convert token indptr -> element indptr
+        elem_indptr = (token_indptr * int(elem_per_token)).astype(
+            np.int32
+        )  # (B_padded+1,)
+
+        # q/k/v/o in this ViT path share the same indptr
+        return np.concatenate([elem_indptr, elem_indptr, elem_indptr], axis=0)
+
+    def bucket_flashinfer_batch_size(self, batch_size: int) -> int:
+        """Bucketize batch size for cuDNN graph caching."""
+        return next(
+            (b for b in BATCH_BUCKETS if b >= batch_size),
+            round_up(batch_size, BATCH_BUCKETS[0]),
+        )
+
+    def compute_flashinfer_sequence_lengths_padded(
+        self,
+        token_cu_seqlens: np.ndarray,
+    ) -> np.ndarray:
+        """
+        token_cu_seqlens: (B+1,) token indptr
+        return: (B_padded,) token lengths (padded with 0)
+        """
+        assert token_cu_seqlens.ndim == 1 and token_cu_seqlens.size >= 2
+        B = int(token_cu_seqlens.size - 1)
+
+        seq_lens = (token_cu_seqlens[1:] - token_cu_seqlens[:-1]).astype(
+            np.int32
+        )  # (B,)
+
+        B_padded = self.bucket_flashinfer_batch_size(B)
+        if B_padded != B:
+            pad = np.zeros((B_padded - B,), dtype=np.int32)
+            seq_lens = np.concatenate([seq_lens, pad], axis=0)  # (B_padded,)
+        return seq_lens
+    
+    def _prepare_graph_inputs(self, x: torch.Tensor, grid_thw: torch.Tensor) -> tuple[
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+    ]:
+        # patchify
+        x = x.to(device=self.device, dtype=self.dtype)
+        x = self.patch_embed(x)
+
+        if isinstance(grid_thw, list):
+            grid_thw_list = grid_thw
+            grid_thw = torch.tensor(grid_thw, dtype=torch.int32)
+        else:
+            grid_thw_list = grid_thw.tolist()
+
+        pos_embeds = self.fast_pos_embed_interpolate(grid_thw)
+        x += pos_embeds
+
+        # rotary embedding -> (cos, sin)
+        rotary_pos_emb_cos, rotary_pos_emb_sin = self.rot_pos_emb(grid_thw_list)
+
+        # compute cu_seqlens
+        cu_seqlens = compute_cu_seqlens_from_grid_numpy(grid_thw)
+        return x, cu_seqlens, rotary_pos_emb_cos, rotary_pos_emb_sin
+    
+    def forward_with_cuda_graph(
+        self,
+        x: torch.Tensor,
+        grid_thw: torch.Tensor,
+    ) -> torch.Tensor:
+        # patchify
+        (
+            x,
+            cu_seqlens,
+            rotary_pos_emb_cos,
+            rotary_pos_emb_sin,
+        ) = self._prepare_graph_inputs(x, grid_thw)
+        if not isinstance(cu_seqlens, torch.Tensor):
+            cu_seqlens = torch.tensor(cu_seqlens, device=x.device, dtype=torch.int32)
+        else:
+            cu_seqlens = cu_seqlens.to(device=x.device, dtype=torch.int32)
+        cu_seqlens = cu_seqlens.contiguous()
+
+        x = self.cuda_graph_runner.run(
+            x=x,
+            position_embeddings=None,
+            rotary_pos_emb_cos=rotary_pos_emb_cos,
+            rotary_pos_emb_sin=rotary_pos_emb_sin,
+            cu_seqlens=cu_seqlens,
+            cu_window_seqlens=None,
+            output_indices=None,
+        )
+        proj_thw = grid_thw.clone()
+        proj_thw[:, 1] = grid_thw[:, 1] // self.spatial_merge_size
+        proj_thw[:, 2] = grid_thw[:, 2] // self.spatial_merge_size
+        
+        features, seq_lens = self.mm_projector(x, proj_thw)
+        return features, seq_lens
 
     def forward(
         self,
@@ -891,155 +1214,40 @@ class BeeBeeVisionTransformer(nn.Module, RotaryPosMixin):
         x = x.to(device=self.device, dtype=self.dtype)
         x = self.patch_embed(x)
 
-        # compute position embedding
-        rotary_pos_emb = self.rot_pos_emb(grid_thw)
+        grid_thw_list = grid_thw.tolist()
+      
+        pos_embeds = self.fast_pos_embed_interpolate_from_list(grid_thw_list)
+        x += pos_embeds
+        rotary_pos_emb_cos, rotary_pos_emb_sin = self.rot_pos_emb(grid_thw_list)
 
-        window_index, cu_window_seqlens = self.get_window_index(grid_thw)
-        cu_window_seqlens = torch.tensor(
-            cu_window_seqlens,
-            device=x.device,
-            dtype=torch.int32,
-        )
-        cu_window_seqlens = torch.unique_consecutive(cu_window_seqlens)
-
-        # Move window_index to the same device as x before using it to index x
-        window_index = window_index.to(device=x.device)
-        reverse_indices = permute_inv(window_index)
-
-        # Ensure rotary_pos_emb is on the same device/dtype as x
-        rotary_pos_emb = rotary_pos_emb.to(device=x.device, dtype=x.dtype)
-
-        seq_len, _ = x.size()
-
-        x = x.reshape(seq_len // self.spatial_merge_unit, self.spatial_merge_unit, -1)
-        x = x[window_index, :, :]
-        x = x.reshape(seq_len, -1)
-        rotary_pos_emb = rotary_pos_emb.reshape(
-            seq_len // self.spatial_merge_unit, self.spatial_merge_unit, -1
-        )
-        rotary_pos_emb = rotary_pos_emb[window_index, :, :]
-        rotary_pos_emb = rotary_pos_emb.reshape(seq_len, -1)
-        emb = torch.cat((rotary_pos_emb, rotary_pos_emb), dim=-1)
-        position_embeddings = (emb.cos(), emb.sin())
-        # After building position_embeddings, make sure both cos and sin are on the same device/dtype as the attention input
-        position_embeddings = (
-            position_embeddings[0].to(x.device, x.dtype),
-            position_embeddings[1].to(x.device, x.dtype),
-        )
-
-       
         cu_seqlens = torch.repeat_interleave(
-            grid_thw[:, 1] * grid_thw[:, 2], 
-            grid_thw[:, 0]
+            grid_thw[:, 1] * grid_thw[:, 2], grid_thw[:, 0]
         ).cumsum(dim=0).to(device=x.device, dtype=torch.int32)
-        cu_seqlens = torch.cat([cu_seqlens.new_zeros(1), cu_seqlens])
 
-        # cu_seqlens must be on cpu because of npu_flash_attention_unpad operator restriction
-        if is_npu():
-            cu_seqlens = cu_seqlens.to("cpu")
-            cu_window_seqlens = cu_window_seqlens.to("cpu")
-        # transformers
+        cu_seqlens = torch.cat([cu_seqlens.new_zeros(1), cu_seqlens])
+        
         x = x.unsqueeze(1)
+
         for layer_num, blk in enumerate(self.blocks):
-            fullatt_indexes = self.fullatt_block_indexes
-            if isinstance(fullatt_indexes, torch.Tensor):
-                fullatt_indexes = fullatt_indexes.tolist()
-            if layer_num in fullatt_indexes:
-                cu_seqlens_now = cu_seqlens
-            else:
-                cu_seqlens_now = cu_window_seqlens
             x = blk(
-                x, cu_seqlens=cu_seqlens_now, position_embeddings=position_embeddings
-            )
-
-        # adapter
-        x = self.merger(x)
-        x = x[reverse_indices, :]
-
-        proj_thw = grid_thw.clone()
-        proj_thw[:, 1] = grid_thw[:, 1] // self.spatial_merge_size
-        proj_thw[:, 2] = grid_thw[:, 2] // self.spatial_merge_size
-        features, seq_lens = self.mm_projector(x, proj_thw)
-        return features, seq_lens
-
-    def forward_with_cuda_graph(
-        self,
-        x: torch.Tensor,
-        grid_thw: torch.Tensor,
-    ) -> torch.Tensor:
-        # patchify
-        x = x.to(device=self.device, dtype=self.dtype)
-        x = self.patch_embed(x)
-
-        # compute position embedding
-        rotary_pos_emb = self.rot_pos_emb(grid_thw)
-
-        window_index, cu_window_seqlens = self.get_window_index(grid_thw)
-        cu_window_seqlens = torch.tensor(
-            cu_window_seqlens,
-            device=x.device,
-            dtype=torch.int32,
-        )
-        cu_window_seqlens = torch.unique_consecutive(cu_window_seqlens)
-
-        window_index = window_index.to(device=x.device)
-        reverse_indices = permute_inv(window_index)
-        rotary_pos_emb = rotary_pos_emb.to(device=x.device, dtype=x.dtype)
-
-        # patch token num
-        seq_len, _ = x.size()
-
-        # [G, M, hidden]
-        x = x.reshape(seq_len // self.spatial_merge_unit, self.spatial_merge_unit, -1)
-        x = x[window_index, :, :]  # [G, M, hidden]
-        x = x.reshape(seq_len, -1)  # [seq_len, hidden]
-
-        rotary_pos_emb = rotary_pos_emb.reshape(
-            seq_len // self.spatial_merge_unit, self.spatial_merge_unit, -1
-        )
-        rotary_pos_emb = rotary_pos_emb[window_index, :, :]
-        rotary_pos_emb = rotary_pos_emb.reshape(seq_len, -1)
-
-        emb = torch.cat((rotary_pos_emb, rotary_pos_emb), dim=-1)
-        position_embeddings = (emb.cos(), emb.sin())
-        # After building position_embeddings, make sure both cos and sin are on
-        # the same device/dtype as the attention input
-        position_embeddings = (
-            position_embeddings[0].to(x.device, x.dtype),
-            position_embeddings[1].to(x.device, x.dtype),
-        )
-
-        # compute cu_seqlens - move cu_seqlens to GPU and make it int32
-        cu_seqlens = torch.cat(
-            [
-                torch.tensor([0], device=x.device, dtype=torch.int32),
-                (grid_thw[:, 0] * grid_thw[:, 1] * grid_thw[:, 2])
-                .cumsum(dim=0)
-                .to(device=x.device, dtype=torch.int32),
-            ]
-        )
-        cu_seqlens = torch.cat([cu_seqlens.new_zeros(1), cu_seqlens])
-
-       
-        x = self.cuda_graph_runner.run(
-                x=x,
-                position_embeddings=position_embeddings,
+                x,
                 cu_seqlens=cu_seqlens,
-                cu_window_seqlens=cu_window_seqlens,
-                output_indices=reverse_indices, # Graph Runner 内部会自动帮你做 x = x[reverse_indices, :]
+                rotary_pos_emb_cos=rotary_pos_emb_cos,
+                rotary_pos_emb_sin=rotary_pos_emb_sin,
+                max_seqlen=None,
+                sequence_lengths=None,
             )
 
+        x = self.merger(x)
         proj_thw = grid_thw.clone()
         proj_thw[:, 1] = grid_thw[:, 1] // self.spatial_merge_size
         proj_thw[:, 2] = grid_thw[:, 2] // self.spatial_merge_size
-        
         features, seq_lens = self.mm_projector(x, proj_thw)
-        
+       
         return features, seq_lens
 
 
-
-class BeeBeeOmniForConditionalGeneration(nn.Module):
+class BeeBeeMoEOmniForConditionalGeneration(nn.Module):
     # BitandBytes specific attributes
     default_bitsandbytes_target_modules = [
         ".gate_up_proj.",
@@ -1078,7 +1286,7 @@ class BeeBeeOmniForConditionalGeneration(nn.Module):
 
     def __init__(
         self,
-        config: BeeBeeOmniConfig,
+        config: BeeBeeMoEOmniConfig,
         quant_config: Optional[QuantizationConfig] = None,
         prefix: str = "",
     ) -> None:
@@ -1091,10 +1299,10 @@ class BeeBeeOmniForConditionalGeneration(nn.Module):
         self.vision_config = self.config.vision_config
         self.audio_config = self.config.audio_config
         if not get_global_server_args().encoder_only:
-            self.model = Qwen2Model(
-                self.text_config,
-                quant_config,
-                prefix=add_prefix("model", prefix),
+            self.model = Qwen3MoeModel(
+                self.text_config, 
+                quant_config, 
+                prefix=add_prefix("model", prefix)
             )
 
             if self.pp_group.is_last_rank:
@@ -1112,12 +1320,17 @@ class BeeBeeOmniForConditionalGeneration(nn.Module):
                 self.lm_head = PPMissingLayer()
         else:
             self.lm_head = None
-        
-        self.image_encoder = BeeBeeVisionTransformer(
+        downsample_ratio=getattr(
+            self.vision_config, 
+            "image_downsample_ratio", 
+            getattr(self.vision_config, "image_downsample_size", 16)
+        )
+        self.image_encoder = BeeBeeQwen3MoeVisionModel(
             self.vision_config,
             norm_eps=getattr(self.vision_config, "rms_norm_eps", 1e-6),
             quant_config=quant_config,
             prefix=add_prefix("image_encoder", prefix),
+            downsample_ratio=downsample_ratio,
             use_data_parallel=self.use_data_parallel,
             # max_context_len=self.vision_config.max_position_embeddings,
         )
@@ -1149,7 +1362,7 @@ class BeeBeeOmniForConditionalGeneration(nn.Module):
 
         expected_dim = getattr(self.image_encoder, "embed_dim", -1)
 
-        raw_patch_dim = 1176
+        raw_patch_dim = 1536
 
         if pixel_values.dim() == 2:
             current_dim = pixel_values.shape[-1]
@@ -1306,18 +1519,11 @@ class BeeBeeOmniForConditionalGeneration(nn.Module):
 
 
     def load_weights(self, weights: Iterable[Tuple[str, torch.Tensor]]):
-        """
-        Custom weight loader for SGLang/vLLM backend.
-        Handles PP layer filtering, TP tensor sharding, and module name mapping.
-        """
-        # 定义需要合并 (Concat) 的参数映射 (用于张量并行 TP)
-        # 格式: (代码中的合并参数名, 权重文件中的独立参数名, shard_id)
+     
         stacked_params_mapping = [
-            # LLM Attention Q/K/V 合并
             ("qkv_proj", "q_proj", "q"),
             ("qkv_proj", "k_proj", "k"),
             ("qkv_proj", "v_proj", "v"),
-            # LLM & Vision MLP Gate/Up 合并 (SwiGLU 结构)
             ("gate_up_proj", "gate_proj", 0),
             ("gate_up_proj", "up_proj", 1),
         ]
@@ -1342,7 +1548,7 @@ class BeeBeeOmniForConditionalGeneration(nn.Module):
                 weights.append((k_b_key, torch.zeros(k_proj_weight.size(0))))
         
         params_dict = dict(self.named_parameters(remove_duplicate=False))
-        
+
         for name, loaded_weight in weights:
             if "rotary_emb.inv_freq" in name:
                 continue
@@ -1370,7 +1576,6 @@ class BeeBeeOmniForConditionalGeneration(nn.Module):
                     weight_loader = getattr(lm_head_param, "weight_loader", default_weight_loader)
                     weight_loader(lm_head_param, loaded_weight)
 
-            # 5. Vision Encoder 命名映射
             if name.startswith("image_encoder."):
                 name = name.replace("attn.qkv.", "attn.qkv_proj.")
 
@@ -1378,7 +1583,47 @@ class BeeBeeOmniForConditionalGeneration(nn.Module):
             if name.startswith("audio_encoder.") and not name.startswith("audio_encoder.audio_projector."):
                 name = name.replace("audio_encoder.", "audio_encoder.encoder.", 1)
 
-            # 7. 处理分片参数合并 (Stacked Params)
+            moe_expert_mapping = [
+                ("gate_proj", "w13_weight", "weight13", "w1"),
+                ("up_proj",   "w13_weight", "weight13", "w3"),
+                ("down_proj", "w2_weight",  "weight2",  "w2"),
+            ]
+            
+            is_moe_expert = False
+            for proj_name, target_name, fallback_name, shard_id in moe_expert_mapping:
+                search_base = f"mlp.experts.{proj_name}"
+
+                if search_base in name:
+                    mapped_name = name.replace(f"experts.{proj_name}", f"experts.{target_name}")
+                    
+                    if mapped_name not in params_dict and mapped_name.replace(target_name, fallback_name) in params_dict:
+                        mapped_name = mapped_name.replace(target_name, fallback_name)
+                    
+                    if mapped_name in params_dict:
+                        param = params_dict[mapped_name]
+                        weight_loader = getattr(param, "weight_loader", default_weight_loader)
+                        
+                        global_num_experts = loaded_weight.shape[0]
+
+                        for global_idx in range(global_num_experts):
+                            
+                            weight_loader(
+                                param=param, 
+                                loaded_weight=loaded_weight[global_idx], 
+                                weight_name=mapped_name, 
+                                shard_id=shard_id, 
+                                expert_id=global_idx
+                            )
+                    else:
+                        logger.warning(f"Failed to map MoE {proj_name}: {mapped_name}")
+                        
+                    is_moe_expert = True
+                    break
+                    
+            if is_moe_expert:
+                continue
+
+            # stack weight 
             is_stacked = False
             for param_name, weight_name, shard_id in stacked_params_mapping:
                 
@@ -1387,26 +1632,27 @@ class BeeBeeOmniForConditionalGeneration(nn.Module):
                 
                 mapped_name = name.replace(weight_name, param_name)
                 if mapped_name not in params_dict:
+                    print(f"{mapped_name} not in the params_dict.")
                     continue
-                    
+
                 param = params_dict[mapped_name]
                 weight_loader = getattr(param, "weight_loader", default_weight_loader)
-                # 传入 shard_id 告诉 SGLang 的 ParallelLinear 应该把这个切片拼到哪个位置
                 weight_loader(param, loaded_weight, shard_id)
+
                 is_stacked = True
                 break
             
             if is_stacked:
                 continue
 
-       
+            # other weight
             if name in params_dict:
                 param = params_dict[name]
                 weight_loader = getattr(param, "weight_loader", default_weight_loader)
                 weight_loader(param, loaded_weight)
             else:
-                
                 logger.warning(f"Skipped unmapped safetensor key: {name}")
+
 
     def get_embed_and_head(self):
         return self.model.embed_tokens.weight, self.lm_head.weight
@@ -1424,16 +1670,19 @@ class BeeBeeOmniForConditionalGeneration(nn.Module):
         else:
             self.model.layers_to_capture = [val + 1 for val in layer_ids]
 
-EntryClass = BeeBeeOmniForConditionalGeneration
-
-
+EntryClass = BeeBeeMoEOmniForConditionalGeneration
 
 def compare_weights(orig_sd, sgl_sd):
-  
     print("\n--- 🔍 Checking Model Weights (Tensor Values) ---")
     all_matched = True
-    merged_tasks = {}
     
+    merged_tasks = {}       # 收集常规 QKV 和 Shared Expert MLP
+    moe_stacked_tasks = {}  # 收集 MoE 专家的 stacked 张量 (layer_idx -> {proj_type: tensor})
+    
+    # 匹配 MoE 专家权重 (兼容有无 .weight 后缀)
+    moe_pattern = re.compile(r"model\.layers\.(\d+)\.mlp\.experts\.(gate_proj|up_proj|down_proj)(?:\.weight)?$")
+
+    # 常规线性层合并映射
     target_map = {
         "q_proj": ("qkv_proj", "q"),
         "k_proj": ("qkv_proj", "k"),
@@ -1442,38 +1691,45 @@ def compare_weights(orig_sd, sgl_sd):
         "up_proj": ("gate_up_proj", "up")
     }
 
+    # ==========================================
+    # 1. 遍历并归类原始权重
+    # ==========================================
     for orig_name, orig_tensor in orig_sd.items():
-    
         sgl_name = orig_name
         
+        # [归类 A]: 拦截 MoE 专家的 Stacked 权重 (跳过后续逻辑)
+        moe_match = moe_pattern.search(orig_name)
+        if moe_match:
+            layer_idx, proj_type = moe_match.groups()
+            moe_stacked_tasks.setdefault(int(layer_idx), {})[proj_type] = orig_tensor
+            continue
+        
+        # [名称映射]: 处理 Vision / Audio 模块的不对齐
         if sgl_name.startswith("image_encoder."):
             sgl_name = sgl_name.replace("attn.qkv.", "attn.qkv_proj.")
 
-     
         if sgl_name.startswith("audio_encoder.") and not sgl_name.startswith("audio_encoder.audio_projector."):
             sgl_name = sgl_name.replace("audio_encoder.", "audio_encoder.encoder.", 1)
 
-       
-        is_stacked = False
+        # [归类 B]: 拦截常规 QKV 和 Shared Expert MLP 的散装权重
+        is_merged_task = False
         for orig_key, (target_key, part_name) in target_map.items():
             if f".{orig_key}." in sgl_name or sgl_name.endswith(f".{orig_key}"):
                 merged_sgl_name = sgl_name.replace(orig_key, target_key)
-                if merged_sgl_name not in merged_tasks:
-                    merged_tasks[merged_sgl_name] = {}
-                merged_tasks[merged_sgl_name][part_name] = orig_tensor
-                is_stacked = True
+                merged_tasks.setdefault(merged_sgl_name, {})[part_name] = orig_tensor
+                is_merged_task = True
                 break
                 
-        if is_stacked:
+        if is_merged_task:
             continue
 
+        # [对比 C]: 1对1 基础权重直接对比 (包括 Router/gate.weight, Norm等)
         if sgl_name not in sgl_sd:
             print(f"❌ [Missing in SGLang] {sgl_name} (mapped from {orig_name})")
             all_matched = False
             continue
             
         sgl_tensor = sgl_sd[sgl_name]
-        
         if orig_tensor.shape != sgl_tensor.shape:
             print(f"❌ [Shape Mismatch] {orig_name} ({orig_tensor.shape}) vs {sgl_name} ({sgl_tensor.shape})")
             all_matched = False
@@ -1484,6 +1740,9 @@ def compare_weights(orig_sd, sgl_sd):
             print(f"❌ [Value Differs] {orig_name} -> Max Diff: {max_diff:.6f}")
             all_matched = False
 
+    # ==========================================
+    # 2. 验证常规合并权重 (QKV, Shared Expert)
+    # ==========================================
     for sgl_name, parts in merged_tasks.items():
         if sgl_name not in sgl_sd:
             print(f"❌ [Missing in SGLang] {sgl_name} (Merged Target)")
@@ -1491,32 +1750,23 @@ def compare_weights(orig_sd, sgl_sd):
             continue
             
         sgl_tensor = sgl_sd[sgl_name]
-        
         try:
             if "qkv_proj" in sgl_name:
-                
+                # 兼容 Whisper encoder self_attn 没有 k_bias 的情况
                 if "q" in parts and "v" in parts and "k" not in parts:
                     parts["k"] = torch.zeros_like(parts["q"])
-                    
                 orig_merged = torch.cat([parts["q"], parts["k"], parts["v"]], dim=0)
             elif "gate_up_proj" in sgl_name:
                 orig_merged = torch.cat([parts["gate"], parts["up"]], dim=0)
             else:
-                print(f"❌ [Unknown Merge Target] {sgl_name}")
-                all_matched = False
-                continue
-                
-        except KeyError as e:
-            print(f"❌ [Incomplete Merge Parts] {sgl_name}: Missing fragment {e}")
-            all_matched = False
-            continue
-        except RuntimeError as e:
-            print(f"❌ [Concat Error] {sgl_name}: {e}")
+                raise ValueError(f"Unknown merge target: {sgl_name}")
+        except Exception as e:
+            print(f"❌ [Merge Error] {sgl_name}: {e}")
             all_matched = False
             continue
             
         if orig_merged.shape != sgl_tensor.shape:
-            print(f"❌ [Shape Mismatch - Merged] {sgl_name}: orig_merged({orig_merged.shape}) vs sgl({sgl_tensor.shape})")
+            print(f"❌ [Shape Mismatch - Merged] {sgl_name}: expected {orig_merged.shape} vs sgl {sgl_tensor.shape}")
             all_matched = False
             continue
             
@@ -1525,39 +1775,127 @@ def compare_weights(orig_sd, sgl_sd):
             print(f"❌ [Value Differs - Merged] {sgl_name} -> Max Diff: {max_diff:.6f}")
             all_matched = False
 
+    # ==========================================
+    # 3. 验证 MoE 专家合并权重 (w13_weight, w2_weight)
+    # ==========================================
+    for layer_idx, projs in moe_stacked_tasks.items():
+        # --- 验证 w13_weight (Gate & Up 合并) ---
+        w13_name = f"model.layers.{layer_idx}.mlp.experts.w13_weight"
+        if w13_name not in sgl_sd and f"model.layers.{layer_idx}.mlp.experts.weight13" in sgl_sd:
+            w13_name = f"model.layers.{layer_idx}.mlp.experts.weight13"
+            
+        if w13_name in sgl_sd:
+            sgl_w13 = sgl_sd[w13_name]
+            if "gate_proj" in projs and "up_proj" in projs:
+                # FusedMoE 预期：沿着输出特征维度 (dim=1) 将 gate 和 up 拼接
+                # 原 shape 通常为 [num_experts, intermediate_size, hidden_size]
+                expected_w13 = torch.cat([projs["gate_proj"], projs["up_proj"]], dim=1)
+                
+                if expected_w13.shape != sgl_w13.shape:
+                    print(f"❌ [Shape Mismatch - MoE w13] Layer {layer_idx}: expected {expected_w13.shape} vs sgl {sgl_w13.shape}")
+                    all_matched = False
+                else:
+                    max_diff = torch.max(torch.abs(expected_w13 - sgl_w13)).item()
+                    if max_diff > 1e-5:
+                        print(f"❌ [Value Differs - MoE w13] Layer {layer_idx} -> Max Diff: {max_diff:.6f}")
+                        all_matched = False
+            else:
+                print(f"❌ [Incomplete MoE w13] Layer {layer_idx} missing gate or up.")
+                all_matched = False
+        else:
+            print(f"❌ [Missing in SGLang] {w13_name}")
+            all_matched = False
+
+        # --- 验证 w2_weight (Down Proj 直接比对) ---
+        w2_name = f"model.layers.{layer_idx}.mlp.experts.w2_weight"
+        if w2_name not in sgl_sd and f"model.layers.{layer_idx}.mlp.experts.weight2" in sgl_sd:
+            w2_name = f"model.layers.{layer_idx}.mlp.experts.weight2"
+            
+        if w2_name in sgl_sd:
+            sgl_w2 = sgl_sd[w2_name]
+            if "down_proj" in projs:
+                expected_w2 = projs["down_proj"]
+                if expected_w2.shape != sgl_w2.shape:
+                    print(f"❌ [Shape Mismatch - MoE w2] Layer {layer_idx}: expected {expected_w2.shape} vs sgl {sgl_w2.shape}")
+                    all_matched = False
+                else:
+                    max_diff = torch.max(torch.abs(expected_w2 - sgl_w2)).item()
+                    if max_diff > 1e-5:
+                        print(f"❌ [Value Differs - MoE w2] Layer {layer_idx} -> Max Diff: {max_diff:.6f}")
+                        all_matched = False
+            else:
+                print(f"❌ [Incomplete MoE w2] Layer {layer_idx} missing down_proj.")
+                all_matched = False
+        else:
+            print(f"❌ [Missing in SGLang] {w2_name}")
+            all_matched = False
+
+    # ==========================================
+    # 总结输出
+    # ==========================================
     if all_matched:
-        print("🎉 所有权重全部完美对齐！(包含 Vision/Audio 的命名映射、合并 QKV 及 Whisper 的 k_bias 注零验证)")
+        print("🎉 恭喜！所有权重全部完美对齐！")
+        print("涵盖检查项：")
+        print(" - Vision/Audio 特殊名称映射")
+        print(" - Whisper k_proj_bias 置零填充")
+        print(" - Attention QKV 张量拼接")
+        print(" - Shared Expert (gate_up_proj) 张量拼接")
+        print(" - Fused MoE Stacked 专家权重 (w13_weight / w2_weight) 重组与对齐")
     else:
-        print("⚠️ 存在未对齐的权重，请检查上面的报错信息。")
+        print("\n⚠️ 存在未对齐的权重，请往上翻看带 ❌ 的报错信息进行排查。")
         
     return all_matched
-
 
 if __name__ == "__main__":
     import os
     import glob
     import torch
     from safetensors import safe_open
+    from sglang.srt.layers.dp_attention import initialize_dp_attention
+    
     
     init_distributed_environment()
     initialize_model_parallel()
-    MODEL_PATH = "/mnt/afs/share/llava_qwen2_14B-veomni-down16" 
+    
+    MODEL_PATH = "/mnt/afs/yangdeyu/GameMLLM/VeOmni-Dev/ckpt/0518_llavaomni_30A3B_qwen35encoder_st2_mmprojector/checkpoints/hf_ckpt" 
     
     dummy_args = ServerArgs(model_path=MODEL_PATH, mm_enable_dp_encoder=False)
+    dummy_args.enable_dp_attention = False
+    dummy_args.dp_size = 1
+    dummy_args.moe_dense_tp_size = None
+    dummy_args.attn_cp_size = 1
+    dummy_args.device = "cuda:0"
     set_global_server_args_for_scheduler(dummy_args)
 
     print("Initializing models...")
+    from veomni.models.custom.llava_qwen3moe.modeling_llava_qwen3moe_omni import LlavaQwen3MoeForCausalLM
+    from veomni.ops.fused_moe import apply_veomni_fused_moe_patch
+    apply_veomni_fused_moe_patch(moe_implementation="fused")
     
-    from veomni.models.custom.llava_qwen2.modeling_llava_qwen2 import LlavaQwen2ForCausalLM
+    config = BeeBeeMoEOmniConfig.from_pretrained(MODEL_PATH)
+  
+    class DummyModelConfig:
+        def __init__(self, hidden_size, dtype):
+            self.hidden_size = hidden_size
+            self.dtype = dtype
+
+    dummy_model_config = DummyModelConfig(
+        hidden_size=config.text_config.hidden_size,
+        dtype=torch.bfloat16
+    )
     
+    initialize_dp_attention(dummy_args, dummy_model_config)
     
-    config = BeeBeeOmniConfig.from_pretrained(MODEL_PATH)
-    
-    sglang_model = BeeBeeOmniForConditionalGeneration(config).to(torch.bfloat16).cuda()
+    # === 定义设备 ===
+    device_sgl = torch.device("cuda:0")
+    device_orig = torch.device("cuda:1")
+
+    # 1. 加载 SGLang 模型到 cuda:0
+    sglang_model = BeeBeeMoEOmniForConditionalGeneration(config).to(torch.bfloat16).to(device_sgl)
     sglang_model.eval()
 
-    # 初始化原始模型
-    train_model = LlavaQwen2ForCausalLM.from_pretrained(MODEL_PATH, torch_dtype=torch.bfloat16).cuda()
+    # 2. 加载 原始模型 到 cuda:1
+    train_model = LlavaQwen3MoeForCausalLM.from_pretrained(MODEL_PATH, torch_dtype=torch.bfloat16).to(device_orig)
     train_model.eval()
 
     print("Loading weights into SGLang model...")
@@ -1572,31 +1910,38 @@ if __name__ == "__main__":
                 weights_iterator.append((k, st.get_tensor(k)))
 
     sglang_model.load_weights(weights_iterator)
-    
-    sglang_model = sglang_model.cuda()
 
-    # check model weight
-    orig_state_dict = train_model.state_dict()
-    sgl_state_dict = sglang_model.state_dict()
-    compare_weights(orig_state_dict, sgl_state_dict)
+    # === Check Model Weight ===
+    print("Preparing state dicts for comparison...")
+    orig_state_dict = {k: v.cpu() for k, v in train_model.state_dict().items()}
+    sgl_state_dict = {k: v.cpu() for k, v in sglang_model.state_dict().items()}
     
+    compare_weights(orig_state_dict, sgl_state_dict)
+
     # ---------------------------------------------------------
     # 视觉编码器 (Image Encoder) 精度对比
     # ---------------------------------------------------------
     print("\n--- Testing Vision Encoder ---")
  
-    dummy_pixel_values = torch.randn(1536, 1176, dtype=torch.bfloat16, device="cuda")
-  
-    dummy_image_grid_thw = torch.tensor([[1, 32, 48]], dtype=torch.int32, device="cuda")
+    # 在 CPU 构造数据，然后分别推送到对应的显卡
+    dummy_pixel_values_cpu = torch.randn(1536, 1536, dtype=torch.bfloat16)
+    dummy_image_grid_thw_cpu = torch.tensor([[1, 32, 48]], dtype=torch.int32)
 
     with torch.no_grad():
-        # SGLang 视觉前向
-        sgl_vision_out = sglang_model.image_encoder(dummy_pixel_values, dummy_image_grid_thw)
+        # SGLang 视觉前向 (cuda:0)
+        sgl_vision_out, _ = sglang_model.image_encoder(
+            dummy_pixel_values_cpu.to(device_sgl), 
+            dummy_image_grid_thw_cpu.to(device_sgl)
+        )
         
-        orig_vision_out, _ = train_model.image_encoder.lm_encode(dummy_pixel_values, dummy_image_grid_thw)
+        # 原模型 视觉前向 (cuda:1)
+        orig_vision_out, _ = train_model.image_encoder.lm_encode(
+            dummy_pixel_values_cpu.to(device_orig), 
+            dummy_image_grid_thw_cpu.to(device_orig)
+        )
 
-        print(sgl_vision_out.shape, orig_vision_out.shape)
-
+    # 将结果拉回到 cuda:0 进行对比
+    orig_vision_out = orig_vision_out.to(device_sgl)
 
     v_max_diff = torch.max(torch.abs(sgl_vision_out - orig_vision_out)).item()
     v_mean_diff = torch.mean(torch.abs(sgl_vision_out - orig_vision_out)).item()
@@ -1612,18 +1957,24 @@ if __name__ == "__main__":
     # 音频编码器 (Audio Encoder) 精度对比
     # ---------------------------------------------------------
     print("\n--- Testing Audio Encoder ---")
-    # 构造 dummy audio 输入 (参照 Whisper 规范)
-    # 假设输入为 1 条音频，包含 1 个 chunk，128个mel bins，长度为 3000
-    dummy_mel = torch.randn(1, 128, 3000, dtype=torch.bfloat16, device="cuda")
-    dummy_mel_lengths = torch.tensor([300], device="cuda")
+    dummy_mel_cpu = torch.randn(1, 128, 3000, dtype=torch.bfloat16)
+    dummy_mel_lengths_cpu = torch.tensor([300], dtype=torch.long)
 
     with torch.no_grad():
-       
-        sgl_audio_out = sglang_model.audio_encoder(dummy_mel, dummy_mel_lengths)
+        # SGLang 音频前向 (cuda:0)
+        sgl_audio_out, _ = sglang_model.audio_encoder(
+            dummy_mel_cpu.to(device_sgl), 
+            dummy_mel_lengths_cpu.to(device_sgl)
+        )
         
-        orig_audio_out, _ = train_model.audio_encoder.lm_encode(dummy_mel, dummy_mel_lengths)
+        # 原模型 音频前向 (cuda:1)
+        orig_audio_out, _ = train_model.audio_encoder.lm_encode(
+            dummy_mel_cpu.to(device_orig), 
+            dummy_mel_lengths_cpu.to(device_orig)
+        )
 
-        print(sgl_audio_out.shape, orig_audio_out.shape)
+    # 将结果拉回到 cuda:0 进行对比
+    orig_audio_out = orig_audio_out.to(device_sgl)
 
     a_max_diff = torch.max(torch.abs(sgl_audio_out - orig_audio_out)).item()
     a_mean_diff = torch.mean(torch.abs(sgl_audio_out - orig_audio_out)).item()
@@ -1635,4 +1986,69 @@ if __name__ == "__main__":
     else:
         print("❌ Audio Encoder has significant precision differences.")
 
+
+    print("\n--- Testing LLM Backbone Components ---")
+    
+    orig_text_model = train_model.model if hasattr(train_model, "model") else train_model.language_model.model
+    sgl_text_model = sglang_model.model if hasattr(sglang_model, "model") else sglang_model.language_model.model
+    
+    hidden_size = config.text_config.hidden_size
+    seq_len = 64
+    
+    # ---------------------------------------------------------
+    # 1. 验证 Token Embedding
+    # ---------------------------------------------------------
+    print("-> Testing Token Embeddings...")
+    dummy_input_ids = torch.randint(0, 32000, (1, seq_len))
+    
+    with torch.no_grad():
+        orig_embeds = orig_text_model.embed_tokens(dummy_input_ids.to(device_orig)).cpu()
+        sgl_embeds = sgl_text_model.embed_tokens(dummy_input_ids.to(device_sgl)).cpu()
+        
+    e_max_diff = torch.max(torch.abs(sgl_embeds - orig_embeds)).item()
+    print(f"   Embedding Max Diff: {e_max_diff:.6f}")
+
+
+    # ---------------------------------------------------------
+    # 2. 验证核心 MoE MLP 层 (极其关键：验证专家权重与 Router)
+    # ---------------------------------------------------------
+    print("-> Testing MoE MLP Layer (Layer 0)...")
+    num_layers = len(orig_text_model.layers)
+    all_moe_matched = True
+
+    print(f"   Found {num_layers} layers. Starting mathematical alignment check...")
+
+    for layer_idx in range(num_layers):
+       
+        dummy_hidden_cpu = torch.randn(1, seq_len, hidden_size, dtype=torch.bfloat16)
+        
+        with torch.no_grad():
+            # HF Original 模型前向
+            orig_mlp = orig_text_model.layers[layer_idx].mlp
+            orig_mlp_out = orig_mlp(dummy_hidden_cpu.to(device_orig)).cpu()
+            
+            sgl_mlp = sgl_text_model.layers[layer_idx].mlp
+            dummy_hidden_2d = dummy_hidden_cpu.view(-1, hidden_size).to(device_sgl)
+            sgl_mlp_out = sgl_mlp(dummy_hidden_2d).cpu()
+            sgl_mlp_out = sgl_mlp_out.view(1, seq_len, hidden_size)
+            
+        m_max_diff = torch.max(torch.abs(sgl_mlp_out - orig_mlp_out)).item()
+        m_mean_diff = torch.mean(torch.abs(sgl_mlp_out - orig_mlp_out)).item()
+        
+        orig_flat = orig_mlp_out.view(-1).float()
+        sgl_flat = sgl_mlp_out.view(-1).float()
+        cos_sim = torch.nn.functional.cosine_similarity(orig_flat, sgl_flat, dim=0).item()
+
+        # 判断对齐标准：余弦相似度 > 0.99 且 平均误差 < 0.005
+        if cos_sim > 0.99 or m_mean_diff < 0.005:
+            print(f"   [Layer {layer_idx:02d}] ✅ Pass | Max: {m_max_diff:.4f}, Mean: {m_mean_diff:.5f}, CosSim: {cos_sim:.6f}")
+        else:
+            print(f"   [Layer {layer_idx:02d}] ❌ FAIL | Max: {m_max_diff:.4f}, Mean: {m_mean_diff:.5f}, CosSim: {cos_sim:.6f}")
+            all_moe_matched = False
+
+    if all_moe_matched:
+        print("   🎉 所有 MoE 层的数学输出完美对齐！")
+    else:
+        print("   ⚠️ 存在未对齐的 MoE 层，请检查上方日志排查对应层数。")
+    
     print("\nAll tests completed.")

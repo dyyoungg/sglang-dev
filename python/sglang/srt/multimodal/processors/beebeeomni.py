@@ -53,6 +53,7 @@ from sglang.srt.utils.cuda_ipc_transport_utils import (
    
 )
 from sglang.utils import logger
+from sglang.srt.server_args import get_global_server_args
 
 # ── Audio constants (Aligned with LightLLM / Whisper) ─────────────
 WHISPER_SAMPLING_RATE = 16000   
@@ -161,8 +162,10 @@ def fast_load_image_to_numpy(image_file) -> np.ndarray:
 class BeeBeeOmniProcessor(SGLangBaseProcessor):
 
     from sglang.srt.models.beebee_omni import BeeBeeOmniForConditionalGeneration
+    from sglang.srt.models.beebee_omni_moe import BeeBeeMoEOmniForConditionalGeneration
 
-    models = [BeeBeeOmniForConditionalGeneration]
+    models = [BeeBeeOmniForConditionalGeneration,
+              BeeBeeMoEOmniForConditionalGeneration]
     gpu_image_decode = False
 
     def __init__(self, hf_config, server_args, _processor, *args, **kwargs):
@@ -197,7 +200,7 @@ class BeeBeeOmniProcessor(SGLangBaseProcessor):
         ).build(_processor)
 
         try:
-            model_path = getattr(vis_cfg, "model_path", "/mnt/afs/share/qwen25_vl_encoder")
+            model_path = getattr(vis_cfg, "model_path", get_global_server_args().model_path)
             optimized_image_processor = Qwen25VLImageProcessorOptimized.from_pretrained(model_path)
             self._processor.image_processor = optimized_image_processor
             logger.info("🚀 Successfully injected Qwen25VLImageProcessorOptimized (numexpr + torch)!")

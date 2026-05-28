@@ -140,7 +140,7 @@ async def beebee_omni_warmup(disaggregation_mode: str, tokenizer_manager):
         logger.info("当前为 Decode 节点，跳过多模态预热。")
         return
 
-    dummy_img = Image.new("RGB", (644, 364), (0, 0, 0))
+    dummy_img = Image.new("RGB", (448, 448), (0, 0, 0))
     img_buffer = io.BytesIO()
     dummy_img.save(img_buffer, format="JPEG")
     img_b64_str = base64.b64encode(img_buffer.getvalue()).decode("utf-8")

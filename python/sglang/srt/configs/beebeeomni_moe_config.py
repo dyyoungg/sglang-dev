@@ -1,36 +1,15 @@
 # coding=utf-8
-"""
-Configuration for BeeBeeLlavaQwen2ForConditionalGeneration.
-
-Follows the same flat sub-config pattern as Qwen2_5_VLConfig:
-  vision_config  ->  BeeBeeVisionConfig   (extends Qwen2_5_VLVisionConfig)
-  audio_config   ->  BeeBeeAudioConfig    (extends WhisperConfig)
-  text_config    ->  any PretrainedConfig (e.g. Qwen2Config)
-"""
-
 import inspect
 from typing import Any, Dict, Optional, Union
 from copy import deepcopy
 
 from transformers import AutoConfig, PretrainedConfig
-from transformers.models.qwen2_5_vl.configuration_qwen2_5_vl import Qwen2_5_VLVisionConfig
+from transformers.models.qwen3_5_moe.configuration_qwen3_5_moe import Qwen3_5MoeVisionConfig
 from transformers.models.whisper.configuration_whisper import WhisperConfig
 
-class BeeBeeVisionConfig(Qwen2_5_VLVisionConfig):
-    """
-    Qwen2.5-VL ViT config + BeeBee DynamicAvgPool projector fields.
+class BeeBeeMoEVisionConfig(Qwen3_5MoeVisionConfig):
 
-    Extra args vs Qwen2_5_VLVisionConfig
-    ─────────────────────────────────────
-    image_projector_type  : "dynamic_avgpool"
-    image_downsample_size : adaptive-avgpool scale factor  (default 8)
-    output_size           : projected dim = LLM hidden size (e.g. 6144)
-    freeze_vision_merger  : freeze patch-merger during training
-    train_vision_projector: train projector only
-    return_hidden_states  : return intermediate ViT states
-    """
-
-    model_type = "beebee_vision_model"  # must match training checkpoint
+    model_type = "beebee_qwen35moe_vision_model"  # must match training checkpoint
 
     def __init__(
         self,
@@ -96,17 +75,17 @@ def _init_config(config_dict: Optional[Dict[str, Any] | PretrainedConfig]) -> Op
 
 # ── Encoder wrapper ───────────────────────────────────────────────────────────
 
-class BeeBeeOmniEncoderConfig(PretrainedConfig):
+class BeeBeeMoEOmniEncoderConfig(PretrainedConfig):
   
     model_type = "llavaqwen2_encoder"
     sub_configs = {
-        "image_config": BeeBeeVisionConfig,
+        "image_config": BeeBeeMoEVisionConfig,
         "audio_config": BeeBeeAudioConfig,
     }
 
     def __init__(
         self,
-        image_config: Optional[Union[Dict[str, Any], BeeBeeVisionConfig]] = None,
+        image_config: Optional[Union[Dict[str, Any], BeeBeeMoEVisionConfig]] = None,
         audio_config: Optional[Union[Dict[str, Any], BeeBeeAudioConfig]]  = None,
         encode_input:  bool  = True,
         encode_output: bool  = False,
@@ -123,11 +102,11 @@ class BeeBeeOmniEncoderConfig(PretrainedConfig):
 
 
 
-class BeeBeeOmniConfig(PretrainedConfig):
+class BeeBeeMoEOmniConfig(PretrainedConfig):
   
-    model_type = "llavaqwen2_omni"
+    model_type = "llavaqwen3moe_omni"
     sub_configs  = {
-        "encoder_config":    BeeBeeOmniEncoderConfig,
+        "encoder_config":    BeeBeeMoEOmniEncoderConfig,
         "foundation_config": AutoConfig,
     }
     keys_to_ignore_at_inference = ["past_key_values"]
@@ -135,7 +114,7 @@ class BeeBeeOmniConfig(PretrainedConfig):
     def __init__(
         self,
         # ── Sub-configs ───────────────────────────────────────────────────
-        encoder_config:    Optional[Union[Dict[str, Any], BeeBeeOmniEncoderConfig]] = None,
+        encoder_config:    Optional[Union[Dict[str, Any], BeeBeeMoEOmniEncoderConfig]] = None,
         foundation_config: Optional[Union[Dict[str, Any], PretrainedConfig]]=None,   
         # ── Vision token IDs ─────────────────────────────────────────────
         image_token_id:        int = 151655,
@@ -148,13 +127,13 @@ class BeeBeeOmniConfig(PretrainedConfig):
         **kwargs,
     ):
         # ── vision_config ─────────────────────────────────────────────────
-        if isinstance(encoder_config, BeeBeeOmniEncoderConfig):
+        if isinstance(encoder_config, BeeBeeMoEOmniEncoderConfig):
            encoder_config = encoder_config
         elif isinstance(encoder_config, dict):
-            encoder_config = BeeBeeOmniEncoderConfig(**encoder_config)
+            encoder_config = BeeBeeMoEOmniEncoderConfig(**encoder_config)
         else:
             # encoder_config is None → bare defaults
-            encoder_config = BeeBeeOmniEncoderConfig()
+            encoder_config = BeeBeeMoEOmniEncoderConfig()
 
         self.vision_config = encoder_config.image_config
    
@@ -194,7 +173,7 @@ class BeeBeeOmniConfig(PretrainedConfig):
         kwargs.pop("architectures", None)  # 先把原有的删掉
         super().__init__(
             tie_word_embeddings=tie_word_embeddings,
-            architectures=["BeeBeeOmniForConditionalGeneration"],
+            architectures=["BeeBeeMoEOmniForConditionalGeneration"],
             **kwargs,
         )
 
@@ -203,11 +182,8 @@ class BeeBeeOmniConfig(PretrainedConfig):
         return self.text_config
 
 
-# =============================================================================
-# AutoConfig registration
-# =============================================================================
-
-AutoConfig.register("beebee_vision_model", BeeBeeVisionConfig,  exist_ok=True)
+AutoConfig.register("beebee_qwen35moe_vision_model", BeeBeeMoEVisionConfig,  exist_ok=True)
 AutoConfig.register("beebee_audio_model",      BeeBeeAudioConfig,   exist_ok=True)
-AutoConfig.register("llavaqwen2_omni",         BeeBeeOmniConfig,    exist_ok=True)
+AutoConfig.register("llavaqwen3moe_omni",         BeeBeeMoEOmniConfig,    exist_ok=True)
+
 
