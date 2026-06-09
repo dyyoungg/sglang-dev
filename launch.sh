@@ -5,7 +5,7 @@ export SGLANG_IO_WORKERS=8
 export SGLANG_VLM_CACHE_SIZE_MB=2048 # 2G
 # export SGLANG_VIT_ENABLE_CUDA_GRAPH=1
 MODEL_PATH=$1
-
+TP_SIZE=$2
 echo "Starting SGLang server..."
 sglang serve \
    --model-path $MODEL_PATH \
@@ -17,7 +17,7 @@ sglang serve \
    --chunked-prefill-size 4096 \
    --model-loader-extra-config '{"enable_multithread_load": true,"num_threads": 8}' \
    --cuda-graph-max-bs 8 \
-   --pp-size 2 \
+   --tp-size $TP_SIZE \
    --enable-mfu-metrics \
    --enable-metrics \
    --enable-request-time-stats-logging \
@@ -26,6 +26,5 @@ sglang serve \
    --disable-piecewise-cuda-graph \
    --enable-multimodal \
    --enable-broadcast-mm-inputs-process \
-   --mm-enable-dp-encoder \
    --warmups "beebee_omni_warmup" \
    # --expert-parallel-size 2 \

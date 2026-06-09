@@ -324,8 +324,8 @@ async def benchmark(
 
 def main(args: argparse.Namespace):
     print(args)
-    random.seed(args.seed)
-    np.random.seed(args.seed)
+    # random.seed(args.seed)
+    # np.random.seed(args.seed)
 
     api_url = f"http://{args.host}:{args.port}/generate"
 

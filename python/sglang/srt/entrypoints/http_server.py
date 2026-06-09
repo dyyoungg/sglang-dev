@@ -378,6 +378,7 @@ async def lifespan(fast_api_app: FastAPI):
         logger.warning(f"Can not initialize OpenAIServingResponses, error: {traceback}")
 
     # Execute custom warmups
+    warmup_thread = None
     if server_args.warmups is not None:
         await execute_warmups(
             server_args.disaggregation_mode,
@@ -385,19 +386,20 @@ async def lifespan(fast_api_app: FastAPI):
             _global_state.tokenizer_manager,
         )
         logger.info("Warmup ended")
-
-    # Execute the general warmup
-    warmup_thread = threading.Thread(
-        target=_wait_and_warmup,
-        kwargs=warmup_thread_kwargs,
-    )
-    warmup_thread.start()
+    else:
+        # Execute the general warmup
+        warmup_thread = threading.Thread(
+            target=_wait_and_warmup,
+            kwargs=warmup_thread_kwargs,
+        )
+        warmup_thread.start()
 
     # Start the HTTP server
     try:
         yield
     finally:
-        warmup_thread.join()
+        if warmup_thread is not None:
+            warmup_thread.join()
 
 
 # Fast API
