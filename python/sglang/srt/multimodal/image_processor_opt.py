@@ -23,10 +23,11 @@ from transformers.utils import TensorType
 from transformers.image_processing_utils import BatchFeature, get_size_dict
 from transformers.image_transforms import convert_to_rgb
 
-ne.set_num_threads(min(os.cpu_count() // 4, 16))  # 动态计算线程数
 _numexpr_override = os.environ.get("SGLANG_NUMEXPR_NUM_THREADS")
 if _numexpr_override is not None:
     ne.set_num_threads(int(_numexpr_override))
+else:
+    ne.set_num_threads(min(os.cpu_count() // 4, 16))  # 动态计算线程数
 
 _IMG_PREPROCESS_BACKEND = os.environ.get("SGLANG_IMG_PREPROCESS_BACKEND", "numexpr").lower()
 _IMG_TORCH_THREADS = os.environ.get("SGLANG_IMG_TORCH_THREADS")
