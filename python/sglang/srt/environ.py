@@ -484,6 +484,11 @@ class Envs:
     SGLANG_MM_FEATURE_CACHE_MB = EnvInt(4 * 1024)
     SGLANG_MM_ITEM_MEM_POOL_RECYCLE_INTERVAL_SEC = EnvFloat(0.05)
 
+    # Processor-side pixel cache (normal deployment)
+    # Caches preprocess output (pixel_values) keyed by raw image hash.
+    # Set to 0 to disable.
+    SGLANG_PROCESSOR_CACHE_SIZE_MB = EnvInt(512)
+
     # Mamba
     SGLANG_MAMBA_CONV_DTYPE = EnvStr("bfloat16")
     SGLANG_MAMBA_SSM_DTYPE = EnvStr(None)

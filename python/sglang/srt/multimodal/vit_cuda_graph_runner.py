@@ -145,6 +145,12 @@ class ViTCudaGraphRunner:
         ca_comm = tp_group.ca_comm
         capture_ctx = ca_comm.capture() if ca_comm is not None else nullcontext()
 
+        # Disable torch.compile during CUDA graph capture to avoid
+        # "Cannot call CUDAGeneratorImpl::current_seed during CUDA graph capture"
+        # from torch._dynamo trying to read RNG state inside @torch.compile'd
+        # functions like apply_rotary_pos_emb_native.
+        prev_dynamo_disable = torch._dynamo.config.disable
+        torch._dynamo.config.disable = True
         with capture_ctx, torch.cuda.graph(graph):
             y = None
             deepstack_outs: List[torch.Tensor] = []
@@ -230,6 +236,7 @@ class ViTCudaGraphRunner:
                 self.block_output[graph_key] = main_out
 
         self.block_graphs[graph_key] = graph
+        torch._dynamo.config.disable = prev_dynamo_disable
 
     def create_graph(
         self,

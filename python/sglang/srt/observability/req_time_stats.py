@@ -966,7 +966,34 @@ class SchedulerReqTimeStats(ReqTimeStatsBase):
                     queue_duration >= 0 and forward_duration >= 0
                 ), f"queue_duration={queue_duration} < 0 or forward_duration={forward_duration} < 0"
 
-            return f"queue_duration={self.format_duration(queue_duration)}, forward_duration={self.format_duration(forward_duration)}, entry_time={self.format_wallclock(self.wait_queue_entry_time)}"
+            # TTFT: time from forward entry to first token (prefill finished)
+            ttft_str = ""
+            if self.prefill_finished_time > 0:
+                ttft = self.duration_between(
+                    self.forward_entry_time, self.prefill_finished_time
+                )
+                ttft_str = f", ttft={self.format_duration(ttft)}"
+
+            # Decode latency: time from prefill finished to completion
+            decode_str = ""
+            if self.prefill_finished_time > 0 and self.completion_time > 0:
+                decode_duration = self.duration_between(
+                    self.prefill_finished_time, self.completion_time
+                )
+                decode_str = f", decode_duration={self.format_duration(decode_duration)}"
+                if self.decode_ct > 0:
+                    per_token_ms = decode_duration / self.decode_ct
+                    decode_str += (
+                        f", avg_decode_per_token={self.format_duration(per_token_ms)}"
+                        f", decode_tokens={self.decode_ct}"
+                    )
+
+            return (
+                f"queue_duration={self.format_duration(queue_duration)}, "
+                f"forward_duration={self.format_duration(forward_duration)}"
+                f"{ttft_str}{decode_str}, "
+                f"entry_time={self.format_wallclock(self.wait_queue_entry_time)}"
+            )
         elif self.disagg_mode == DisaggregationMode.PREFILL:
             bootstrap_queue_duration = self.duration_between(
                 self.prefill_bootstrap_queue_entry_time, self.wait_queue_entry_time

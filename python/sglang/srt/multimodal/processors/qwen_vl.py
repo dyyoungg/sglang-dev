@@ -611,3 +611,175 @@ class QwenVLImageProcessor(SGLangBaseProcessor):
             mrope_positions=mrope_positions,
             mrope_position_delta=mrope_position_delta,
         )
+
+
+if __name__ == "__main__":
+    """
+    Benchmark QwenVLImageProcessor multi-image preprocessing time.
+    Usage: python -m sglang.srt.multimodal.processors.qwen_vl
+    """
+    import argparse
+    import asyncio
+    import time
+    from dataclasses import dataclass, field
+    from typing import Any, Dict, Optional
+
+    from PIL import Image
+    from transformers import AutoConfig, AutoProcessor
+
+    parser = argparse.ArgumentParser(description="Benchmark QwenVLImageProcessor")
+    parser.add_argument(
+        "--model-path",
+        type=str,
+        default="/mnt/afs/share/Qwen25-VL-72B-Instruct",
+        help="Path to Qwen2.5-VL model",
+    )
+    parser.add_argument(
+        "--num-images",
+        type=int,
+        default=4,
+        help="Number of images to process",
+    )
+    parser.add_argument(
+        "--image-size",
+        type=int,
+        default=1024,
+        help="Size of each test image (width=height)",
+    )
+    parser.add_argument(
+        "--num-warmup",
+        type=int,
+        default=2,
+        help="Number of warmup iterations",
+    )
+    parser.add_argument(
+        "--num-iters",
+        type=int,
+        default=5,
+        help="Number of benchmark iterations",
+    )
+    args = parser.parse_args()
+
+    # --- Minimal mock for ServerArgs ---
+    @dataclass
+    class MockServerArgs:
+        model_path: str = args.model_path
+        mm_process_config: Dict[str, Any] = field(default_factory=dict)
+        tokenizer_worker_num: int = 1
+        disable_fast_image_processor: bool = False
+        keep_mm_feature_on_device: bool = False
+        skip_tokenizer_init: bool = False
+        rl_on_policy_target: Optional[str] = None
+
+    # --- Load config and processor ---
+    print(f"Loading model config and processor from: {args.model_path}")
+    t0 = time.perf_counter()
+    hf_config = AutoConfig.from_pretrained(args.model_path, trust_remote_code=True)
+    hf_processor = AutoProcessor.from_pretrained(args.model_path, trust_remote_code=True)
+    print(f"  Config/Processor loaded in {(time.perf_counter() - t0)*1000:.1f} ms")
+    print(f"  model_type: {hf_config.model_type}")
+
+    # --- Instantiate QwenVLImageProcessor ---
+    server_args = MockServerArgs()
+
+    # Set global server args (needed by process_mm_data internals)
+    from sglang.srt.server_args import set_global_server_args_for_tokenizer
+
+    set_global_server_args_for_tokenizer(server_args)
+
+    processor = QwenVLImageProcessor(
+        hf_config=hf_config,
+        server_args=server_args,
+        _processor=hf_processor,
+        transport_mode="nccl",
+        skip_mm_pool=True,
+    )
+    print(f"  QwenVLImageProcessor instantiated.")
+
+    # --- Generate test images ---
+    print(
+        f"\nGenerating {args.num_images} random images of size {args.image_size}x{args.image_size}..."
+    )
+    test_images = []
+    for i in range(args.num_images):
+        img = Image.fromarray(
+            np.random.randint(0, 255, (args.image_size, args.image_size, 3), dtype=np.uint8)
+        )
+        test_images.append(img)
+
+    # --- Build prompt with image placeholders ---
+    image_placeholder = "<|vision_start|><|image_pad|><|vision_end|>"
+    prompt_text = "Describe these images:\n" + "\n".join(
+        [image_placeholder for _ in range(args.num_images)]
+    )
+
+    # --- Define the async benchmark function ---
+    async def run_benchmark():
+        # Use process_mm_data_async which is the full pipeline with per-stage timing
+        from sglang.srt.multimodal.processors.base_processor import (
+            BaseMultiModalProcessorOutput,
+        )
+
+        # Mock request_obj for process_mm_data_async
+        @dataclass
+        class MockRequest:
+            video_data: list = field(default_factory=list)
+            audio_data: list = field(default_factory=list)
+            rid: str = "benchmark"
+
+        request_obj = MockRequest()
+
+        # Enable DEBUG logging so we see the per-stage breakdown
+        import logging
+
+        logging.basicConfig(level=logging.DEBUG)
+        logger.setLevel(logging.DEBUG)
+
+        # Convert images to the format expected by process_mm_data_async
+        # image_data should be list of PIL images or URLs
+        image_data = test_images
+
+        # Warmup
+        print(f"\nWarming up ({args.num_warmup} iters)...")
+        for i in range(args.num_warmup):
+            t_start = time.perf_counter()
+            result = await processor.process_mm_data_async(
+                image_data=image_data,
+                input_text=prompt_text,
+                request_obj=request_obj,
+            )
+            elapsed = (time.perf_counter() - t_start) * 1000
+            print(f"  Warmup iter {i+1}: {elapsed:.2f} ms")
+
+        # Benchmark
+        print(f"\nBenchmarking ({args.num_iters} iters)...")
+        times = []
+        for i in range(args.num_iters):
+            t_start = time.perf_counter()
+            result = await processor.process_mm_data_async(
+                image_data=image_data,
+                input_text=prompt_text,
+                request_obj=request_obj,
+            )
+            elapsed = (time.perf_counter() - t_start) * 1000
+            times.append(elapsed)
+            print(f"  Iter {i+1}: {elapsed:.2f} ms")
+
+        # Results
+        avg_time = sum(times) / len(times)
+        min_time = min(times)
+        max_time = max(times)
+        print(f"\n{'='*50}")
+        print(f"Results ({args.num_images} images, {args.image_size}x{args.image_size}):")
+        print(f"  Avg: {avg_time:.2f} ms")
+        print(f"  Min: {min_time:.2f} ms")
+        print(f"  Max: {max_time:.2f} ms")
+        print(f"  Per image (avg): {avg_time/args.num_images:.2f} ms")
+        print(f"{'='*50}")
+
+        # Print some info about the output
+        print(f"\nOutput info:")
+        print(f"  input_ids length: {len(result.input_ids)}")
+        print(f"  mm_items count: {len(result.mm_items)}")
+
+    asyncio.run(run_benchmark())

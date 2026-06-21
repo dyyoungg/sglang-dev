@@ -1523,6 +1523,102 @@ def get_new_expanded_mm_items(original_mm_items):
     return expanded_mm_items
 
 
+class BatchShmPointerMMData:
+    """
+    Packs multiple tensors into a single shared memory segment to avoid
+    repeated SharedMemory creation syscalls. Each tensor is stored at a
+    known offset and can be individually materialized.
+    """
+
+    def __init__(self, tensors):
+        """
+        Args:
+            tensors: list of torch.Tensor (CPU or CUDA)
+        """
+        # Prepare metadata and compute total size
+        self._entries = []  # (offset, nbytes, shape, dtype)
+        total_bytes = 0
+        for t in tensors:
+            if not t.is_contiguous():
+                t = t.contiguous()
+            nbytes = t.numel() * t.element_size()
+            self._entries.append((total_bytes, nbytes, t.shape, t.dtype))
+            total_bytes += nbytes
+
+        # Single shm allocation
+        shm = shared_memory.SharedMemory(create=True, size=max(total_bytes, 1))
+        try:
+            # Create a CPU tensor backed by shm
+            buf = torch.frombuffer(shm.buf, dtype=torch.uint8)
+            # Copy all tensors into the single buffer
+            # For CUDA tensors this does GPU->CPU DMA directly into shm
+            for (offset, nbytes, _, _), t in zip(self._entries, tensors):
+                src = t.view(torch.uint8).reshape(-1)
+                if src.is_cuda:
+                    # Pin the shm slice and copy from GPU (faster than .cpu() + memcpy)
+                    buf[offset : offset + nbytes].copy_(src)
+                else:
+                    buf[offset : offset + nbytes].copy_(src)
+        except BaseException:
+            shm.close()
+            shm.unlink()
+            raise
+        self.shm_name = shm.name
+        self.total_bytes = total_bytes
+        shm.close()
+        self._shm_handle = None
+
+    def __getstate__(self):
+        return {
+            "shm_name": self.shm_name,
+            "total_bytes": self.total_bytes,
+            "entries": [(off, nb, tuple(s), str(d)) for off, nb, s, d in self._entries],
+        }
+
+    def __setstate__(self, state):
+        self.shm_name = state["shm_name"]
+        self.total_bytes = state["total_bytes"]
+        self._entries = [
+            (off, nb, torch.Size(s), getattr(torch, d.split(".")[-1]))
+            for off, nb, s, d in state["entries"]
+        ]
+        self._shm_handle = shared_memory.SharedMemory(name=self.shm_name)
+
+    def materialize_all(self):
+        """Return views directly into shm (zero-copy, no clone).
+
+        The shm handle is kept alive — tensors are valid as long as this
+        object is not garbage-collected. Call release() after features have
+        been consumed (e.g. moved to GPU).
+        """
+        shm = self._shm_handle
+        buf = torch.frombuffer(shm.buf, dtype=torch.uint8)
+        results = []
+        for offset, nbytes, shape, dtype in self._entries:
+            t = buf[offset : offset + nbytes].view(dtype).reshape(shape)
+            results.append(t)
+        return results
+
+    def release(self):
+        """Release the shm handle after tensors are no longer needed."""
+        if self._shm_handle is not None:
+            self._shm_handle.close()
+            try:
+                self._shm_handle.unlink()
+            except FileNotFoundError:
+                pass
+            self._shm_handle = None
+
+    def __del__(self):
+        if getattr(self, "_shm_handle", None) is not None:
+            self._shm_handle.close()
+            try:
+                self._shm_handle.unlink()
+            except FileNotFoundError:
+                pass
+            self._shm_handle = None
+
+
 class ShmPointerMMData:
     """
     Wraps a tensor to be sent via a shared memory handle.
@@ -1599,32 +1695,74 @@ def _get_is_default_transport():
     return _is_default_tensor_transport
 
 
+def _wrap_item_shm(item):
+    """Wrap a single mm_item's feature tensor(s) into ShmPointerMMData."""
+    if not hasattr(item, "feature"):
+        return
+    feat = item.feature
+    if isinstance(feat, torch.Tensor) and feat.is_cpu:
+        item.feature = ShmPointerMMData(feat)
+    elif isinstance(feat, (list, tuple)):
+        wrapped = [
+            (
+                ShmPointerMMData(t)
+                if isinstance(t, torch.Tensor) and t.is_cpu
+                else t
+            )
+            for t in feat
+        ]
+        item.feature = (
+            type(feat)(wrapped) if isinstance(feat, tuple) else wrapped
+        )
+
+
 def wrap_shm_features(obj):
     """
     Scan the object for multimodal tensors and wrap them in SHM pointers.
+    Uses BatchShmPointerMMData to pack all tensors into a single shm segment.
+    For CUDA tensors, copies directly GPU -> SHM (skipping intermediate CPU allocation).
     """
     if _get_is_default_transport() or get_global_server_args().skip_tokenizer_init:
         return obj
 
     if hasattr(obj, "mm_inputs") and obj.mm_inputs:
-        for item in obj.mm_inputs.mm_items:
+        items = obj.mm_inputs.mm_items
+        # Collect all tensors (CPU or CUDA) across all items for batched shm allocation
+        all_tensors = []
+        # Track (item_idx, is_list, list_idx) for each tensor
+        tensor_map = []
+        for i, item in enumerate(items):
             if not hasattr(item, "feature"):
                 continue
             feat = item.feature
-            if isinstance(feat, torch.Tensor) and feat.is_cpu:
-                item.feature = ShmPointerMMData(feat)
+            if isinstance(feat, torch.Tensor):
+                tensor_map.append((i, False, 0))
+                all_tensors.append(feat)
             elif isinstance(feat, (list, tuple)):
-                wrapped = [
-                    (
-                        ShmPointerMMData(t)
-                        if isinstance(t, torch.Tensor) and t.is_cpu
-                        else t
-                    )
-                    for t in feat
-                ]
-                item.feature = (
-                    type(feat)(wrapped) if isinstance(feat, tuple) else wrapped
-                )
+                for j, t in enumerate(feat):
+                    if isinstance(t, torch.Tensor):
+                        tensor_map.append((i, True, j))
+                        all_tensors.append(t)
+
+        if all_tensors:
+            # Single shm allocation for all tensors
+            batch_shm = BatchShmPointerMMData(all_tensors)
+            # Store the batch handle on the mm_inputs so it survives pickling
+            obj.mm_inputs._batch_shm = batch_shm
+            obj.mm_inputs._batch_shm_map = tensor_map
+            # Clear original tensor references so they aren't pickled redundantly
+            for item_i, is_list, list_j in tensor_map:
+                item = items[item_i]
+                if not is_list:
+                    item.feature = None
+                else:
+                    feat = item.feature
+                    if isinstance(feat, tuple):
+                        feat = list(feat)
+                        feat[list_j] = None
+                        item.feature = tuple(feat)
+                    else:
+                        feat[list_j] = None
     return obj
 
 
@@ -1638,12 +1776,14 @@ def _feature_has_shm(feat) -> bool:
 
 
 def has_shm_features(recv_reqs):
-    """Return True if any request in the list contains ShmPointerMMData."""
+    """Return True if any request in the list contains ShmPointerMMData or BatchShmPointerMMData."""
     for req in recv_reqs:
         if hasattr(req, "batch"):
             if has_shm_features(req.batch):
                 return True
         elif hasattr(req, "mm_inputs") and req.mm_inputs:
+            if hasattr(req.mm_inputs, "_batch_shm") and req.mm_inputs._batch_shm is not None:
+                return True
             for item in req.mm_inputs.mm_items:
                 if _feature_has_shm(item.feature):
                     return True
@@ -1654,6 +1794,7 @@ def unwrap_shm_features(obj):
     """
     Restore ShmPointerMMData wrappers back into standard torch.Tensors.
     Handles both single requests and batch requests.
+    Supports BatchShmPointerMMData for batched shm transport.
     """
     if _get_is_default_transport() or get_global_server_args().skip_tokenizer_init:
         return obj
@@ -1664,17 +1805,41 @@ def unwrap_shm_features(obj):
         return obj
     # Handle single requests
     if hasattr(obj, "mm_inputs") and obj.mm_inputs:
-        mm_items = obj.mm_inputs.mm_items
-        for item in mm_items:
-            feat = item.feature
-            if isinstance(feat, ShmPointerMMData):
-                item.feature = feat.materialize()
-            elif isinstance(feat, (list, tuple)):
-                unwrapped = [
-                    t.materialize() if isinstance(t, ShmPointerMMData) else t
-                    for t in feat
-                ]
-                item.feature = (
-                    type(feat)(unwrapped) if isinstance(feat, tuple) else unwrapped
-                )
+        mm_inputs = obj.mm_inputs
+        # Handle BatchShmPointerMMData (new batched path)
+        if hasattr(mm_inputs, "_batch_shm") and mm_inputs._batch_shm is not None:
+            batch_shm = mm_inputs._batch_shm
+            tensor_map = mm_inputs._batch_shm_map
+            tensors = batch_shm.materialize_all()
+            items = mm_inputs.mm_items
+            for idx, (item_i, is_list, list_j) in enumerate(tensor_map):
+                item = items[item_i]
+                if not is_list:
+                    item.feature = tensors[idx]
+                else:
+                    # For list features, replace the specific element
+                    feat = item.feature
+                    if isinstance(feat, tuple):
+                        feat = list(feat)
+                        feat[list_j] = tensors[idx]
+                        item.feature = tuple(feat)
+                    else:
+                        feat[list_j] = tensors[idx]
+            # Keep _batch_shm alive — tensors are zero-copy views into shm.
+            # It will be released when mm_inputs is GC'd (after features move to GPU).
+            mm_inputs._batch_shm_map = None
+        else:
+            # Legacy per-item ShmPointerMMData path
+            for item in mm_inputs.mm_items:
+                feat = item.feature
+                if isinstance(feat, ShmPointerMMData):
+                    item.feature = feat.materialize()
+                elif isinstance(feat, (list, tuple)):
+                    unwrapped = [
+                        t.materialize() if isinstance(t, ShmPointerMMData) else t
+                        for t in feat
+                    ]
+                    item.feature = (
+                        type(feat)(unwrapped) if isinstance(feat, tuple) else unwrapped
+                    )
     return obj

@@ -4,6 +4,7 @@ import re
 from typing import Iterable, List, Optional, Tuple
 
 import torch
+import torch.cuda.nvtx as nvtx
 import torch.nn as nn
 
 from sglang.srt.distributed.parallel_state import get_pp_group, init_distributed_environment, initialize_model_parallel
@@ -112,40 +113,46 @@ class BeeBeeOmniForConditionalGeneration(nn.Module):
             self.lm_head = None
 
         self.downsample_ratio=getattr(
-            self.vision_config, 
-            "image_downsample_ratio", 
+            self.vision_config,
+            "image_downsample_ratio",
             getattr(self.vision_config, "image_downsample_size", 16)
         )
-        if self.vision_config.model_type == "beebee_vision_model":
-            self.image_encoder = BeeBeeQwen25VisionModel(
-                self.vision_config,
-                norm_eps=getattr(self.vision_config, "rms_norm_eps", 1e-6),
-                quant_config=quant_config,
-                prefix=add_prefix("image_encoder", prefix),
-                use_data_parallel=self.use_data_parallel,
-                downsample_ratio=self.downsample_ratio
-                # max_context_len=self.vision_config.max_position_embeddings,
-            )
-        
-        elif self.vision_config.model_type == "beebee_qwen35moe_vision_model":
-            self.image_encoder = BeeBeeQwen3MoeVisionModel(
-                self.vision_config,
-                norm_eps=getattr(self.vision_config, "rms_norm_eps", 1e-6),
-                quant_config=quant_config,
-                prefix=add_prefix("image_encoder", prefix),
-                downsample_ratio=self.downsample_ratio,
-                use_data_parallel=self.use_data_parallel,
-                # max_context_len=self.vision_config.max_position_embeddings,
-            )
+        # In language_only mode, encoders are remote — skip building them
+        # to save GPU memory.
+        language_only = getattr(get_global_server_args(), "language_only", False)
+        if not language_only:
+            if self.vision_config.model_type == "beebee_vision_model":
+                self.image_encoder = BeeBeeQwen25VisionModel(
+                    self.vision_config,
+                    norm_eps=getattr(self.vision_config, "rms_norm_eps", 1e-6),
+                    quant_config=quant_config,
+                    prefix=add_prefix("image_encoder", prefix),
+                    use_data_parallel=self.use_data_parallel,
+                    downsample_ratio=self.downsample_ratio
+                    # max_context_len=self.vision_config.max_position_embeddings,
+                )
 
+            elif self.vision_config.model_type == "beebee_qwen35moe_vision_model":
+                self.image_encoder = BeeBeeQwen3MoeVisionModel(
+                    self.vision_config,
+                    norm_eps=getattr(self.vision_config, "rms_norm_eps", 1e-6),
+                    quant_config=quant_config,
+                    prefix=add_prefix("image_encoder", prefix),
+                    downsample_ratio=self.downsample_ratio,
+                    use_data_parallel=self.use_data_parallel,
+                    # max_context_len=self.vision_config.max_position_embeddings,
+                )
+
+            else:
+                raise NotImplementedError(f"{self.vision_config.model_type} is not supported yet!")
+
+            self.audio_encoder = BeeBeeAudioEncoder(
+                audio_config=self.audio_config,
+                out_hidden_size=self.text_config.hidden_size,
+            )
         else:
-            raise NotImplementedError(f"{self.vision_config.model_type} is not supported yet!")
-
-  
-        self.audio_encoder = BeeBeeAudioEncoder(
-            audio_config=self.audio_config,
-            out_hidden_size=self.text_config.hidden_size,
-        )
+            self.image_encoder = None
+            self.audio_encoder = None
         
         self.is_mrope_enabled = False
 
@@ -160,6 +167,7 @@ class BeeBeeOmniForConditionalGeneration(nn.Module):
         return pattern.pad_input_tokens(input_ids, mm_inputs)
 
     def get_image_feature(self, items: List[MultimodalDataItem]) -> torch.Tensor:
+        nvtx.range_push("get_image_feature")
         # in qwen-vl, last dim is the same
         pixel_values = torch.cat([item.feature for item in items], dim=0).type(
             self.image_encoder.dtype
@@ -176,22 +184,27 @@ class BeeBeeOmniForConditionalGeneration(nn.Module):
         if pixel_values.dim() == 2:
             current_dim = pixel_values.shape[-1]
             if current_dim == expected_dim:
+                nvtx.range_pop()
                 return pixel_values
             if current_dim != raw_patch_dim:
+                nvtx.range_pop()
                 return pixel_values
 
         assert pixel_values.dim() == 2, pixel_values.dim()
         assert image_grid_thw.dim() == 2, image_grid_thw.dim()
         if self.use_data_parallel:
-            return run_dp_sharded_beebee_vision_model(
-                self.image_encoder, 
-                pixel_values, 
-                image_grid_thw.tolist(), 
-                merge_size=2, 
+            result = run_dp_sharded_beebee_vision_model(
+                self.image_encoder,
+                pixel_values,
+                image_grid_thw.tolist(),
+                merge_size=2,
                 downsample_ratio=self.downsample_ratio
             )
+            nvtx.range_pop()
+            return result
         else:
             image_embeds, _ = self.image_encoder(pixel_values, grid_thw=image_grid_thw)
+        nvtx.range_pop()
         return image_embeds
 
     _lora_pattern = re.compile(
@@ -202,17 +215,19 @@ class BeeBeeOmniForConditionalGeneration(nn.Module):
         return bool(self._lora_pattern.match(module_name))
 
     def get_audio_feature(self, items: List[MultimodalDataItem]) -> torch.Tensor:
+        nvtx.range_push("get_audio_feature")
 
         if self.audio_encoder is None:
             raise ValueError("Audio tokens present but audio_encoder was not initialized.")
 
         if not items:
+            nvtx.range_pop()
             return torch.empty(0, device=self.audio_encoder.device)
 
         all_mel_chunks = []
         all_chunk_lengths = []
         WHISPER_HOP_LENGTH = 320
-        
+
         if self.use_data_parallel:
             items_mel_chunks = []
             items_chunk_lengths = []
@@ -222,11 +237,13 @@ class BeeBeeOmniForConditionalGeneration(nn.Module):
                 items_mel_chunks.append(mel_chunks)
                 items_chunk_lengths.append(chunk_lengths)
 
-            return run_dp_sharded_audio_model(
+            result = run_dp_sharded_audio_model(
                 self.audio_encoder,
                 items_mel_chunks,
                 items_chunk_lengths,
             )
+            nvtx.range_pop()
+            return result
         else:
             all_mel_chunks = []
             all_chunk_lengths = []
@@ -238,6 +255,7 @@ class BeeBeeOmniForConditionalGeneration(nn.Module):
 
             batched_mel_chunks = torch.cat(all_mel_chunks, dim=0)
             chunk_embeds, _ = self.audio_encoder(batched_mel_chunks, all_chunk_lengths)
+            nvtx.range_pop()
             return chunk_embeds
 
 
@@ -286,6 +304,8 @@ class BeeBeeOmniForConditionalGeneration(nn.Module):
                 otherwise it will be `(seq_len,).
                 (Use input_metadata.mrope_positions to replace it)
         """
+        nvtx.range_push("BeeBeeOmni.forward")
+
         if self.is_mrope_enabled:
             positions = forward_batch.mrope_positions
 
@@ -299,6 +319,7 @@ class BeeBeeOmniForConditionalGeneration(nn.Module):
                     f"(3, seq_len) positions, but got {positions.size()}"
                 )
 
+        nvtx.range_push("general_mm_embed_routine")
         hidden_states = general_mm_embed_routine(
             input_ids=input_ids,
             forward_batch=forward_batch,
@@ -307,6 +328,7 @@ class BeeBeeOmniForConditionalGeneration(nn.Module):
             positions=positions,
             pp_proxy_tensors=pp_proxy_tensors,
         )
+        nvtx.range_pop()  # general_mm_embed_routine
 
         aux_hidden_states = None
         if self.capture_aux_hidden_states:
@@ -314,16 +336,23 @@ class BeeBeeOmniForConditionalGeneration(nn.Module):
 
         if self.pp_group.is_last_rank:
             if not get_embedding:
-                return self.logits_processor(
+                nvtx.range_push("logits_processor")
+                result = self.logits_processor(
                     input_ids,
                     hidden_states,
                     self.lm_head,
                     forward_batch,
                     aux_hidden_states,
                 )
+                nvtx.range_pop()  # logits_processor
+                nvtx.range_pop()  # BeeBeeOmni.forward
+                return result
             else:
-                return self.pooler(hidden_states, forward_batch)
+                result = self.pooler(hidden_states, forward_batch)
+                nvtx.range_pop()  # BeeBeeOmni.forward
+                return result
         else:
+            nvtx.range_pop()  # BeeBeeOmni.forward
             return hidden_states
 
 
@@ -352,7 +381,8 @@ class BeeBeeOmniForConditionalGeneration(nn.Module):
         # confusion if the default ever changes.
 
         weights = list(weights)
-        encoder_layers = getattr(self.audio_encoder.encoder, "layers", [])
+        encoder_layers = getattr(self.audio_encoder, "encoder", None)
+        encoder_layers = getattr(encoder_layers, "layers", []) if encoder_layers is not None else []
         for layer_idx in range(len(encoder_layers)):
             k_w_key = f"audio_encoder.layers.{layer_idx}.self_attn.k_proj.weight"
             k_b_key = f"audio_encoder.layers.{layer_idx}.self_attn.k_proj.bias"
@@ -427,7 +457,13 @@ class BeeBeeOmniForConditionalGeneration(nn.Module):
                 weight_loader = getattr(param, "weight_loader", default_weight_loader)
                 weight_loader(param, loaded_weight)
             else:
-                
+                # In encoder_only / language_only mode, weights for the
+                # missing half (LM or encoders) are absent from params_dict.
+                # Silently skip them instead of warning.
+                if getattr(self.config, "encoder_only", False) or getattr(
+                    self.config, "language_only", False
+                ):
+                    continue
                 logger.warning(f"Skipped unmapped safetensor key: {name}")
 
     def get_embed_and_head(self):

@@ -810,6 +810,8 @@ class ServerArgs:
     mm_process_config: Optional[Dict[str, Any]] = None
     limit_mm_data_per_request: Optional[Union[str, Dict[str, int]]] = None
     enable_mm_global_cache: bool = False
+    mm_global_cache_pool_size_gb: float = 4.0
+    mm_global_cache_max_batch_groups: int = 128
 
     # For checkpoint decryption
     decrypted_config_file: Optional[str] = None
@@ -3915,6 +3917,7 @@ class ServerArgs:
             "Qwen2_5OmniForConditionalGeneration",
             "KimiVLForConditionalGeneration",
             "KimiK25ForConditionalGeneration",
+            "BeeBeeOmniForConditionalGeneration",
         ]:
             raise ValueError(
                 f"Model type {model_arch} is not supported for encoder disaggregation, only Qwen models are supported for now."
@@ -5400,6 +5403,7 @@ class ServerArgs:
             type=str,
             choices=[
                 "sdpa",
+                "fa2",
                 "fa3",
                 "fa4",
                 "triton_attn",
@@ -6756,6 +6760,20 @@ class ServerArgs:
             action="store_true",
             default=ServerArgs.enable_mm_global_cache,
             help="Enable global multimodal embedding cache to skip redundant ViT inference.",
+        )
+
+        parser.add_argument(
+            "--mm-global-cache-pool-size-gb",
+            type=float,
+            default=ServerArgs.mm_global_cache_pool_size_gb,
+            help="Size of the pinned memory pool (GB) for the global MM embedding cache. Default: 4.0",
+        )
+
+        parser.add_argument(
+            "--mm-global-cache-max-batch-groups",
+            type=int,
+            default=ServerArgs.mm_global_cache_max_batch_groups,
+            help="Max number of pre-merged batch groups to keep in LRU cache. Default: 128",
         )
 
         # For registering hooks

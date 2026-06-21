@@ -144,7 +144,13 @@ async def beebee_omni_warmup(disaggregation_mode: str, tokenizer_manager):
     img_buffer = io.BytesIO()
     dummy_img.save(img_buffer, format="JPEG")
     img_b64_str = base64.b64encode(img_buffer.getvalue()).decode("utf-8")
-    dummy_image_input = f"data:image/jpeg;base64,{img_b64_str}"
+    dummy_image_input1 = f"data:image/jpeg;base64,{img_b64_str}"
+
+    dummy_img = Image.new("RGB", (1288, 728), (0, 0, 0))
+    img_buffer = io.BytesIO()
+    dummy_img.save(img_buffer, format="JPEG")
+    img_b64_str = base64.b64encode(img_buffer.getvalue()).decode("utf-8")
+    dummy_image_input2 = f"data:image/jpeg;base64,{img_b64_str}"    
 
     audio_buffer = io.BytesIO()
     with wave.open(audio_buffer, 'wb') as wav_file:
@@ -159,7 +165,7 @@ async def beebee_omni_warmup(disaggregation_mode: str, tokenizer_manager):
        
         req_vision = GenerateReqInput(
             text="<image>"*16 + "<audio>"*8 + "请描述这段画面。",
-            image_data=[dummy_image_input]*16,
+            image_data=[dummy_image_input1]*8 + [dummy_image_input2] * 8 ,
             audio_data=[dummy_audio_input]*8,
             sampling_params={"max_new_tokens": 1}
         )

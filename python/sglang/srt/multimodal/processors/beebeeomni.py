@@ -54,6 +54,7 @@ from sglang.srt.utils.cuda_ipc_transport_utils import (
 )
 from sglang.utils import logger
 from sglang.srt.server_args import get_global_server_args
+from sglang.srt.mem_cache.multimodal_cache import EmbeddingResult
 
 # ── Audio constants (Aligned with LightLLM / Whisper) ─────────────
 WHISPER_SAMPLING_RATE = 16000   
@@ -207,6 +208,20 @@ class BeeBeeOmniProcessor(SGLangBaseProcessor):
         except Exception as e:
             logger.warning(f"Failed to load optimized image processor, using default. Error: {e}")
 
+        # Processor-side pixel cache: caches preprocess output (pixel_values)
+        # keyed by raw image hash. Eliminates decode + preprocess for repeated images.
+        from sglang.srt.environ import envs as _envs
+        _cache_mb = _envs.SGLANG_PROCESSOR_CACHE_SIZE_MB.get()
+        if _cache_mb > 0:
+            from sglang.srt.mem_cache.multimodal_cache import MultiModalStaticCache
+            self._pixel_cache = MultiModalStaticCache(_cache_mb * 1024 * 1024)
+            logger.info(f"Processor pixel cache enabled: {_cache_mb}MB")
+        else:
+            self._pixel_cache = None
+
+        self._patch_size = getattr(
+            self._processor.image_processor, "patch_size", 14
+        )
 
     @classmethod
     def _omni_fast_load_task(cls, args):
@@ -414,14 +429,19 @@ class BeeBeeOmniProcessor(SGLangBaseProcessor):
             batch_images = []
             for p in bucket_pairs:
                 batch_images.extend(p["images"])
-            
+            t_pre = time.perf_counter()
             image_outputs = self._processor.image_processor.preprocess(
                 batch_images,
                 return_tensors="pt",
                 patch_reshape_method="torch",
                 **kwargs
             )
-            
+            t_post = time.perf_counter()
+            # logger.info(
+            #     f"Image preprocess: size={size}, "
+            #     f"num_imgs={len(batch_images)}, "
+            #     f"time={(t_post - t_pre)*1000:.2f}ms"
+            # )
             bucket_features = image_outputs.get("pixel_values") # Tensor: [P_total, D]
             bucket_thw = image_outputs.get("grid_thw")         # Tensor: [T_total, 3]
 
@@ -443,7 +463,7 @@ class BeeBeeOmniProcessor(SGLangBaseProcessor):
         hf_ret["pixel_values"] = ordered_pixel_values 
         hf_ret["image_grid_thw"] = torch.cat(ordered_grids, dim=0)
 
-        logger.debug(f"Optimized Image Preprocess cost: {(time.perf_counter() - t_vision_start)*1000:.2f} ms")
+        logger.debug(f"Optimized Image Preprocess cost: {(time.perf_counter() - t_vision_start)*1000:.2f} ms, num_imgs={len(batch_images)}")
 
         return [], None, hf_ret
     
@@ -555,7 +575,384 @@ class BeeBeeOmniProcessor(SGLangBaseProcessor):
             input_text=prompt_str,
         )
 
+    def get_mm_data(self, prompt, embeddings, **kwargs):
+        """EPD path: build MultimodalProcessorOutput from precomputed embeddings.
+
+        Called by encode_receiver after the encoder server has produced
+        embeddings. We need to:
+        1. Compute per-image / per-audio token counts from grid metadata.
+        2. Expand the prompt text with _encode_and_expand_text.
+        3. Slice the flat embedding tensors and wrap them as mm_items.
+        """
+        img_grid_thw = kwargs.get("img_grid_thw", None)
+        audio_feature_lens = kwargs.get("audio_feature_lens", None)
+
+        # ── Image token counts (paired: each grid_thw → 2 <image> tokens) ──
+        image_num_tokens = []
+        if img_grid_thw is not None and len(img_grid_thw) > 0:
+            image_num_tokens = compute_image_num_tokens_dynamic(
+                img_grid_thw, self._spatial_merge_size, self.image_downsample_ratio
+            )
+
+        # ── Audio token counts (one per audio) ──
+        audio_num_tokens = []
+        if audio_feature_lens is not None and len(audio_feature_lens) > 0:
+            audio_num_tokens = [int(x.item()) for x in audio_feature_lens]
+
+        # ── Expand prompt → input_ids with placeholder tokens ──
+        input_ids, offsets, modality_list = self._encode_and_expand_text(
+            prompt, image_num_tokens, audio_num_tokens
+        )
+
+        # ── Build mm_items from precomputed embeddings ──
+        mm_items = []
+        image_offsets = [
+            off for m, off in zip(modality_list, offsets) if m == Modality.IMAGE
+        ]
+        audio_offsets = [
+            off for m, off in zip(modality_list, offsets) if m == Modality.AUDIO
+        ]
+
+        # Image: every 2 consecutive <image> offsets belong to one grid_thw (one pair)
+        if img_grid_thw is not None and len(img_grid_thw) > 0:
+            img_embedding = embeddings.get(Modality.IMAGE)
+            img_consumed = 0
+            for i in range(len(img_grid_thw)):
+                off1 = image_offsets[i * 2]
+                off2 = image_offsets[i * 2 + 1]
+                num_tokens = off2[1] - off1[0] + 1
+                embedding_slice = img_embedding[img_consumed : img_consumed + num_tokens]
+                img_consumed += num_tokens
+                mm_items.append(
+                    MultimodalDataItem(
+                        modality=Modality.IMAGE,
+                        offsets=[(off1[0], off2[1])],
+                        precomputed_embeddings=embedding_slice,
+                    )
+                )
+
+        # Audio: one embedding slice per audio
+        if audio_feature_lens is not None and len(audio_feature_lens) > 0:
+            aud_embedding = embeddings.get(Modality.AUDIO)
+            aud_consumed = 0
+            for i, off in enumerate(audio_offsets):
+                num_tokens = off[1] - off[0] + 1
+                embedding_slice = aud_embedding[aud_consumed : aud_consumed + num_tokens]
+                aud_consumed += num_tokens
+                mm_items.append(
+                    MultimodalDataItem(
+                        modality=Modality.AUDIO,
+                        offsets=[off],
+                        precomputed_embeddings=embedding_slice,
+                    )
+                )
+
+        return MultimodalProcessorOutput(
+            input_ids=input_ids,
+            mm_items=mm_items,
+            im_start_id=None,
+            im_end_id=None,
+            im_token_id=self.image_token_id,
+            video_token_id=None,
+            audio_token_id=self.audio_token_id,
+            mrope_positions=None,
+            mrope_position_delta=None,
+        )
+
+    # ── Processor pixel cache helpers ────────────────────────────────────
+
+    @staticmethod
+    def _hash_raw_data(item) -> int:
+        """Hash raw input data (base64 string / bytes / URL) directly without decoding.
+
+        For base64/bytes: hash as-is (cheap, no decode needed).
+        For URLs: hash the URL string itself (same URL → same content assumption).
+        """
+        import hashlib
+        hasher = hashlib.sha256()
+        if isinstance(item, bytes):
+            hasher.update(item)
+        elif isinstance(item, str):
+            hasher.update(item.encode("utf-8"))
+        else:
+            hasher.update(repr(item).encode("utf-8"))
+        return int.from_bytes(hasher.digest()[:8], byteorder="big", signed=False)
+
+    def _compute_pair_hashes(self, image_data: List) -> List[int]:
+        """Compute pair-wise hashes directly from raw image_data (no decode).
+
+        Assumes len(image_data) is even (padding done at entry).
+        """
+        import hashlib
+
+        pair_hashes = []
+        for i in range(0, len(image_data), 2):
+            hasher = hashlib.sha256()
+            item0, item1 = image_data[i], image_data[i + 1]
+            if isinstance(item0, bytes):
+                hasher.update(item0)
+            else:
+                hasher.update(str(item0).encode("utf-8"))
+            if isinstance(item1, bytes):
+                hasher.update(item1)
+            else:
+                hasher.update(str(item1).encode("utf-8"))
+            pair_hashes.append(
+                int.from_bytes(hasher.digest()[:8], byteorder="big", signed=False)
+            )
+        return pair_hashes
+
+    def _compute_audio_hashes(self, audio_data: List) -> List[int]:
+        """Compute per-audio hashes directly from raw audio_data (no decode)."""
+        return [self._hash_raw_data(item) for item in audio_data]
+
+    # ── Cached version of process_mm_data_async ──────────────────────────
+
     async def process_mm_data_async(
+        self,
+        image_data: List[Union[str, bytes]],
+        audio_data: List[Union[str, bytes]],
+        input_text,
+        request_obj,
+        *args,
+        **kwargs,
+    ) -> Dict:
+        """Multimodal processor with pixel cache.
+
+        Pipeline:
+          1. Hash raw data + cache lookup (no decode, instant)
+          2. For misses: parallel load (fast_load_image_to_numpy / audio load)
+          3. Parallel compute (image preprocess || audio process)
+        """
+        t0 = time.perf_counter()
+        loop = asyncio.get_running_loop()
+
+        # ═══ Front-load Batch Padding ═══
+        if image_data and len(image_data) % 2 != 0:
+            image_data = list(image_data) + [image_data[-1]]
+
+        # ══════════════════════════════════════════════════════════════════
+        # STAGE 1: Hash + cache lookup (no decode, pure CPU, < 2ms)
+        # ══════════════════════════════════════════════════════════════════
+        pixel_values_list = None
+        image_grid_thw = None
+        pair_hashes = None
+        image_num_tokens = []
+        img_miss_pair_indices = []
+        img_hit_pixels = {}
+        img_hit_grids = {}
+
+        if image_data:
+            t_hash_start = time.perf_counter()
+            pair_hashes = self._compute_pair_hashes(image_data)
+            for i, h in enumerate(pair_hashes):
+                cached = self._pixel_cache.get_single(h)
+                if cached is not None:
+                    img_hit_pixels[i] = cached.embedding
+                    img_hit_grids[i] = cached.grid_thw
+                else:
+                    img_miss_pair_indices.append(i)
+            t_hash_end = time.perf_counter()
+
+            num_pairs = len(pair_hashes)
+            logger.info(
+                f"[PIXEL CACHE] {num_pairs} image pairs: "
+                f"{num_pairs - len(img_miss_pair_indices)} hits, "
+                f"{len(img_miss_pair_indices)} misses, "
+                f"hash+lookup={( t_hash_end - t_hash_start)*1000:.2f}ms"
+            )
+
+        audio_num_tokens = []
+        mel_list = []
+        raw_waveform_lengths = []
+        audio_hashes = None
+        aud_miss_indices = []
+        aud_hit = {}
+
+        if audio_data:
+            audio_hashes = self._compute_audio_hashes(audio_data)
+            for i, h in enumerate(audio_hashes):
+                cached = self._pixel_cache.get_single(h)
+                if cached is not None:
+                    aud_hit[i] = (cached.embedding, getattr(cached, "chunk_lens", None))
+                else:
+                    aud_miss_indices.append(i)
+
+            logger.info(
+                f"[AUDIO CACHE] {len(audio_hashes)} audios: "
+                f"{len(audio_hashes) - len(aud_miss_indices)} hits, "
+                f"{len(aud_miss_indices)} misses"
+            )
+
+        # ══════════════════════════════════════════════════════════════════
+        # STAGE 2: Parallel load misses (reuse load_mm_data's io_executor.map)
+        #   load_mm_data internally uses _omni_fast_load_task with thread pool
+        #   for both images (fast_load_image_to_numpy) and audios (_load_single_item)
+        # ══════════════════════════════════════════════════════════════════
+        t_load_start = time.perf_counter()
+        miss_images = None
+        miss_audios = None
+
+        # Build miss-only data lists
+        miss_img_data = []
+        if img_miss_pair_indices:
+            for idx in img_miss_pair_indices:
+                i = idx * 2
+                miss_img_data.append(image_data[i])
+                miss_img_data.append(image_data[i + 1])
+
+        miss_aud_data = [audio_data[i] for i in aud_miss_indices] if aud_miss_indices else []
+
+        # Single load_mm_data call handles both modalities with internal parallelism
+        if miss_img_data or miss_aud_data:
+            def _load_misses():
+                return self.load_mm_data(
+                    prompt=input_text,
+                    image_data=miss_img_data or None,
+                    audio_data=miss_aud_data or None,
+                    multimodal_tokens=self.mm_tokens,
+                )
+
+            base_output = await loop.run_in_executor(self.io_executor, _load_misses)
+            miss_images = base_output.images if base_output.images else None
+            miss_audios = base_output.audios if base_output.audios else None
+
+        t_load_end = time.perf_counter()
+
+        # ══════════════════════════════════════════════════════════════════
+        # STAGE 3: Parallel compute (image preprocess || audio process)
+        # ══════════════════════════════════════════════════════════════════
+        def _process_images():
+            if miss_images:
+                _, _, ret = self._process_and_collect_mm_items(images=miss_images)
+                return ret
+            return None
+
+        def _process_audios():
+            if miss_audios:
+                return self._process_audio_data(miss_audios)
+            return None
+
+        image_task = loop.run_in_executor(self.io_executor, _process_images)
+        audio_task = loop.run_in_executor(self.io_executor, _process_audios)
+        img_result, aud_result = await asyncio.gather(image_task, audio_task)
+
+        t_compute_end = time.perf_counter()
+
+        # ── Store image misses in cache ──
+        if img_result is not None:
+            miss_pvs = img_result["pixel_values"]
+            miss_grid_thw = img_result["image_grid_thw"]
+            for i, idx in enumerate(img_miss_pair_indices):
+                pv = miss_pvs[i]
+                grid = miss_grid_thw[i]
+                entry = EmbeddingResult(embedding=pv)
+                entry.grid_thw = grid
+                self._pixel_cache.set(pair_hashes[idx], entry)
+                img_hit_pixels[idx] = pv
+                img_hit_grids[idx] = grid
+
+        # ── Store audio misses in cache ──
+        if aud_result is not None:
+            miss_mels, miss_chunk_lens = aud_result
+            for i, idx in enumerate(aud_miss_indices):
+                mel = miss_mels[i]
+                chunk_lens = miss_chunk_lens[i]
+                entry = EmbeddingResult(embedding=mel)
+                entry.chunk_lens = chunk_lens
+                self._pixel_cache.set(audio_hashes[idx], entry)
+                aud_hit[idx] = (mel, chunk_lens)
+
+        if img_miss_pair_indices or aud_miss_indices:
+            logger.info(
+                f"[CACHE] miss: img={len(img_miss_pair_indices)} pairs, "
+                f"aud={len(aud_miss_indices)} items, "
+                f"load={( t_load_end - t_load_start)*1000:.2f}ms, "
+                f"compute={( t_compute_end - t_load_end)*1000:.2f}ms, "
+                f"total time={( t_compute_end - t_load_start)*1000:.2f}ms",
+            )
+
+        # ══════════════════════════════════════════════════════════════════
+        # Assemble results
+        # ══════════════════════════════════════════════════════════════════
+        if image_data:
+            num_pairs = len(pair_hashes)
+            pixel_values_list = [img_hit_pixels[i] for i in range(num_pairs)]
+            image_grid_thw = torch.stack([img_hit_grids[i] for i in range(num_pairs)])
+            image_num_tokens = compute_image_num_tokens_dynamic(
+                image_grid_thw, self._spatial_merge_size, self.image_downsample_ratio
+            )
+
+        if audio_data:
+            for i in range(len(audio_hashes)):
+                mel, chunk_lens = aud_hit[i]
+                mel_list.append(mel)
+                raw_waveform_lengths.append(chunk_lens)
+            audio_num_tokens = compute_audio_num_tokens(
+                raw_waveform_lengths, self.audio_frame_length, self.audio_downsample_ratio
+            )
+
+        # === Build token sequence and mm_items ===
+        expanded_ids, offsets, modality_list = self._encode_and_expand_text(
+            input_text, image_num_tokens, audio_num_tokens
+        )
+
+        mm_items: List[MultimodalDataItem] = []
+        image_offsets = [
+            off for m, off in zip(modality_list, offsets) if m == Modality.IMAGE
+        ]
+        audio_offsets = [
+            off for m, off in zip(modality_list, offsets) if m == Modality.AUDIO
+        ]
+
+        if image_grid_thw is not None and len(image_grid_thw) > 0:
+            for i in range(len(image_grid_thw)):
+                thw = image_grid_thw[i].unsqueeze(0)
+                off1 = image_offsets[i * 2]
+                off2 = image_offsets[i * 2 + 1]
+                new_offset = (off1[0], off2[1])
+                feat = pixel_values_list[i] if pixel_values_list is not None else None
+
+                mm_items.append(MultimodalDataItem(
+                    modality=Modality.IMAGE,
+                    offsets=[new_offset],
+                    feature=feat,
+                    hash=pair_hashes[i],
+                    model_specific_data={"image_grid_thw": thw},
+                ))
+
+        for i, mel in enumerate(mel_list):
+            lengths = raw_waveform_lengths[i]
+            off = audio_offsets[i]
+            mm_items.append(MultimodalDataItem(
+                modality=Modality.AUDIO,
+                offsets=[off],
+                feature=mel,
+                hash=audio_hashes[i] if audio_hashes else None,
+                model_specific_data={"audio_length": lengths},
+            ))
+
+        mm_items = self._apply_cuda_ipc_protection(mm_items)
+
+        t_total = time.perf_counter() - t0
+        logger.info(
+            f"[BeeBeeLlavaProcessor] process_mm_data_async: "
+            f"{1e3*t_total:.1f}ms total"
+        )
+
+        return MultimodalProcessorOutput(
+            input_ids=expanded_ids,
+            mm_items=mm_items,
+            im_start_id=None,
+            im_end_id=None,
+            im_token_id=self.image_token_id,
+            video_token_id=None,
+            audio_token_id=self.audio_token_id,
+            mrope_positions=None,
+            mrope_position_delta=None,
+        )
+
+    async def process_mm_data_async_origin(
         self,
         image_data: List[Union[str, bytes]],
         audio_data: List[Union[str, bytes]],

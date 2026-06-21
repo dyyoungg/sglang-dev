@@ -5,6 +5,7 @@ from functools import partial, lru_cache
 from typing import  List, Optional, Tuple, Type, Callable
 
 import torch
+import torch.cuda.nvtx as nvtx
 import torch.nn as nn
 import torch.nn.functional as F
 import math
@@ -157,6 +158,7 @@ class Qwen2_5_VisionBlock(nn.Module):
         hidden_states = self.norm1(x2d).reshape(S, B, H)
 
         # Attention expects [B, S, H]
+        nvtx.range_push("vit_attn")
         hidden_states = rearrange(hidden_states, "s b h -> b s h")
         attn = self.attn(
             hidden_states,
@@ -165,6 +167,7 @@ class Qwen2_5_VisionBlock(nn.Module):
             output_ws=output_ws,
         )
         attn = rearrange(attn, "b s h -> s b h")
+        nvtx.range_pop()  # vit_attn
 
         # norm2 with fused residual-add: also 2D
         attn2d = attn.reshape(-1, H)
@@ -173,7 +176,9 @@ class Qwen2_5_VisionBlock(nn.Module):
         x_after_add = x_after_add_2d.reshape(S, B, H)
 
         # MLP and final residual
+        nvtx.range_push("vit_mlp")
         mlp_out = self.mlp(x_norm)
+        nvtx.range_pop()  # vit_mlp
         x = x_after_add + mlp_out
         return x
 
@@ -252,7 +257,7 @@ class DynamicAvgPoolProjector(nn.Module):
             images_feature: [N_merged_patches, encoder_hidden]
             images_thw: [n_images, 3] -> (t, h_merged, w_merged)
         """
-    
+        nvtx.range_push("DynamicAvgPoolProjector.forward")
         outputs = []
         seq_len_list: List[int] = []
         start = 0
@@ -287,6 +292,7 @@ class DynamicAvgPoolProjector(nn.Module):
         hidden_states = mlp_act(hidden_states)
         hidden_states, _ = mlp_fc2(hidden_states)
 
+        nvtx.range_pop()  # DynamicAvgPoolProjector.forward
         return hidden_states, seq_len_list
 
 class BeeBeeQwen25VisionModel(nn.Module, RotaryPosMixin):
@@ -438,15 +444,22 @@ class BeeBeeQwen25VisionModel(nn.Module, RotaryPosMixin):
         x: torch.Tensor,
         grid_thw: torch.Tensor,
     ) -> torch.Tensor:
+        nvtx.range_push("Qwen25VisionModel.forward")
         if self.enable_cg:
-            return self.forward_with_cuda_graph(x, grid_thw)
+            result = self.forward_with_cuda_graph(x, grid_thw)
+            nvtx.range_pop()
+            return result
 
         # patchify
+        nvtx.range_push("vision_patch_embed")
         x = x.to(device=self.device, dtype=self.dtype)
         x = self.patch_embed(x)
+        nvtx.range_pop()  # vision_patch_embed
 
         # compute position embedding
+        nvtx.range_push("vision_rotary_pos_emb")
         rotary_pos_emb = self.rot_pos_emb(grid_thw)
+        nvtx.range_pop()  # vision_rotary_pos_emb
 
         window_index, cu_window_seqlens = self.get_window_index(grid_thw)
         cu_window_seqlens = torch.tensor(
@@ -481,9 +494,9 @@ class BeeBeeQwen25VisionModel(nn.Module, RotaryPosMixin):
             position_embeddings[1].to(x.device, x.dtype),
         )
 
-       
+
         cu_seqlens = torch.repeat_interleave(
-            grid_thw[:, 1] * grid_thw[:, 2], 
+            grid_thw[:, 1] * grid_thw[:, 2],
             grid_thw[:, 0]
         ).cumsum(dim=0).to(device=x.device, dtype=torch.int32)
         cu_seqlens = torch.cat([cu_seqlens.new_zeros(1), cu_seqlens])
@@ -493,6 +506,7 @@ class BeeBeeQwen25VisionModel(nn.Module, RotaryPosMixin):
             cu_seqlens = cu_seqlens.to("cpu")
             cu_window_seqlens = cu_window_seqlens.to("cpu")
         # transformers
+        nvtx.range_push("vision_transformer_blocks")
         x = x.unsqueeze(1)
         for layer_num, blk in enumerate(self.blocks):
             fullatt_indexes = self.fullatt_block_indexes
@@ -500,20 +514,30 @@ class BeeBeeQwen25VisionModel(nn.Module, RotaryPosMixin):
                 fullatt_indexes = fullatt_indexes.tolist()
             if layer_num in fullatt_indexes:
                 cu_seqlens_now = cu_seqlens
+                nvtx.range_push(f"vit_block_{layer_num}_fullatt")
             else:
                 cu_seqlens_now = cu_window_seqlens
+                nvtx.range_push(f"vit_block_{layer_num}_winatt")
             x = blk(
                 x, cu_seqlens=cu_seqlens_now, position_embeddings=position_embeddings
             )
+            nvtx.range_pop()  # vit_block_N
+        nvtx.range_pop()  # vision_transformer_blocks
 
         # adapter
+        nvtx.range_push("vision_merger")
         x = self.merger(x)
         x = x[reverse_indices, :]
+        nvtx.range_pop()  # vision_merger
 
+        nvtx.range_push("vision_mm_projector")
         proj_thw = grid_thw.clone()
         proj_thw[:, 1] = grid_thw[:, 1] // self.spatial_merge_size
         proj_thw[:, 2] = grid_thw[:, 2] // self.spatial_merge_size
         features, seq_lens = self.mm_projector(x, proj_thw)
+        nvtx.range_pop()  # vision_mm_projector
+
+        nvtx.range_pop()  # Qwen25VisionModel.forward
         return features, seq_lens
 
     def forward_with_cuda_graph(
@@ -572,9 +596,7 @@ class BeeBeeQwen25VisionModel(nn.Module, RotaryPosMixin):
                 .to(device=x.device, dtype=torch.int32),
             ]
         )
-        cu_seqlens = torch.cat([cu_seqlens.new_zeros(1), cu_seqlens])
 
-       
         x = self.cuda_graph_runner.run(
                 x=x,
                 position_embeddings=position_embeddings,
@@ -722,6 +744,7 @@ class Qwen3_VisionBlock(nn.Module):
         sequence_lengths: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         hidden_states = self.norm1(x)
+        nvtx.range_push("moe_vit_attn")
         hidden_states = rearrange(hidden_states, "s b ... -> b s ...")
         attn = self.attn(
             hidden_states,
@@ -733,9 +756,12 @@ class Qwen3_VisionBlock(nn.Module):
             sequence_lengths=sequence_lengths,
         )
         attn = rearrange(attn, "b s ... -> s b ...")
+        nvtx.range_pop()  # moe_vit_attn
         x += attn
         norm2 = self.norm2(x)
+        nvtx.range_push("moe_vit_mlp")
         mlp = self.mlp(norm2)
+        nvtx.range_pop()  # moe_vit_mlp
         x += mlp
         return x
     
@@ -1259,28 +1285,39 @@ class BeeBeeQwen3MoeVisionModel(nn.Module, RotaryPosMixin):
         x: torch.Tensor,
         grid_thw: torch.Tensor,
     ) -> torch.Tensor:
+        nvtx.range_push("Qwen3MoeVisionModel.forward")
         if self.enable_cg:
-            return self.forward_with_cuda_graph(x, grid_thw)
+            result = self.forward_with_cuda_graph(x, grid_thw)
+            nvtx.range_pop()
+            return result
 
         # patchify
+        nvtx.range_push("moe_vision_patch_embed")
         x = x.to(device=self.device, dtype=self.dtype)
         x = self.patch_embed(x)
+        nvtx.range_pop()  # moe_vision_patch_embed
 
+        nvtx.range_push("moe_vision_pos_embed")
         grid_thw_list = grid_thw.tolist()
-      
         pos_embeds = self.fast_pos_embed_interpolate_from_list(grid_thw_list)
         x += pos_embeds
+        nvtx.range_pop()  # moe_vision_pos_embed
+
+        nvtx.range_push("moe_vision_rotary_pos_emb")
         rotary_pos_emb_cos, rotary_pos_emb_sin = self.rot_pos_emb(grid_thw_list)
+        nvtx.range_pop()  # moe_vision_rotary_pos_emb
 
         cu_seqlens = torch.repeat_interleave(
             grid_thw[:, 1] * grid_thw[:, 2], grid_thw[:, 0]
         ).cumsum(dim=0).to(device=x.device, dtype=torch.int32)
 
         cu_seqlens = torch.cat([cu_seqlens.new_zeros(1), cu_seqlens])
-        
+
+        nvtx.range_push("moe_vision_transformer_blocks")
         x = x.unsqueeze(1)
 
         for layer_num, blk in enumerate(self.blocks):
+            nvtx.range_push(f"moe_vit_block_{layer_num}")
             x = blk(
                 x,
                 cu_seqlens=cu_seqlens,
@@ -1289,11 +1326,19 @@ class BeeBeeQwen3MoeVisionModel(nn.Module, RotaryPosMixin):
                 max_seqlen=None,
                 sequence_lengths=None,
             )
+            nvtx.range_pop()  # moe_vit_block_N
+        nvtx.range_pop()  # moe_vision_transformer_blocks
 
+        nvtx.range_push("moe_vision_merger")
         x = self.merger(x)
+        nvtx.range_pop()  # moe_vision_merger
+
+        nvtx.range_push("moe_vision_mm_projector")
         proj_thw = grid_thw.clone()
         proj_thw[:, 1] = grid_thw[:, 1] // self.spatial_merge_size
         proj_thw[:, 2] = grid_thw[:, 2] // self.spatial_merge_size
         features, seq_lens = self.mm_projector(x, proj_thw)
-       
+        nvtx.range_pop()  # moe_vision_mm_projector
+
+        nvtx.range_pop()  # Qwen3MoeVisionModel.forward
         return features, seq_lens

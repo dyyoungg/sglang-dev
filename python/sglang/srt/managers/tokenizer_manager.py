@@ -258,6 +258,11 @@ class TokenizerManager(TokenizerControlMixin, TokenizerManagerScoreMixin):
         # Init request dispatcher
         self.init_request_dispatcher()
 
+        # Init thread pool for parallel mm processing (hash precomputation + shm wrapping)
+        from concurrent.futures import ThreadPoolExecutor
+
+        self._mm_thread_pool = ThreadPoolExecutor(max_workers=8)
+
     def init_model_config(self):
         server_args = self.server_args
         model_config_class = getattr(self, "model_config_class", ModelConfig)
@@ -514,6 +519,8 @@ class TokenizerManager(TokenizerControlMixin, TokenizerManagerScoreMixin):
         obj: Union[GenerateReqInput, EmbeddingReqInput],
         request: Optional[fastapi.Request] = None,
     ):
+        import time as _time
+        _t_gen_start = _time.time()
         self.auto_create_handle_loop()
 
         # Normalize the request
@@ -548,8 +555,17 @@ class TokenizerManager(TokenizerControlMixin, TokenizerManagerScoreMixin):
 
             # Tokenize the request and send it to the scheduler
             if obj.is_single:
+                _t_tok_start = _time.time()
                 tokenized_obj = await self._tokenize_one_request(obj)
+                _t_tok_end = _time.time()
                 self._send_one_request(tokenized_obj)
+                _t_send_end = _time.time()
+                logger.info(
+                    f"[TIMING] generate_request rid={getattr(obj, 'rid', '?')}: "
+                    f"total={(_t_send_end - _t_gen_start)*1000:.1f}ms, "
+                    f"tokenize={(_t_tok_end - _t_tok_start)*1000:.1f}ms, "
+                    f"send={(_t_send_end - _t_tok_end)*1000:.1f}ms"
+                )
                 async for response in self._wait_one_response(obj, request):
                     yield response
             else:
@@ -700,6 +716,7 @@ class TokenizerManager(TokenizerControlMixin, TokenizerManagerScoreMixin):
     ):
         """Tokenize one request."""
         # Tokenize
+        import time as _time
         input_embeds = None
         input_text = obj.text
         token_type_ids = None
@@ -745,6 +762,9 @@ class TokenizerManager(TokenizerControlMixin, TokenizerManagerScoreMixin):
         )
 
         if should_run_mm_processor:
+            _num_images = len(obj.image_data) if obj.image_data else 0
+            _num_audios = len(obj.audio_data) if obj.audio_data else 0
+            _t_mm_start = _time.time()
             if obj.image_data is not None and not isinstance(obj.image_data, list):
                 obj.image_data = [obj.image_data]
             if obj.video_data is not None and not isinstance(obj.video_data, list):
@@ -790,7 +810,16 @@ class TokenizerManager(TokenizerControlMixin, TokenizerManagerScoreMixin):
                     request_obj=obj,
                     max_req_input_len=self.max_req_input_len,
                 )
-
+        
+            _t_mm_end = _time.time()
+            _num_images = len(obj.image_data) if obj.image_data else 0
+            _num_audios = len(obj.audio_data) if obj.audio_data else 0
+            logger.info(
+                f"[TIMING] _tokenize_one_request mm_process: "
+                f"{(_t_mm_end - _t_mm_start)*1000:.1f}ms "
+                f"(images={_num_images}, audios={_num_audios})"
+            )
+            
             if mm_inputs and mm_inputs.input_ids is not None:
                 input_ids = mm_inputs.input_ids
             if mm_inputs and mm_inputs.token_type_ids is not None:
@@ -802,16 +831,26 @@ class TokenizerManager(TokenizerControlMixin, TokenizerManagerScoreMixin):
                 and mm_inputs
                 and mm_inputs.mm_items
             ):
-                for item in mm_inputs.mm_items:
-                    if isinstance(item, MultimodalDataItem):
-                        item.set_pad_value()
+                mm_items_to_hash = [
+                    item
+                    for item in mm_inputs.mm_items
+                    if isinstance(item, MultimodalDataItem)
+                ]
+                if mm_items_to_hash:
+                    list(
+                        self._mm_thread_pool.map(
+                            lambda item: item.set_pad_value(),
+                            mm_items_to_hash,
+                        )
+                    )
         else:
             mm_inputs = None
-
+       
         self._validate_one_request(obj, input_ids)
-        return self._create_tokenized_object(
+        result = self._create_tokenized_object(
             obj, input_text, input_ids, input_embeds, mm_inputs, token_type_ids
         )
+        return result
 
     def _validate_one_request(
         self, obj: Union[GenerateReqInput, EmbeddingReqInput], input_ids: List[int]
@@ -1172,10 +1211,20 @@ class TokenizerManager(TokenizerControlMixin, TokenizerManagerScoreMixin):
         self,
         tokenized_obj: Union[TokenizedGenerateReqInput, TokenizedEmbeddingReqInput],
     ):
+        import time as _time
+        _t0 = _time.time()
         tokenized_obj.time_stats.set_api_server_dispatch_time()
         tokenized_obj = wrap_shm_features(tokenized_obj)
+        _t1 = _time.time()
         self.send_to_scheduler.send_pyobj(tokenized_obj)
+        _t2 = _time.time()
         tokenized_obj.time_stats.set_api_server_dispatch_finish_time()
+        if (_t2 - _t0) > 0.005:  # Only log if > 5ms
+            logger.info(
+                f"[TIMING] _send_one_request rid={tokenized_obj.rid}: "
+                f"wrap_shm={(_t1 - _t0)*1000:.1f}ms, "
+                f"send_pyobj={(_t2 - _t1)*1000:.1f}ms"
+            )
 
     def _send_batch_request(
         self,

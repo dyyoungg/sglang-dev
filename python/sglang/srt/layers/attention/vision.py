@@ -730,9 +730,56 @@ class VisionAscendAttention(nn.Module):
         return output
 
 
+class VisionFlash2Attention(nn.Module):
+    """
+    Flash Attention 2 backend for vision attention.
+    Uses flash_attn package directly (works on SM80+ / A100).
+    """
+
+    def __init__(self, **kwargs):
+        super().__init__()
+        use_data_parallel = kwargs.get("use_data_parallel", False)
+        self.tp_size = 1 if use_data_parallel else get_attention_tp_size()
+
+    def forward(
+        self,
+        q: torch.Tensor,
+        k: torch.Tensor,
+        v: torch.Tensor,
+        cu_seqlens: torch.Tensor | SingletonCache | None,
+        bsz: int,
+        seq_len: int,
+        softmax_scale: Optional[float] = None,
+        **kwargs,
+    ) -> torch.Tensor:
+        from flash_attn import flash_attn_varlen_func as _fa2_varlen_func
+
+        window_size = kwargs.get("window_size", (-1, -1))
+
+        cu_seqlens = resolve_seqlens(cu_seqlens, bsz, seq_len, device=q.device)
+        cu_seqlens = cu_seqlens.to(dtype=torch.int32, device=q.device)
+        seq_lens = cu_seqlens[1:] - cu_seqlens[:-1]
+        max_seqlen = seq_lens.max().item()
+
+        output = _fa2_varlen_func(
+            q,
+            k,
+            v,
+            cu_seqlens_q=cu_seqlens,
+            cu_seqlens_k=cu_seqlens,
+            max_seqlen_q=max_seqlen,
+            max_seqlen_k=max_seqlen,
+            softmax_scale=softmax_scale,
+            causal=False,
+            window_size=window_size,
+        )
+        return output
+
+
 QKV_BACKEND_IMPL = {
     "triton_attn": VisionTritonAttention,
     "sdpa": VisionSdpaAttention,
+    "fa2": VisionFlash2Attention,
     "fa3": VisionFlash3Attention,
     "fa4": VisionFlash4Attention,
     "flashinfer_cudnn": VisionFlashInferAttention,

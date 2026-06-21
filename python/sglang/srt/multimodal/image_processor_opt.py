@@ -24,6 +24,12 @@ from transformers.image_processing_utils import BatchFeature, get_size_dict
 from transformers.image_transforms import convert_to_rgb
 
 ne.set_num_threads(min(os.cpu_count() // 4, 16))  # 动态计算线程数
+_numexpr_override = os.environ.get("SGLANG_NUMEXPR_NUM_THREADS")
+if _numexpr_override is not None:
+    ne.set_num_threads(int(_numexpr_override))
+
+_IMG_PREPROCESS_BACKEND = os.environ.get("SGLANG_IMG_PREPROCESS_BACKEND", "numexpr").lower()
+_IMG_TORCH_THREADS = os.environ.get("SGLANG_IMG_TORCH_THREADS")
 
 
 def batch_center_crop(
@@ -308,6 +314,129 @@ class OpimizedCLIPImageProcessor(CLIPImageProcessor):
 
         return BatchFeature(data=data, tensor_type=return_tensors)
 
+    def _get_torch_fused_scale_bias(
+        self,
+        do_rescale: bool,
+        rescale_factor: float,
+        do_normalize: bool,
+        image_mean,
+        image_std,
+    ):
+        """融合 rescale+normalize 为单次 `t * scale - bias`(原地)。
+
+        out = (image * rescale_factor - mean) / std
+            = image * (rescale_factor / std) - (mean / std)
+        缓存小 tensor,避免每次重建。
+        """
+        key = (
+            bool(do_rescale),
+            bool(do_normalize),
+            tuple(float(x) for x in image_mean),
+            tuple(float(x) for x in image_std),
+            float(rescale_factor),
+        )
+        cached = self._torch_fused_cache.get(key)
+        if cached is not None:
+            return cached
+
+        mean = torch.tensor(image_mean, dtype=torch.float32)
+        std = torch.tensor(image_std, dtype=torch.float32)
+        if do_rescale and do_normalize:
+            scale = (float(rescale_factor) / std).view(1, -1, 1, 1)
+            bias = (mean / std).view(1, -1, 1, 1)
+        elif do_normalize:
+            scale = (1.0 / std).view(1, -1, 1, 1)
+            bias = (mean / std).view(1, -1, 1, 1)
+        elif do_rescale:
+            scale = torch.tensor(float(rescale_factor), dtype=torch.float32)
+            bias = None
+        else:
+            scale = None
+            bias = None
+        self._torch_fused_cache[key] = (scale, bias)
+        return scale, bias
+
+    def _preprocess_torch_fused(
+        self,
+        images,
+        do_center_crop,
+        crop_size,
+        do_rescale,
+        rescale_factor,
+        do_normalize,
+        image_mean,
+        image_std,
+        return_tensors,
+        patch_reshape_method,
+    ):
+        """numpy stack + torch(cast+normalize fused) + torch patch。
+
+        与 numexpr 路径等价, 但 normalize 用 torch 替代 numexpr:
+        - numexpr: ne.evaluate 读 strided uint8 → 输出连续 float32 (~18ms)
+        - torch:   from_numpy(strided).float() → 连续 float32, 再原地 mul/sub (~12ms)
+        patch extraction 用 torch (输入已连续, fast_patch_extraction_torch)。
+        """
+        import time as _time
+        t_start = _time.perf_counter()
+
+        # ── numpy stack: [N, H, W, C] uint8, 连续 ──
+        arr = np.stack(images)
+        t_stack = _time.perf_counter()
+
+        # ── transpose 为 NCHW (仅 view, 非连续, 0ms) ──
+        if arr.shape[-1] in (1, 3, 4):
+            H, W = int(arr.shape[1]), int(arr.shape[2])
+            arr = np.transpose(arr, (0, 3, 1, 2))
+        else:
+            H, W = int(arr.shape[2]), int(arr.shape[3])
+
+        # ── cast: 读非连续 uint8 → 写连续 NCHW float32 (一次 kernel) ──
+        # from_numpy 零拷贝 view strided uint8, .float() 产出连续 float32
+        t = torch.from_numpy(arr).float()
+        t_float = _time.perf_counter()
+
+        # ── 融合 rescale + normalize (原地, 连续内存上跑, 快) ──
+        scale, bias = self._get_torch_fused_scale_bias(
+            do_rescale, rescale_factor, do_normalize, image_mean, image_std
+        )
+        if scale is not None:
+            t.mul_(scale)
+            if bias is not None:
+                t.sub_(bias)
+        t_norm = _time.perf_counter()
+
+        # ── temporal 偶数对齐 ──
+        if t.shape[0] % 2 == 1:
+            t = torch.cat([t, t[-1:]], dim=0)
+
+        # ── patch extraction (输入是连续 torch tensor) ──
+        flatten_patches = fast_patch_extraction_torch(
+            t, self.temporal_patch_size, self.patch_size, self.merge_size
+        )
+
+        # ── 转 float16: 模型端第一步就 .to(dtype) 转半精度, 提前转可以:
+        #    1. shm 传输量减半 (270MB → 135MB, wrap_shm 从 ~41ms → ~20ms)
+        #    2. 模型端少一次 dtype cast
+        flatten_patches = flatten_patches.to(torch.float16)
+        t_patch = _time.perf_counter()
+
+        grid_t = t.shape[0] // self.temporal_patch_size
+        grid_h, grid_w = H // self.patch_size, W // self.patch_size
+        grid_thw = torch.tensor([[grid_t, grid_h, grid_w]], dtype=torch.long)
+
+        print(
+            f"[IMAGE PROCESSOR TIMING][torch] num_images={t.shape[0]}, "
+            f"shape={tuple(t.shape)}, "
+            f"stack={(t_stack - t_start)*1000:.2f}ms, "
+            f"float={(t_float - t_stack)*1000:.2f}ms, "
+            f"normalize={(t_norm - t_float)*1000:.2f}ms, "
+            f"patch+f16={(t_patch - t_norm)*1000:.2f}ms, "
+            f"TOTAL={(t_patch - t_start)*1000:.2f}ms"
+        )
+
+        data = {"pixel_values": flatten_patches, "grid_thw": grid_thw}
+        return BatchFeature(data=data, tensor_type=return_tensors)
+
 
 def get_image_size(image: np.ndarray, channel_dim: ChannelDimension = None) -> tuple[int, int]:
     """
@@ -426,6 +555,15 @@ class Qwen25VLImageProcessorOptimized(OpimizedCLIPImageProcessor):
         self.merge_size = merge_size
         self.size = {"min_pixels": min_pixels, "max_pixels": max_pixels}
 
+        # torch-fused preprocess backend (env-gated, default off → original numexpr path)
+        self._preprocess_backend = _IMG_PREPROCESS_BACKEND
+        self._torch_fused_cache: dict = {}
+        if self._preprocess_backend == "torch" and _IMG_TORCH_THREADS is not None:
+            try:
+                torch.set_num_threads(int(_IMG_TORCH_THREADS))
+            except Exception:
+                pass
+
     def preprocess(
         self,
         images,
@@ -446,6 +584,9 @@ class Qwen25VLImageProcessorOptimized(OpimizedCLIPImageProcessor):
         patch_reshape_method="numpy",
         **kwargs,
     ):
+        import time as _time
+        t_start = _time.perf_counter()
+
         do_resize = do_resize if do_resize is not None else self.do_resize
         size = size if size is not None else self.size
         resample = resample if resample is not None else self.resample
@@ -484,10 +625,38 @@ class Qwen25VLImageProcessorOptimized(OpimizedCLIPImageProcessor):
             resample=resample,
         )
 
+        # ── torch-fused fast path (env-gated, numpy uint8 input only) ──
+        # 失败/不支持时返回 None,自动回退到下方原始 numexpr 路径,原逻辑完全不动。
+        if (
+            self._preprocess_backend == "torch"
+            and images
+            and all(isinstance(im, np.ndarray) for im in images)
+        ):
+            torch_ret = self._preprocess_torch_fused(
+                images=images,
+                do_center_crop=do_center_crop,
+                crop_size=crop_size,
+                do_rescale=do_rescale,
+                rescale_factor=rescale_factor,
+                do_normalize=do_normalize,
+                image_mean=image_mean,
+                image_std=image_std,
+                return_tensors=return_tensors,
+                patch_reshape_method=patch_reshape_method,
+            )
+            if torch_ret is not None:
+                return torch_ret
+
+        t_validate = _time.perf_counter()
+
         if do_convert_rgb:
             images = [convert_to_rgb(image) for image in images]
 
+        t_convert_rgb = _time.perf_counter()
+
         images = [to_numpy_array(image) for image in images]
+
+        t_to_numpy = _time.perf_counter()
 
         all_images = []
         # for image in images: # remove resize operation, must ensure correct image size
@@ -498,6 +667,8 @@ class Qwen25VLImageProcessorOptimized(OpimizedCLIPImageProcessor):
         images = all_images if len(all_images) else images
 
         images = np.stack(images)
+        t_stack = _time.perf_counter()
+
         image_mean = tuple(image_mean)
         image_std = tuple(image_std)
 
@@ -506,6 +677,8 @@ class Qwen25VLImageProcessorOptimized(OpimizedCLIPImageProcessor):
         if input_data_format == ChannelDimension.LAST:
             images = np.transpose(images, (0, 3, 1, 2))
             input_data_format = ChannelDimension.FIRST
+
+        t_transpose = _time.perf_counter()
 
         image_mean, image_std, do_rescale = self._fuse_mean_std_and_rescale_factor(
             do_normalize=do_normalize,
@@ -527,6 +700,8 @@ class Qwen25VLImageProcessorOptimized(OpimizedCLIPImageProcessor):
                 input_data_format=input_data_format,
             )
 
+        t_normalize = _time.perf_counter()
+
         height, width = get_image_size(images[0], channel_dim=input_data_format)
         resized_height, resized_width = height, width
         patches = images
@@ -546,26 +721,15 @@ class Qwen25VLImageProcessorOptimized(OpimizedCLIPImageProcessor):
             flatten_patches = fast_patch_extraction_torch(
                 patches, self.temporal_patch_size, self.patch_size, self.merge_size
             )
+            # 转 float16 减少 shm 传输量 (模型端第一步就会转 dtype)
+            flatten_patches = flatten_patches.to(torch.float16)
         else:
             flatten_patches = patch_extraction_numpy(
                 patches, self.temporal_patch_size, self.patch_size, self.merge_size
             )
-        # patches = patches.reshape(
-        #     grid_t,
-        #     self.temporal_patch_size,
-        #     channel,
-        #     grid_h // self.merge_size,
-        #     self.merge_size,
-        #     self.patch_size,
-        #     grid_w // self.merge_size,
-        #     self.merge_size,
-        #     self.patch_size,
-        # )
-        # patches = patches.transpose(0, 3, 6, 4, 7, 2, 1, 5, 8)
-        # flatten_patches = patches.reshape(
-        #     grid_t * grid_h * grid_w, channel * self.temporal_patch_size * self.patch_size * self.patch_size
-        # )
-        # print("image nums",images.shape, "cost time", (time.time() - t1)*1000)
+
+        t_patch = _time.perf_counter()
+
         pixel_values, vision_grid_thws = [], []
         pixel_values = flatten_patches
 
@@ -573,6 +737,20 @@ class Qwen25VLImageProcessorOptimized(OpimizedCLIPImageProcessor):
         vision_grid_thws = torch.tensor([[grid_t, grid_h, grid_w]], dtype=torch.long)
 
         data = {"pixel_values": pixel_values, "grid_thw": vision_grid_thws}
+
+        t_end = _time.perf_counter()
+        print(
+            f"[IMAGE PROCESSOR TIMING][numexpr] num_images={len(images) if isinstance(images, list) else images.shape[0]}, "
+            f"shape={images.shape if hasattr(images, 'shape') else 'N/A'}, "
+            f"validate={( t_validate - t_start)*1000:.2f}ms, "
+            f"convert_rgb={( t_convert_rgb - t_validate)*1000:.2f}ms, "
+            f"to_numpy={( t_to_numpy - t_convert_rgb)*1000:.2f}ms, "
+            f"np_stack={( t_stack - t_to_numpy)*1000:.2f}ms, "
+            f"transpose={( t_transpose - t_stack)*1000:.2f}ms, "
+            f"normalize={( t_normalize - t_transpose)*1000:.2f}ms, "
+            f"patch_extract({patch_reshape_method})={( t_patch - t_normalize)*1000:.2f}ms, "
+            f"TOTAL={( t_end - t_start)*1000:.2f}ms"
+        )
 
         return BatchFeature(data=data, tensor_type=return_tensors)
 

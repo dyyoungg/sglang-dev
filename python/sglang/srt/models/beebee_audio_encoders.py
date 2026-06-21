@@ -2,6 +2,7 @@ import logging
 from typing import  List, Optional, Tuple
 
 import torch
+import torch.cuda.nvtx as nvtx
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn.utils.rnn import pad_sequence
@@ -392,16 +393,23 @@ class BeeBeeAudioEncoder(nn.Module):
         audio_embeds : [N_total_audio_tokens, out_hidden]
         num_tokens   : per-sample audio token counts
         """
+        nvtx.range_push("BeeBeeAudioEncoder.forward")
         input_features = input_features.to(self.device, self.dtype)
 
         if isinstance(feature_lengths, List):
             input_seq_lens = torch.tensor(feature_lengths, dtype=torch.long, device=self.device)
         elif isinstance(feature_lengths, torch.Tensor):
             input_seq_lens = feature_lengths.to(dtype=torch.long, device=self.device)
- 
+
         # WhisperEncoder: [B, mel, T] -> [B, T//2, d_model]
+        nvtx.range_push("whisper_encoder")
         whisper_out = self.encoder(input_features, input_seq_lens=input_seq_lens)
- 
+        nvtx.range_pop()  # whisper_encoder
+
         # AudioConvUpScaleProjector: [B, T//2, d_model] -> [N_tokens, llm_hidden]
+        nvtx.range_push("audio_projector")
         audio_embeds, num_tokens = self.audio_projector(whisper_out, feature_lengths)
+        nvtx.range_pop()  # audio_projector
+
+        nvtx.range_pop()  # BeeBeeAudioEncoder.forward
         return audio_embeds, num_tokens

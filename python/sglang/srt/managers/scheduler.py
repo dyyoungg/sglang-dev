@@ -1657,6 +1657,7 @@ class Scheduler(
         if self.pp_rank == 0:
             if self.attn_tp_rank == 0 and self.attn_cp_rank == 0:
                 recv_reqs = []
+                _t_recv_start = time.time()
 
                 while True:
                     try:
@@ -1675,6 +1676,13 @@ class Scheduler(
                     except zmq.ZMQError:
                         break
                     recv_reqs.append(recv_rpc)
+
+                if recv_reqs:
+                    _t_recv_end = time.time()
+                    logger.info(
+                        f"[TIMING] recv_requests: {len(recv_reqs)} reqs, "
+                        f"zmq_recv={(_t_recv_end - _t_recv_start)*1000:.1f}ms"
+                    )
             else:
                 recv_reqs = None
         else:
@@ -1773,6 +1781,7 @@ class Scheduler(
         # so that ShmPointerMMData metadata (not full tensor data) is what
         # gets serialized during broadcast_pyobj.
         if recv_reqs:
+            _t_unwrap_start = time.time()
             # Barrier for the non-DP-attention path only: there is a single
             # broadcast_pyobj on tp_cpu_group where the source rank returns
             # the original objects immediately while other ranks are still in
@@ -1796,6 +1805,10 @@ class Scheduler(
                 barrier(group=self.tp_cpu_group)
             for req in recv_reqs:
                 unwrap_shm_features(req)
+            _t_unwrap_end = time.time()
+            logger.info(
+                f"[TIMING] recv_requests unwrap_shm: {(_t_unwrap_end - _t_unwrap_start)*1000:.1f}ms"
+            )
 
         return recv_reqs
 
@@ -1829,6 +1842,8 @@ class Scheduler(
         return work_reqs, control_reqs
 
     def process_input_requests(self, recv_reqs: List):
+        if recv_reqs:
+            _t_proc_start = time.time()
         now = time.monotonic()
         self.session_controller.maybe_reap(now)
         for recv_req in recv_reqs:
@@ -1849,6 +1864,12 @@ class Scheduler(
                     if self.recv_from_rpc is not None:
                         self.recv_from_rpc.send_pyobj(output)
 
+        if recv_reqs:
+            _t_proc_end = time.time()
+            logger.info(
+                f"[TIMING] process_input_requests: {len(recv_reqs)} reqs, "
+                f"total={(_t_proc_end - _t_proc_start)*1000:.1f}ms"
+            )
         self._check_pending_flush()
         if self.external_corpus_manager is not None:
             self.external_corpus_manager.check_pending_load()
@@ -1969,6 +1990,7 @@ class Scheduler(
         self,
         recv_req: TokenizedGenerateReqInput,
     ):
+        _t_handle_start = time.time()
         # Route: normal request / session request / session-not-found
         session_id = (
             recv_req.session_params.id if recv_req.session_params is not None else None
@@ -2095,7 +2117,9 @@ class Scheduler(
 
         # Handle multimodal inputs
         if recv_req.mm_inputs is not None:
+            _t_mm_start = time.time()
             image_inputs = self._get_multimodal_inputs(recv_req.mm_inputs)
+            _t_mm_get = time.time()
 
             SessionController.adjust_mm_offsets(recv_req, req, image_inputs)
 
@@ -2106,8 +2130,19 @@ class Scheduler(
                 req.origin_input_ids = self.pad_input_ids_func(
                     req.origin_input_ids, image_inputs
                 )
+            _t_mm_pad = time.time()
             req.extend_image_inputs(image_inputs)
             self._maybe_compute_mrope_positions(req)
+            _t_mm_end = time.time()
+
+            _num_mm_items = len(image_inputs.mm_items) if image_inputs and hasattr(image_inputs, 'mm_items') else 0
+            logger.info(
+                f"[TIMING] scheduler handle_generate_request rid={recv_req.rid}: "
+                f"mm_total={(_t_mm_end - _t_handle_start)*1000:.1f}ms, "
+                f"get_mm_inputs={(_t_mm_get - _t_mm_start)*1000:.1f}ms, "
+                f"pad_input_ids={(_t_mm_pad - _t_mm_get)*1000:.1f}ms, "
+                f"mm_items={_num_mm_items}"
+            )
 
             if len(req.origin_input_ids) >= self.max_req_input_len:
                 req.set_finish_with_abort(
@@ -2952,6 +2987,13 @@ class Scheduler(
         """Run a batch."""
         self.forward_ct += 1
         batch.forward_iter = self.forward_ct
+
+        if batch.forward_mode.is_extend():
+            _rids = [r.rid[:8] for r in batch.reqs[:3]]
+            logger.info(
+                f"[TIMING] run_batch forward_ct={self.forward_ct} mode={batch.forward_mode} "
+                f"bs={batch.batch_size()} rids={_rids} t={time.time():.3f}"
+            )
 
         # Whether to run the profiler
         self._profile_batch_predicate(batch)
