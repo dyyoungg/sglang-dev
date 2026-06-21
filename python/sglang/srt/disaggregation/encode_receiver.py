@@ -268,6 +268,8 @@ class MultiModalEmbeddingData(EmbeddingData):
         spec = _MODALITY_GRID_ATTRS.get(modality)
         if spec is None:
             raise ValueError(f"Invalid modality: {modality}")
+        if grid is None:
+            return
         attr_name, flatten = spec
         value = grid.flatten() if flatten else grid
         getattr(self, attr_name)[part_idx] = value
@@ -756,6 +758,9 @@ class MMReceiverBase(ABC):
         if req_id is None:
             return None
 
+        import time as _time
+        t_recv_start = _time.perf_counter()
+
         recv_embedding = None
 
         recv_embedding_data: MultiModalEmbeddingData = None
@@ -802,7 +807,14 @@ class MMReceiverBase(ABC):
                 else:
                     recv_embedding_data.add(recv_obj)
 
+            t_recv_parts_done = _time.perf_counter()
+            logger.info(
+                f"[RECV TIMING] req_id={req_id} recv all parts: "
+                f"wait+recv={( t_recv_parts_done - t_recv_start)*1000:.2f}ms"
+            )
+
             if self.encoder_transfer_backend == "mooncake":
+                t_mooncake_start = _time.perf_counter()
                 if req_id not in self.embeddings_buffer:
                     logger.error(
                         "mooncake: embeddings_buffer missing req_id=%s", req_id
@@ -810,6 +822,7 @@ class MMReceiverBase(ABC):
                     return None
                 raw_buffer = self.embeddings_buffer.pop(req_id)
                 self.embeddings_engine.deregister(raw_buffer.data_ptr())
+                t_deregister = _time.perf_counter()
                 byte_offset = 0
                 for i in range(recv_embedding_data.num_parts):
                     shape = recv_embedding_data.embedding_shape_list[i]
@@ -826,13 +839,33 @@ class MMReceiverBase(ABC):
                         .reshape(shape)
                     )
                     byte_offset += part_bytes
+                t_mooncake_done = _time.perf_counter()
+                logger.info(
+                    f"[RECV TIMING] req_id={req_id} mooncake buffer reassemble: "
+                    f"raw_buffer device={'cuda' if raw_buffer.is_cuda else 'cpu'}, "
+                    f"is_pinned={raw_buffer.is_pinned()}, "
+                    f"deregister={( t_deregister - t_mooncake_start)*1000:.2f}ms, "
+                    f"reshape={( t_mooncake_done - t_deregister)*1000:.2f}ms, "
+                    f"total={( t_mooncake_done - t_mooncake_start)*1000:.2f}ms"
+                )
 
+            t_get_embedding_start = _time.perf_counter()
             recv_embedding = recv_embedding_data.get_embedding(is_concat=True)
+            t_get_embedding_done = _time.perf_counter()
 
+            t_mm_data_start = _time.perf_counter()
             mm_inputs = mm_processor.get_mm_data(
                 prompt,
                 recv_embedding,
                 **recv_embedding_data.get_mm_extra_meta(),
+            )
+            t_mm_data_done = _time.perf_counter()
+
+            logger.info(
+                f"[RECV TIMING] req_id={req_id} _recv_mm_data total: "
+                f"get_embedding={( t_get_embedding_done - t_get_embedding_start)*1000:.2f}ms, "
+                f"get_mm_data={( t_mm_data_done - t_mm_data_start)*1000:.2f}ms, "
+                f"total={( t_mm_data_done - t_recv_start)*1000:.2f}ms"
             )
             return mm_inputs
         finally:
@@ -994,12 +1027,25 @@ class MMReceiverBase(ABC):
         return req
 
     async def allocate_embedding_buffer(self, req_id, total_bytes):
+        import time as _time
+        t0 = _time.perf_counter()
         embeddings = torch.empty(total_bytes, dtype=torch.uint8)
+        t_alloc = _time.perf_counter()
         self.embeddings_engine.register(
             embeddings.data_ptr(),
             embeddings.nbytes,
         )
+        t_register = _time.perf_counter()
         self.embeddings_buffer[req_id] = embeddings
+        logger.info(
+            f"[RECV TIMING] req_id={req_id} allocate_embedding_buffer: "
+            f"tensor device={'cuda' if embeddings.is_cuda else 'cpu'}, "
+            f"is_pinned={embeddings.is_pinned()}, "
+            f"total_bytes={total_bytes / 1024 / 1024:.2f}MB, "
+            f"alloc={( t_alloc - t0)*1000:.2f}ms, "
+            f"register={( t_register - t_alloc)*1000:.2f}ms, "
+            f"total={( t_register - t0)*1000:.2f}ms"
+        )
         return embeddings.data_ptr()
 
     def _assign_items_by_modality(
@@ -1211,6 +1257,8 @@ class MMReceiverHTTP(MMReceiverBase):
                 return
 
             # mooncake backend: send bootstrap info
+            import time as _time
+            t_bootstrap_start = _time.perf_counter()
 
             embedding_size_list_sort = [None for _ in range(total_num_parts)]
             response_json_list_sort = [None for _ in range(total_num_parts)]
@@ -1228,6 +1276,7 @@ class MMReceiverHTTP(MMReceiverBase):
                 req_id,
                 total_embedding_bytes,
             )
+            t_alloc_done = _time.perf_counter()
             for idx in range(len(tasks)):
                 response_json = response_json_list_sort[idx]
                 buffer_address_adjust = offset + buffer_address
@@ -1245,6 +1294,14 @@ class MMReceiverHTTP(MMReceiverBase):
                 )
                 offset += embedding_size_list_sort[idx]
             await asyncio.gather(*metadata_tasks)
+            t_bootstrap_done = _time.perf_counter()
+            logger.info(
+                f"[RECV TIMING] req_id={req_id} mooncake bootstrap: "
+                f"total_embedding_bytes={total_embedding_bytes / 1024 / 1024:.2f}MB, "
+                f"alloc_buffer={( t_alloc_done - t_bootstrap_start)*1000:.2f}ms, "
+                f"send_metadata={( t_bootstrap_done - t_alloc_done)*1000:.2f}ms, "
+                f"total_bootstrap={( t_bootstrap_done - t_bootstrap_start)*1000:.2f}ms"
+            )
 
 
 class MMReceiverGrpc(MMReceiverBase):

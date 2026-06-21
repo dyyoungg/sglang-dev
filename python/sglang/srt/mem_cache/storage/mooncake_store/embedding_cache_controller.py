@@ -1,4 +1,5 @@
 import asyncio
+import collections
 import logging
 import threading
 import time
@@ -10,6 +11,7 @@ import torch
 from sglang.srt.mem_cache.storage.mooncake_store.mooncake_embedding_store import (
     MooncakeEmbeddingStore,
 )
+from sglang.srt.server_args import get_global_server_args
 
 logger = logging.getLogger(__name__)
 
@@ -95,6 +97,7 @@ class EmbeddingCacheController:
         tp_rank,
         tp_size,
         max_pool_size_gb=4.0,
+        max_batch_groups=128,
         hidden_dims: dict = None,
         tp_group=None,
         all_rank_get=False,
@@ -117,6 +120,11 @@ class EmbeddingCacheController:
         self.allocator = ContiguousMemoryAllocator(self.total_pool_size_bytes)
         # {hash: (offset, num_tokens, embedding_dim, size_bytes)}
         self.hash_to_metadata = {}
+        # Fast local cache: {hash: tensor} in regular (non-pinned) memory for fast CPU reads
+        self.hash_to_tensor = {}
+        # Batch group LRU cache for zero-copy merged retrieval
+        self._batch_groups = collections.OrderedDict()
+        self._batch_groups_max = max_batch_groups
 
         # 3. Task Tracking
         self.ongoing_prefetch = {}  # {req_id: EmbeddingPrefetchOperation}
@@ -157,13 +165,12 @@ class EmbeddingCacheController:
             )
             return
         keys, ptrs, sizes = [], [], []
+        skipped = 0
 
         with self.lock:
             for h, num_tokens in zip(image_hashes, expected_tokens):
                 if h in self.hash_to_metadata:
-                    logger.debug(
-                        f"Req {req_id}: Hash  already in local metadata, skipping prefetch."
-                    )
+                    skipped += 1
                     continue
 
                 size_bytes = num_tokens * dim * self.element_size
@@ -176,6 +183,10 @@ class EmbeddingCacheController:
                 ptrs.append(self.cpu_pool.data_ptr() + offset)
                 sizes.append(size_bytes)
 
+            if skipped:
+                logger.info(
+                    f"Req {req_id}: {skipped}/{len(image_hashes)} already in local metadata, skipped prefetch."
+                )
             if not keys:
                 return
 
@@ -187,55 +198,136 @@ class EmbeddingCacheController:
             self.ongoing_prefetch[req_id] = op
             self.prefetch_queue.put(op)
 
-    def insert_batch(
+    def evict(self, image_hash: str):
+        """Remove a hash from all caches (for future LRU eviction support)."""
+        with self.lock:
+            meta = self.hash_to_metadata.pop(image_hash, None)
+            self.hash_to_tensor.pop(image_hash, None)
+            if meta:
+                offset, _, _, size_bytes = meta
+                self.allocator.free(offset, size_bytes)
+
+    def register_batch(
         self, image_hashes: List[str], embedding_tensors: List[torch.Tensor]
     ):
-        """Issues ONE batch PUT for all embeddings computed by this request."""
+        """Synchronously register embeddings in metadata (fast, <1ms).
+
+        Call this in the hot path so subsequent requests see the cache entries.
+        Returns a list of copy tasks for commit_batch to execute in background.
+        """
+        new_tensors = []
+        new_hashes = []
+        copy_tasks = []
         keys, ptrs, sizes = [], [], []
 
+        # Phase 1: Convert tensors (may already be cpu float32)
+        prepared = []
+        for h, tensor in zip(image_hashes, embedding_tensors):
+            cpu_tensor = tensor.cpu().to(torch.float32).contiguous()
+            prepared.append((h, cpu_tensor))
+
+        # Phase 2: Allocate and register under lock (fast: only metadata ops)
         with self.lock:
-            for h, tensor in zip(image_hashes, embedding_tensors):
+            for h, cpu_tensor in prepared:
                 if h in self.hash_to_metadata:
                     continue
 
-                num_tokens, dim = tensor.shape[0], tensor.shape[1]
+                num_tokens, dim = cpu_tensor.shape[0], cpu_tensor.shape[1]
                 size_bytes = num_tokens * dim * self.element_size
                 offset = self.allocator.allocate(size_bytes)
                 if offset is None:
                     continue
 
-                # Copy to pinned pool for RDMA
-                target_view = (
-                    self.cpu_pool[offset : offset + size_bytes]
-                    .view(torch.float32)
-                    .view(num_tokens, dim)
-                )
-                target_view.copy_(tensor.cpu())
                 self.hash_to_metadata[h] = (offset, num_tokens, dim, size_bytes)
+                self.hash_to_tensor[h] = cpu_tensor
+                new_tensors.append(cpu_tensor)
+                new_hashes.append(h)
 
                 keys.append(h)
                 ptrs.append(self.cpu_pool.data_ptr() + offset)
                 sizes.append(size_bytes)
+                copy_tasks.append((offset, size_bytes, num_tokens, dim, cpu_tensor))
 
-            if keys:
-                logger.info(
-                    f"Global Cache: Inserting {len(keys)} new embeddings into Mooncake cluster."
-                )
-                self.insert_queue.put(EmbeddingInsertOperation(keys, ptrs, sizes))
+            # Pre-merge the batch for zero-overhead retrieval if same batch is requested
+            if new_hashes:
+                batch_key = tuple(image_hashes)
+                self._batch_groups[batch_key] = torch.cat(new_tensors, dim=0)
+                # LRU eviction: drop oldest if over limit
+                while len(self._batch_groups) > self._batch_groups_max:
+                    self._batch_groups.popitem(last=False)
+
+        return keys, ptrs, sizes, copy_tasks
+
+    def commit_batch(self, keys, ptrs, sizes, copy_tasks):
+        """Background: copy to pinned pool and enqueue RDMA PUT (slow, ~10ms+).
+
+        Call this in a background thread after register_batch.
+        """
+        import time as _time
+        t0 = _time.perf_counter()
+
+        # Copy to pinned pool for RDMA
+        for offset, size_bytes, num_tokens, dim, cpu_tensor in copy_tasks:
+            target_view = (
+                self.cpu_pool[offset : offset + size_bytes]
+                .view(torch.float32)
+                .view(num_tokens, dim)
+            )
+            target_view.copy_(cpu_tensor)
+
+        t_copy_done = _time.perf_counter()
+
+        # Enqueue for RDMA PUT
+        if keys:
+            logger.info(
+                f"[GLOBAL CACHE TIMING] commit_batch: {len(keys)} embeddings, "
+                f"pinned_copy={( t_copy_done - t0)*1000:.2f}ms, "
+                f"total_bytes={sum(sizes) / 1024 / 1024:.2f}MB, "
+                f"inserting into Mooncake cluster..."
+            )
+            self.insert_queue.put(EmbeddingInsertOperation(keys, ptrs, sizes))
+
+    def insert_batch(
+        self, image_hashes: List[str], embedding_tensors: List[torch.Tensor]
+    ):
+        """Legacy API: register + commit in one call (used by background thread)."""
+        keys, ptrs, sizes, copy_tasks = self.register_batch(
+            image_hashes, embedding_tensors
+        )
+        self.commit_batch(keys, ptrs, sizes, copy_tasks)
 
     def _io_loop(self):
         """Asynchronous worker handling both Batch GET and Batch PUT."""
+        import time as _time
+
         while not self.stop_event.is_set():
             processed_any = False
 
             try:
                 op = self.prefetch_queue.get_nowait()
+                t0 = _time.perf_counter()
                 results = self.mooncake_store.batch_get(op.keys, op.ptrs, op.sizes)
+                t1 = _time.perf_counter()
                 success_count = sum(results)
                 logger.info(
-                    f"Mooncake GET Finished: Req {op.req_id}, Successfully fetched {success_count}/{len(op.keys)} images."
+                    f"[GLOBAL CACHE TIMING] Mooncake RDMA GET: Req {op.req_id}, "
+                    f"fetched {success_count}/{len(op.keys)} items, "
+                    f"total_bytes={sum(op.sizes) / 1024 / 1024:.2f}MB, "
+                    f"time={( t1 - t0)*1000:.2f}ms"
                 )
                 op.mark_done(all(results))
+                # Populate hash_to_tensor from pinned pool for fast future local reads
+                if any(results):
+                    with self.lock:
+                        for h, success in zip(op.keys, results):
+                            if success and h not in self.hash_to_tensor and h in self.hash_to_metadata:
+                                offset, num_tokens, dim, size_bytes = self.hash_to_metadata[h]
+                                src = (
+                                    self.cpu_pool[offset : offset + size_bytes]
+                                    .view(torch.float32)
+                                    .view(num_tokens, dim)
+                                )
+                                self.hash_to_tensor[h] = src.clone()
                 self.prefetch_queue.task_done()
                 processed_any = True
             except Empty:
@@ -243,9 +335,14 @@ class EmbeddingCacheController:
 
             try:
                 op = self.insert_queue.get_nowait()
+                t0 = _time.perf_counter()
                 self.mooncake_store.batch_put(op.keys, op.ptrs, op.sizes)
+                t1 = _time.perf_counter()
                 logger.info(
-                    f"Mooncake PUT Finished: Successfully stored {len(op.keys)} keys in cluster."
+                    f"[GLOBAL CACHE TIMING] Mooncake RDMA PUT: "
+                    f"stored {len(op.keys)} keys, "
+                    f"total_bytes={sum(op.sizes) / 1024 / 1024:.2f}MB, "
+                    f"time={( t1 - t0)*1000:.2f}ms"
                 )
                 self.insert_queue.task_done()
                 processed_any = True
@@ -295,6 +392,49 @@ class EmbeddingCacheController:
                     .view(num_tokens, dim)
                 )
             return tensors
+
+    def get_embeddings_merged(self, image_hashes: List[str]) -> torch.Tensor:
+        """Return a single contiguous tensor for all hashes, merged.
+
+        Fast path: if this exact batch was previously inserted together,
+        return the pre-merged tensor directly (zero copy, ~0ms).
+        Fallback: gather individual tensors and cat.
+        """
+        import time as _time
+        t0 = _time.perf_counter()
+
+        batch_key = tuple(image_hashes)
+        with self.lock:
+            # Fast path: exact batch match -> return pre-merged (zero copy)
+            merged = self._batch_groups.get(batch_key)
+            if merged is not None:
+                self._batch_groups.move_to_end(batch_key)
+                return merged
+
+            # Fallback: gather individual tensors
+            tensors = []
+            for h in image_hashes:
+                cached_tensor = self.hash_to_tensor.get(h)
+                if cached_tensor is not None:
+                    tensors.append(cached_tensor)
+                else:
+                    offset, num_tokens, d, size_bytes = self.hash_to_metadata[h]
+                    tensors.append(
+                        self.cpu_pool[offset : offset + size_bytes]
+                        .view(torch.float32)
+                        .view(num_tokens, d)
+                    )
+
+        if not tensors:
+            return torch.empty(0)
+
+        result = torch.cat(tensors, dim=0)
+        t1 = _time.perf_counter()
+        logger.info(
+            f"get_embeddings_merged: FALLBACK, {len(image_hashes)} items, "
+            f"time={(t1 - t0)*1000:.2f}ms, shape={result.shape}"
+        )
+        return result
 
     async def batch_is_exist(self, image_hashes: List[str]) -> List[bool]:
         with self.lock:
