@@ -4,9 +4,11 @@ Multi-modality utils
 
 import copy
 import hashlib
+import os
 import pickle
 from abc import abstractmethod
 from collections import defaultdict
+from contextlib import contextmanager
 from multiprocessing import shared_memory
 from typing import Any, Callable, Dict, List, Literal, Optional, Tuple
 
@@ -30,6 +32,28 @@ from sglang.srt.utils import flatten_nested_list, is_npu, print_warning_once
 from sglang.utils import logger
 
 _is_npu = is_npu()
+
+# Thread count override for the SHM copy_ path. memcpy is bandwidth-bound:
+# on many-core boxes the default OMP count (e.g. 384) only adds contention
+# (measured 102ms vs 9ms single-threaded); on fewer-core boxes the default is
+# already good (multi-thread copy saturates bandwidth, and forcing 1 thread
+# makes it slower — seen 25ms->70ms on A100). Set SGLANG_MM_SHM_COPY_THREADS=N
+# to override; 0/unset = use torch default.
+_MM_SHM_COPY_THREADS = int(os.environ.get("SGLANG_MM_SHM_COPY_THREADS", "0"))
+
+
+@contextmanager
+def _maybe_set_copy_threads():
+    """Temporarily set the torch thread count for the SHM memcpy path, if configured."""
+    if _MM_SHM_COPY_THREADS <= 0:
+        yield
+        return
+    saved = torch.get_num_threads()
+    torch.set_num_threads(_MM_SHM_COPY_THREADS)
+    try:
+        yield
+    finally:
+        torch.set_num_threads(saved)
 
 # NOTE: Using the shared logger from sglang.utils instead of creating a module-specific logger
 # to ensure consistent logging behavior across the codebase. This prevents issues with log
@@ -1545,20 +1569,24 @@ class BatchShmPointerMMData:
             self._entries.append((total_bytes, nbytes, t.shape, t.dtype))
             total_bytes += nbytes
 
+        import time as _t
+        _t0 = _t.perf_counter()
         # Single shm allocation
         shm = shared_memory.SharedMemory(create=True, size=max(total_bytes, 1))
+        _t1 = _t.perf_counter()
         try:
             # Create a CPU tensor backed by shm
             buf = torch.frombuffer(shm.buf, dtype=torch.uint8)
-            # Copy all tensors into the single buffer
-            # For CUDA tensors this does GPU->CPU DMA directly into shm
-            for (offset, nbytes, _, _), t in zip(self._entries, tensors):
-                src = t.view(torch.uint8).reshape(-1)
-                if src.is_cuda:
-                    # Pin the shm slice and copy from GPU (faster than .cpu() + memcpy)
+            _t2 = _t.perf_counter()
+            # Copy all tensors into the single buffer.
+            # For CUDA tensors this does GPU->CPU DMA directly into shm.
+            # memcpy is bandwidth-bound: override thread count only if
+            # SGLANG_MM_SHM_COPY_THREADS is set (see _maybe_set_copy_threads).
+            with _maybe_set_copy_threads():
+                for (offset, nbytes, _, _), t in zip(self._entries, tensors):
+                    src = t.view(torch.uint8).reshape(-1)
                     buf[offset : offset + nbytes].copy_(src)
-                else:
-                    buf[offset : offset + nbytes].copy_(src)
+            _t3 = _t.perf_counter()
         except BaseException:
             shm.close()
             shm.unlink()
@@ -1566,6 +1594,15 @@ class BatchShmPointerMMData:
         self.shm_name = shm.name
         self.total_bytes = total_bytes
         shm.close()
+        _t4 = _t.perf_counter()
+        logger.debug(
+            "[WRAPSHM] size=%.1fMB create=%.2fms frombuffer=%.2fms copy=%.2fms close=%.2fms",
+            total_bytes / 1e6,
+            (_t1 - _t0) * 1000,
+            (_t2 - _t1) * 1000,
+            (_t3 - _t2) * 1000,
+            (_t4 - _t3) * 1000,
+        )
         self._shm_handle = None
 
     def __getstate__(self):
@@ -1585,18 +1622,22 @@ class BatchShmPointerMMData:
         self._shm_handle = shared_memory.SharedMemory(name=self.shm_name)
 
     def materialize_all(self):
-        """Return views directly into shm (zero-copy, no clone).
+        """Return clones of tensors stored in shm.
 
-        The shm handle is kept alive — tensors are valid as long as this
-        object is not garbage-collected. Call release() after features have
-        been consumed (e.g. moved to GPU).
+        We clone (rather than a zero-copy view) so the returned tensors own
+        their memory and do not depend on the shm segment staying alive.
+        Under high concurrency the shm segment can be GC'd/unlinked before a
+        feature is consumed by .to(device) (async DMA), causing a segfault.
+        Cloning detaches the lifetime. Thread count for the copy honors
+        SGLANG_MM_SHM_COPY_THREADS (see _maybe_set_copy_threads).
         """
         shm = self._shm_handle
         buf = torch.frombuffer(shm.buf, dtype=torch.uint8)
-        results = []
-        for offset, nbytes, shape, dtype in self._entries:
-            t = buf[offset : offset + nbytes].view(dtype).reshape(shape)
-            results.append(t)
+        with _maybe_set_copy_threads():
+            results = []
+            for offset, nbytes, shape, dtype in self._entries:
+                view = buf[offset : offset + nbytes].view(dtype).reshape(shape)
+                results.append(view.clone())
         return results
 
     def release(self):
