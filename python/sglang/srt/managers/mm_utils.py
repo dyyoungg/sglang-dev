@@ -41,6 +41,12 @@ _is_npu = is_npu()
 # to override; 0/unset = use torch default.
 _MM_SHM_COPY_THREADS = int(os.environ.get("SGLANG_MM_SHM_COPY_THREADS", "0"))
 
+# Use the batched SHM transport (single segment for all multimodal tensors,
+# BatchShmPointerMMData) instead of the legacy per-tensor transport
+# (ShmPointerMMData, one segment per tensor). On by default; set
+# SGLANG_MM_BATCH_SHM=0 to fall back to the legacy path.
+_MM_BATCH_SHM = os.environ.get("SGLANG_MM_BATCH_SHM", "1") != "0"
+
 
 @contextmanager
 def _maybe_set_copy_threads():
@@ -1760,50 +1766,78 @@ def _wrap_item_shm(item):
 def wrap_shm_features(obj):
     """
     Scan the object for multimodal tensors and wrap them in SHM pointers.
-    Uses BatchShmPointerMMData to pack all tensors into a single shm segment.
-    For CUDA tensors, copies directly GPU -> SHM (skipping intermediate CPU allocation).
+
+    With SGLANG_MM_BATCH_SHM!=0 (default) uses BatchShmPointerMMData to pack all
+    tensors into a single shm segment (and copies GPU->SHM directly for CUDA
+    tensors). With SGLANG_MM_BATCH_SHM=0 falls back to the legacy per-tensor
+    ShmPointerMMData path (one segment per tensor, CPU tensors only).
     """
     if _get_is_default_transport() or get_global_server_args().skip_tokenizer_init:
         return obj
 
-    if hasattr(obj, "mm_inputs") and obj.mm_inputs:
-        items = obj.mm_inputs.mm_items
-        # Collect all tensors (CPU or CUDA) across all items for batched shm allocation
-        all_tensors = []
-        # Track (item_idx, is_list, list_idx) for each tensor
-        tensor_map = []
-        for i, item in enumerate(items):
+    if not (hasattr(obj, "mm_inputs") and obj.mm_inputs):
+        return obj
+
+    if not _MM_BATCH_SHM:
+        # Legacy per-tensor SHM transport (one segment per CPU tensor).
+        for item in obj.mm_inputs.mm_items:
             if not hasattr(item, "feature"):
                 continue
             feat = item.feature
-            if isinstance(feat, torch.Tensor):
-                tensor_map.append((i, False, 0))
-                all_tensors.append(feat)
+            if isinstance(feat, torch.Tensor) and feat.is_cpu:
+                item.feature = ShmPointerMMData(feat)
             elif isinstance(feat, (list, tuple)):
-                for j, t in enumerate(feat):
-                    if isinstance(t, torch.Tensor):
-                        tensor_map.append((i, True, j))
-                        all_tensors.append(t)
+                wrapped = [
+                    (
+                        ShmPointerMMData(t)
+                        if isinstance(t, torch.Tensor) and t.is_cpu
+                        else t
+                    )
+                    for t in feat
+                ]
+                item.feature = (
+                    type(feat)(wrapped) if isinstance(feat, tuple) else wrapped
+                )
+        return obj
 
-        if all_tensors:
-            # Single shm allocation for all tensors
-            batch_shm = BatchShmPointerMMData(all_tensors)
-            # Store the batch handle on the mm_inputs so it survives pickling
-            obj.mm_inputs._batch_shm = batch_shm
-            obj.mm_inputs._batch_shm_map = tensor_map
-            # Clear original tensor references so they aren't pickled redundantly
-            for item_i, is_list, list_j in tensor_map:
-                item = items[item_i]
-                if not is_list:
-                    item.feature = None
+    # Batched SHM transport (single segment for all tensors, CPU or CUDA).
+    items = obj.mm_inputs.mm_items
+    # Collect all tensors (CPU or CUDA) across all items for batched shm allocation
+    all_tensors = []
+    # Track (item_idx, is_list, list_idx) for each tensor
+    tensor_map = []
+    for i, item in enumerate(items):
+        if not hasattr(item, "feature"):
+            continue
+        feat = item.feature
+        if isinstance(feat, torch.Tensor):
+            tensor_map.append((i, False, 0))
+            all_tensors.append(feat)
+        elif isinstance(feat, (list, tuple)):
+            for j, t in enumerate(feat):
+                if isinstance(t, torch.Tensor):
+                    tensor_map.append((i, True, j))
+                    all_tensors.append(t)
+
+    if all_tensors:
+        # Single shm allocation for all tensors
+        batch_shm = BatchShmPointerMMData(all_tensors)
+        # Store the batch handle on the mm_inputs so it survives pickling
+        obj.mm_inputs._batch_shm = batch_shm
+        obj.mm_inputs._batch_shm_map = tensor_map
+        # Clear original tensor references so they aren't pickled redundantly
+        for item_i, is_list, list_j in tensor_map:
+            item = items[item_i]
+            if not is_list:
+                item.feature = None
+            else:
+                feat = item.feature
+                if isinstance(feat, tuple):
+                    feat = list(feat)
+                    feat[list_j] = None
+                    item.feature = tuple(feat)
                 else:
-                    feat = item.feature
-                    if isinstance(feat, tuple):
-                        feat = list(feat)
-                        feat[list_j] = None
-                        item.feature = tuple(feat)
-                    else:
-                        feat[list_j] = None
+                    feat[list_j] = None
     return obj
 
 
