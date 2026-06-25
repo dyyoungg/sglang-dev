@@ -111,7 +111,7 @@ class BeeBeeOmniForConditionalGeneration(nn.Module):
                 self.lm_head = PPMissingLayer()
         else:
             self.lm_head = None
-
+        self.max_image_bs = getattr(get_global_server_args(), "max_image_bs", 16)
         self.downsample_ratio=getattr(
             self.vision_config,
             "image_downsample_ratio",
@@ -168,44 +168,62 @@ class BeeBeeOmniForConditionalGeneration(nn.Module):
 
     def get_image_feature(self, items: List[MultimodalDataItem]) -> torch.Tensor:
         nvtx.range_push("get_image_feature")
-        # in qwen-vl, last dim is the same
-        pixel_values = torch.cat([item.feature for item in items], dim=0).type(
-            self.image_encoder.dtype
-        )
-        image_grid_thw = torch.concat([item.image_grid_thw for item in items], dim=0)
+
+        if not items:
+            nvtx.range_pop()
+            return torch.empty(0, device=self.image_encoder.device)
+
+        all_image_embeds = []
 
         expected_dim = getattr(self.image_encoder, "embed_dim", -1)
-
         if self.vision_config.model_type == "beebee_vision_model":
             raw_patch_dim = 1176
         elif self.vision_config.model_type == "beebee_qwen35moe_vision_model":
             raw_patch_dim = 1536
-
-        if pixel_values.dim() == 2:
-            current_dim = pixel_values.shape[-1]
-            if current_dim == expected_dim:
-                nvtx.range_pop()
-                return pixel_values
-            if current_dim != raw_patch_dim:
-                nvtx.range_pop()
-                return pixel_values
-
-        assert pixel_values.dim() == 2, pixel_values.dim()
-        assert image_grid_thw.dim() == 2, image_grid_thw.dim()
-        if self.use_data_parallel:
-            result = run_dp_sharded_beebee_vision_model(
-                self.image_encoder,
-                pixel_values,
-                image_grid_thw.tolist(),
-                merge_size=2,
-                downsample_ratio=self.downsample_ratio
-            )
-            nvtx.range_pop()
-            return result
         else:
-            image_embeds, _ = self.image_encoder(pixel_values, grid_thw=image_grid_thw)
+            raw_patch_dim = -1
+
+        # 使用 self.max_image_bs 对 items 进行切片分块推理
+        for i in range(0, len(items), self.max_image_bs):
+            chunk_items = items[i : i + self.max_image_bs]
+
+            pixel_values = torch.cat([item.feature for item in chunk_items], dim=0).type(
+                self.image_encoder.dtype
+            )
+            image_grid_thw = torch.concat([item.image_grid_thw for item in chunk_items], dim=0)
+
+            # 提前返回逻辑
+            if pixel_values.dim() == 2:
+                current_dim = pixel_values.shape[-1]
+                if current_dim == expected_dim or current_dim != raw_patch_dim:
+                    all_image_embeds.append(pixel_values)
+                    continue
+
+            assert pixel_values.dim() == 2, pixel_values.dim()
+            assert image_grid_thw.dim() == 2, image_grid_thw.dim()
+            
+            # 正常执行视觉模型推理
+            if self.use_data_parallel:
+                chunk_embeds = run_dp_sharded_beebee_vision_model(
+                    self.image_encoder,
+                    pixel_values,
+                    image_grid_thw.tolist(),
+                    merge_size=2,
+                    downsample_ratio=self.downsample_ratio
+                )
+            else:
+                chunk_embeds, _ = self.image_encoder(pixel_values, grid_thw=image_grid_thw)
+                
+            all_image_embeds.append(chunk_embeds)
+
+        # 拼接所有分块的特征
+        if all_image_embeds:
+            final_embeds = torch.cat(all_image_embeds, dim=0)
+        else:
+            final_embeds = torch.empty(0, device=self.image_encoder.device, dtype=self.image_encoder.dtype)
+
         nvtx.range_pop()
-        return image_embeds
+        return final_embeds
 
     _lora_pattern = re.compile(
         r"^model\.layers\.(\d+)\.(?:self_attn|mlp)\.(?:qkv_proj|o_proj|down_proj|gate_up_proj)$"

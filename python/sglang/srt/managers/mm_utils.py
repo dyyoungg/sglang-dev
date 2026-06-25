@@ -1657,12 +1657,11 @@ class BatchShmPointerMMData:
             self._shm_handle = None
 
     def __del__(self):
+        # Only close; never unlink. The shm segment may still be needed by
+        # downstream processes (e.g. dp_controller → scheduler). Unlinking is
+        # release()'s job after materialize_all() in the final consumer.
         if getattr(self, "_shm_handle", None) is not None:
             self._shm_handle.close()
-            try:
-                self._shm_handle.unlink()
-            except FileNotFoundError:
-                pass
             self._shm_handle = None
 
 
@@ -1900,8 +1899,10 @@ def unwrap_shm_features(obj):
                         item.feature = tuple(feat)
                     else:
                         feat[list_j] = tensors[idx]
-            # Keep _batch_shm alive — tensors are zero-copy views into shm.
-            # It will be released when mm_inputs is GC'd (after features move to GPU).
+            # materialize_all() clones tensors, so they no longer depend on shm.
+            # Release (close + unlink) the shm segment immediately.
+            batch_shm.release()
+            mm_inputs._batch_shm = None
             mm_inputs._batch_shm_map = None
         else:
             # Legacy per-item ShmPointerMMData path

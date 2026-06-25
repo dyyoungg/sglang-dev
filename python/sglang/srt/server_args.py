@@ -6776,6 +6776,12 @@ class ServerArgs:
             help="Max number of pre-merged batch groups to keep in LRU cache. Default: 128",
         )
 
+        parser.add_argument(
+            "--max-image-bs",
+            type=int,
+            default=16,
+            help="Max number of image item default:16",
+        )
         # For registering hooks
         parser.add_argument(
             "--forward-hooks",
