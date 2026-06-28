@@ -772,29 +772,36 @@ def run_dp_sharded_beebee_vision_model(
 
     # 7. 全局收集所有 GPU 的输出
     gathered_embeds = get_attention_tp_group().all_gather(image_embeds_local_padded, dim=0)
+    del image_embeds_local_padded, image_embeds_local  # 及时释放，减少显存碎片
 
     # 8. 核心修改：根据准确的 grouped_output_len 去除 Padding，并还原到原始图片顺序
-    rank_embeddings = []
-    for rank in range(tp_size):
-        start_idx = rank * max_len_per_rank
-        end_idx = start_idx + grouped_output_len[rank]
-        rank_embeddings.append(gathered_embeds[start_idx:end_idx])
+    # 预分配连续输出 buffer，避免多次 torch.cat 造成碎片
+    total_out_tokens = sum(out_tokens_per_image)
+    hidden_dim = gathered_embeds.shape[1]
+    out_embeddings = torch.empty(
+        (total_out_tokens, hidden_dim),
+        dtype=gathered_embeds.dtype,
+        device=gathered_embeds.device,
+    )
 
-    original_order_embeddings = [None] * len(grid_thw_list)
     current_idx = 0
     for rank in range(tp_size):
         count = gpu_sample_counts[rank]
         if count > 0:
+            rank_start = rank * max_len_per_rank
             rank_images = image_to_tp_rank[current_idx : current_idx + count]
-            rank_embed = rank_embeddings[rank]
             embed_start = 0
             for img_idx in rank_images:
                 img_out_tokens = out_tokens_per_image[img_idx]
-                original_order_embeddings[img_idx] = rank_embed[embed_start : embed_start + img_out_tokens]
+                # 计算该图片在最终输出中的位置
+                dst_start = sum(out_tokens_per_image[:img_idx])
+                out_embeddings[dst_start : dst_start + img_out_tokens].copy_(
+                    gathered_embeds[rank_start + embed_start : rank_start + embed_start + img_out_tokens]
+                )
                 embed_start += img_out_tokens
             current_idx += count
 
-    out_embeddings = torch.cat(original_order_embeddings, dim=0)
+    del gathered_embeds  # 释放 all_gather 的大 tensor
     return out_embeddings
 
 
@@ -886,27 +893,33 @@ def run_dp_sharded_audio_model(
 
     # 7. 全局收集所有 GPU 的 embedding
     gathered_embeds = get_attention_tp_group().all_gather(local_embeds_padded, dim=0)
+    del local_embeds_padded, local_embeds  # 及时释放，减少显存碎片
 
     # 8. 剔除 padding，还原到原始音频顺序
-    rank_embeddings = []
-    for rank in range(tp_size):
-        start_idx = rank * max_len_per_rank
-        end_idx = start_idx + grouped_output_len[rank]
-        rank_embeddings.append(gathered_embeds[start_idx:end_idx])
+    # 预分配连续输出 buffer，避免 torch.cat 碎片
+    total_out_tokens = sum(out_tokens_per_item)
+    hidden_dim = gathered_embeds.shape[1]
+    features = torch.empty(
+        (total_out_tokens, hidden_dim),
+        dtype=gathered_embeds.dtype,
+        device=gathered_embeds.device,
+    )
 
-    original_order_embeddings = [None] * len(items_mel_chunks)
     current_idx = 0
     for rank in range(tp_size):
         count = gpu_sample_counts[rank]
         if count > 0:
+            rank_start = rank * max_len_per_rank
             rank_items = item_to_tp_rank[current_idx: current_idx + count]
-            rank_embed = rank_embeddings[rank]
             embed_start = 0
             for item_idx in rank_items:
                 item_out_tokens = out_tokens_per_item[item_idx]
-                original_order_embeddings[item_idx] = rank_embed[embed_start: embed_start + item_out_tokens]
+                dst_start = sum(out_tokens_per_item[:item_idx])
+                features[dst_start : dst_start + item_out_tokens].copy_(
+                    gathered_embeds[rank_start + embed_start : rank_start + embed_start + item_out_tokens]
+                )
                 embed_start += item_out_tokens
             current_idx += count
-  
-    features = torch.cat(original_order_embeddings, dim=0)
+
+    del gathered_embeds  # 释放 all_gather 的大 tensor
     return features

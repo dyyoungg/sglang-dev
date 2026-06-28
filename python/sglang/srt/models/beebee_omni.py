@@ -174,6 +174,7 @@ class BeeBeeOmniForConditionalGeneration(nn.Module):
             return torch.empty(0, device=self.image_encoder.device)
 
         all_image_embeds = []
+        total_tokens = 0
 
         expected_dim = getattr(self.image_encoder, "embed_dim", -1)
         if self.vision_config.model_type == "beebee_vision_model":
@@ -197,11 +198,12 @@ class BeeBeeOmniForConditionalGeneration(nn.Module):
                 current_dim = pixel_values.shape[-1]
                 if current_dim == expected_dim or current_dim != raw_patch_dim:
                     all_image_embeds.append(pixel_values)
+                    total_tokens += pixel_values.shape[0]
                     continue
 
             assert pixel_values.dim() == 2, pixel_values.dim()
             assert image_grid_thw.dim() == 2, image_grid_thw.dim()
-            
+
             # 正常执行视觉模型推理
             if self.use_data_parallel:
                 chunk_embeds = run_dp_sharded_beebee_vision_model(
@@ -213,12 +215,36 @@ class BeeBeeOmniForConditionalGeneration(nn.Module):
                 )
             else:
                 chunk_embeds, _ = self.image_encoder(pixel_values, grid_thw=image_grid_thw)
-                
-            all_image_embeds.append(chunk_embeds)
 
-        # 拼接所有分块的特征
+            # 及时释放输入 tensor，减少 GPU 显存碎片
+            del pixel_values, image_grid_thw
+
+            all_image_embeds.append(chunk_embeds)
+            total_tokens += chunk_embeds.shape[0]
+            del chunk_embeds  # 释放局部引用，实际 tensor 由 list 持有
+
+        # 拼接所有分块的特征到预分配的连续 buffer 中，避免碎片
         if all_image_embeds:
-            final_embeds = torch.cat(all_image_embeds, dim=0)
+            if len(all_image_embeds) == 1:
+                # 只有一个 chunk，直接使用，避免多余 copy
+                final_embeds = all_image_embeds[0]
+            else:
+                # 预分配连续显存再拷贝，减少碎片化
+                hidden_dim = all_image_embeds[0].shape[-1]
+                final_embeds = torch.empty(
+                    (total_tokens, hidden_dim),
+                    dtype=all_image_embeds[0].dtype,
+                    device=all_image_embeds[0].device,
+                )
+                offset = 0
+                for i in range(len(all_image_embeds)):
+                    embed = all_image_embeds[i]
+                    length = embed.shape[0]
+                    final_embeds[offset : offset + length].copy_(embed)
+                    offset += length
+                    # 逐个释放 chunk embedding，立刻回收显存
+                    all_image_embeds[i] = None
+                del all_image_embeds
         else:
             final_embeds = torch.empty(0, device=self.image_encoder.device, dtype=self.image_encoder.dtype)
 

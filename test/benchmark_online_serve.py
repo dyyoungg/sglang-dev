@@ -251,17 +251,21 @@ async def simulated_user_session(user_id: int, api_url: str, tokenizer, data_poo
         if system_patience_time < user_silence_time:
             # --- 系统主动 ---
             await asyncio.sleep(system_patience_time)
-            
-            proactive_image_count = (args.proactive_image_count // 2) * 2
 
-            t1 = time.perf_counter()
-            turn_images = await data_pool.get_random_images_data(
-                proactive_image_count, args.small_image_ratio, small_res, large_res
-            )
-            # print(f"get {len(turn_images)} random image time:", time.perf_counter() - t1)
+            if args.request_mode == "text-only":
+                proactive_image_count = 0
+                turn_images = []
+            else:
+                proactive_image_count = (args.proactive_image_count // 2) * 2
+                t1 = time.perf_counter()
+                turn_images = await data_pool.get_random_images_data(
+                    proactive_image_count, args.small_image_ratio, small_res, large_res
+                )
+                # print(f"get {len(turn_images)} random image time:", time.perf_counter() - t1)
+
             turn_text = ("<image>" * proactive_image_count) + "\n<|im_start|>assistant\n"
             current_prompt = history_text + turn_text
-            
+
             current_images = history_images + turn_images
             current_audios = history_audios
             
@@ -287,79 +291,94 @@ async def simulated_user_session(user_id: int, api_url: str, tokenizer, data_poo
         else:
             # --- 用户主动交互 ---
             await asyncio.sleep(user_silence_time)
-            
-            # [Stage 1: Warmup] 
-            warmup_images_count = (args.warmup_images // 2) * 2
-            t1 = time.perf_counter()
-            turn_warmup_images = await data_pool.get_random_images_data(
-                warmup_images_count, args.small_image_ratio, small_res, large_res
-            )
-            # print(f"get {len(turn_warmup_images)} random image time:", time.perf_counter() - t1)
+
+            # [Stage 1: Warmup]
+            if args.request_mode == "text-only":
+                warmup_images_count = 0
+                turn_warmup_images = []
+            else:
+                warmup_images_count = (args.warmup_images // 2) * 2
+                t1 = time.perf_counter()
+                turn_warmup_images = await data_pool.get_random_images_data(
+                    warmup_images_count, args.small_image_ratio, small_res, large_res
+                )
+                # print(f"get {len(turn_warmup_images)} random image time:", time.perf_counter() - t1)
+
             stage_1_text = history_text + f"<|im_start|>user\n" + ("<image>" * warmup_images_count) + "\n"
             stage_1_images = history_images + turn_warmup_images
-            
+
             text_tokens_s1 = len(tokenizer([stage_1_text.replace("<image>", "").replace("<audio>", "")]).input_ids[0])
             total_tokens_s1 = text_tokens_s1 + sum(img["tokens"] for img in stage_1_images) + sum(a["tokens"] for a in history_audios)
-            
+
             await send_request_sglang(
-                "warmup", api_url, stage_1_text, total_tokens_s1, 
+                "warmup", api_url, stage_1_text, total_tokens_s1,
                 [img["b64"] for img in stage_1_images], [a["b64"] for a in history_audios], max_output_token=1
             )
-            
+
             # [Stage 2: 采样]
             speak_duration = min(max(2.0, np.random.lognormal(mean=args.speak_mean, sigma=args.speak_sigma)), 30.0)
             await asyncio.sleep(speak_duration)
-            
-            active_image_count = min(args.max_active_images, max(2, int(speak_duration * args.image_sample_rate)))
-            active_image_count = (active_image_count // 2) * 2 
 
-            t1 = time.perf_counter()
-            turn_active_images = await data_pool.get_random_images_data(
-                active_image_count, args.small_image_ratio, small_res, large_res
-            )
-
-            # print(f"get {len(turn_active_images)} random image time:", time.perf_counter() - t1)
-            
-            modality_rand = random.random()
-            turn_num_audios = 0
-            user_spoken_text = ""
-            
-            if modality_rand < 0.3:
+            if args.request_mode == "text-only":
+                active_image_count = 0
+                turn_active_images = []
+                turn_num_audios = 0
+                user_spoken_text = ""
                 target_text_len = random.randint(args.prompt_len_min, args.prompt_len_max)
                 user_spoken_text = gen_random_input_text(target_text_len, tokenizer)
             else:
-                turn_num_audios = args.num_audios
-           
+                active_image_count = min(args.max_active_images, max(2, int(speak_duration * args.image_sample_rate)))
+                active_image_count = (active_image_count // 2) * 2
+
+                t1 = time.perf_counter()
+                turn_active_images = await data_pool.get_random_images_data(
+                    active_image_count, args.small_image_ratio, small_res, large_res
+                )
+                # print(f"get {len(turn_active_images)} random image time:", time.perf_counter() - t1)
+
+                modality_rand = random.random()
+                turn_num_audios = 0
+                user_spoken_text = ""
+
+                if args.request_mode == "multimodal-only":
+                    # multimodal-only 模式下强制带音频，不发纯文本
+                    turn_num_audios = args.num_audios
+                elif modality_rand < 0.3:
+                    target_text_len = random.randint(args.prompt_len_min, args.prompt_len_max)
+                    user_spoken_text = gen_random_input_text(target_text_len, tokenizer)
+                else:
+                    turn_num_audios = args.num_audios
+
             turn_active_audios = await data_pool.get_audios_matching_duration(speak_duration, turn_num_audios)
-            
+
             stage_2_append_tags = ("<image>" * active_image_count) + ("<audio>" * turn_num_audios)
-            
+
             if user_spoken_text:
                 stage_2_text = stage_1_text + stage_2_append_tags + "\n" + user_spoken_text + "<|im_end|>\n<|im_start|>assistant\n"
             else:
                 stage_2_text = stage_1_text + stage_2_append_tags + "<|im_end|>\n<|im_start|>assistant\n"
-            
+
             # print("stage2 text", stage_2_text[:500])
             stage_2_images = stage_1_images + turn_active_images
             stage_2_audios = history_audios + turn_active_audios
-            
+
             text_tokens_s2 = len(tokenizer([stage_2_text.replace("<image>", "").replace("<audio>", "")]).input_ids[0])
             total_tokens_s2 = text_tokens_s2 + sum(img["tokens"] for img in stage_2_images) + sum(a["tokens"] for a in stage_2_audios)
 
             max_out = min(args.max_output_token, max(10, int(np.random.gamma(shape=args.gamma_shape, scale=args.gamma_scale))))
             actual_out_len = await send_request_sglang(
-                "interactive", api_url, stage_2_text, total_tokens_s2, 
+                "interactive", api_url, stage_2_text, total_tokens_s2,
                 [img["b64"] for img in stage_2_images], [a["b64"] for a in stage_2_audios], max_output_token=max_out
             )
-            
+
             assistant_reply = gen_random_input_text(actual_out_len, tokenizer)
             history_text = stage_2_text + assistant_reply + "<|im_end|>\n"
             history_images = stage_2_images
             history_audios = stage_2_audios
-            
+
             history_text, history_images, history_audios = apply_eviction_policies(
-                history_text, history_images, history_audios, 
-                recent_images_count=(warmup_images_count + active_image_count), 
+                history_text, history_images, history_audios,
+                recent_images_count=(warmup_images_count + active_image_count),
                 tokenizer=tokenizer, args=args
             )
             
@@ -372,6 +391,7 @@ async def run_benchmark(args):
     
     print(f"\n--- Starting Multi-Turn Stateful Benchmark ---")
     print(f"Backend: SGLang")
+    print(f"Request Mode: {args.request_mode}")
     print(f"Concurrent Users: {args.num_users}")
     print(f"Test Duration: {args.active_time} seconds")
     print(f"Max Context Limit: {args.max_context_len} tokens")
@@ -452,6 +472,11 @@ def main():
     parser.add_argument("--max_output_token", type=int, default=64)
     parser.add_argument("--gamma-shape", type=float, default=2.0) # 均值30，众数15个字
     parser.add_argument("--gamma-scale", type=float, default=15.0)
+
+    # 请求模式控制（用于排查显存泄漏）
+    parser.add_argument("--request-mode", type=str, default="all",
+                        choices=["all", "text-only", "multimodal-only"],
+                        help="控制请求类型: all=混合(默认), text-only=纯文本无图无音频, multimodal-only=每轮都带图/音频")
     
     args = parser.parse_args()
     asyncio.run(run_benchmark(args))

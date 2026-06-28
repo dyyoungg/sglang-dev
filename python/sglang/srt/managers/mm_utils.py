@@ -9,6 +9,7 @@ import pickle
 from abc import abstractmethod
 from collections import defaultdict
 from contextlib import contextmanager
+from dataclasses import replace as dataclass_replace
 from multiprocessing import shared_memory
 from typing import Any, Callable, Dict, List, Literal, Optional, Tuple
 
@@ -523,7 +524,30 @@ def _get_chunked_embedding_full(
             if isinstance(embedding, torch.Tensor)
             else embedding
         )
-        embedding_cache.set(embedding_items_hash, embedding_per_req)
+        # Store CPU copy in cache to avoid GPU memory accumulation
+        if isinstance(embedding_per_req, EVSEmbeddingResult):
+            cache_entry = dataclass_replace(
+                embedding_per_req,
+                embedding=embedding_per_req.embedding.to("cpu", non_blocking=True),
+            )
+        elif isinstance(embedding_per_req, EmbeddingResult):
+            cache_entry = EmbeddingResult(
+                embedding=embedding_per_req.embedding.to("cpu", non_blocking=True)
+            )
+        else:
+            cache_entry = embedding_per_req
+        embedding_cache.set(embedding_items_hash, cache_entry)
+    else:
+        # Cache hit: move embedding back to GPU non-blocking
+        if isinstance(embedding_per_req, EVSEmbeddingResult):
+            embedding_per_req = dataclass_replace(
+                embedding_per_req,
+                embedding=embedding_per_req.embedding.to(device, non_blocking=True),
+            )
+        elif isinstance(embedding_per_req, EmbeddingResult):
+            embedding_per_req = EmbeddingResult(
+                embedding=embedding_per_req.embedding.to(device, non_blocking=True)
+            )
 
     if isinstance(embedding_per_req, EVSEmbeddingResult):
         item = embedding_items_per_req[0]
@@ -577,12 +601,13 @@ def _get_chunked_embedding_by_item(
         return None
 
     # 2. Check per-image cache for each overlapping item
-    cached_embeddings = {}  # idx -> tensor
+    cached_embeddings = {}  # idx -> tensor (on GPU)
     miss_items = []  # (idx, item, start, end)
     for idx, item, start, end in overlapping:
         cached = embedding_cache.get_single(item.hash)
         if cached is not None:
-            cached_embeddings[idx] = cached.embedding
+            # Cache stores CPU tensors; move back to GPU non-blocking
+            cached_embeddings[idx] = cached.embedding.to(device, non_blocking=True)
         else:
             miss_items.append((idx, item, start, end))
 
@@ -596,13 +621,19 @@ def _get_chunked_embedding_by_item(
         )
 
         # Split output by per-item token count
+        # Use .contiguous() to break view sharing with all_miss_embedding,
+        # otherwise LRU eviction of one item cannot free GPU memory because
+        # the underlying storage is shared across all split views.
         token_counts = [end - start + 1 for _, _, start, end in miss_items]
         split_embeddings = torch.split(all_miss_embedding, token_counts, dim=0)
 
         for (idx, item, _, _), emb in zip(miss_items, split_embeddings):
+            emb = emb.contiguous().clone()
             cached_embeddings[idx] = emb
-            emb_result = EmbeddingResult(embedding=emb)
+            # Store CPU copy in cache to avoid GPU memory accumulation
+            emb_result = EmbeddingResult(embedding=emb.to("cpu", non_blocking=True))
             embedding_cache.set(item.hash, emb_result)
+        del all_miss_embedding, split_embeddings
 
     # 4. Assemble chunk: for each overlapping item, extract the overlap slice
     chunk_slices = []
@@ -1109,19 +1140,18 @@ def general_mm_embed_routine(
                             feature = getattr(mm_item, "feature", None)
                             if isinstance(feature, torch.Tensor) and feature.is_cuda:
                                 mm_item.feature = feature.to("cpu", non_blocking=True)
-                            if get_global_server_args().language_only:
-                                precomputed_embeddings = getattr(
-                                    mm_item, "precomputed_embeddings", None
-                                )
-                                if (
-                                    isinstance(precomputed_embeddings, torch.Tensor)
-                                    and precomputed_embeddings.is_cuda
-                                ):
-                                    mm_item.precomputed_embeddings = (
-                                        precomputed_embeddings.to(
-                                            "cpu", non_blocking=True
-                                        )
+                            precomputed_embeddings = getattr(
+                                mm_item, "precomputed_embeddings", None
+                            )
+                            if (
+                                isinstance(precomputed_embeddings, torch.Tensor)
+                                and precomputed_embeddings.is_cuda
+                            ):
+                                mm_item.precomputed_embeddings = (
+                                    precomputed_embeddings.to(
+                                        "cpu", non_blocking=True
                                     )
+                                )
             forward_batch.mm_inputs = None
             forward_batch.mm_input_embeds = input_embeds
         else:
