@@ -31,7 +31,7 @@ else:
 
 _IMG_PREPROCESS_BACKEND = os.environ.get("SGLANG_IMG_PREPROCESS_BACKEND", "numexpr").lower()
 _IMG_TORCH_THREADS = os.environ.get("SGLANG_IMG_TORCH_THREADS")
-
+print(f"Image preprocess backend: {_IMG_PREPROCESS_BACKEND}!! torch thread: {_IMG_TORCH_THREADS}")
 
 def batch_center_crop(
     image: np.ndarray,
@@ -628,6 +628,7 @@ class Qwen25VLImageProcessorOptimized(OpimizedCLIPImageProcessor):
 
         # ── torch-fused fast path (env-gated, numpy uint8 input only) ──
         # 失败/不支持时返回 None,自动回退到下方原始 numexpr 路径,原逻辑完全不动。
+
         if (
             self._preprocess_backend == "torch"
             and images
@@ -761,8 +762,8 @@ def create_random_images(batch_size: int, height: int, width: int) -> List[PIL.I
     for _ in range(batch_size):
         # 创建随机 RGB 图片
         random_image = np.random.randint(0, 255, (height, width, 3), dtype=np.uint8)
-        pil_image = PIL.Image.fromarray(random_image)
-        images.append(pil_image)
+        # pil_image = PIL.Image.fromarray(random_image)
+        images.append(random_image)
     return images
 
 

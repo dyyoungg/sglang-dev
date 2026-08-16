@@ -132,6 +132,7 @@ def generate_fake_requests(
 async def get_request(
     input_requests: List[Tuple[str, int, List[Image.Image], List[np.ndarray]]],
     request_rate: float,
+    mode: str="uniform"
 ) -> AsyncGenerator[Tuple[str, int, List[Image.Image], List[np.ndarray]], None]:
     input_requests = iter(input_requests)
     for request in input_requests:
@@ -139,7 +140,11 @@ async def get_request(
 
         if request_rate == float("inf"):
             continue
-        interval = np.random.exponential(1.0 / request_rate)
+        if mode== "uniform":
+            interval = 1.0 / request_rate
+        elif mode=="poisson":
+            interval = np.random.exponential(1.0 / request_rate)  # Poisson
+      
         await asyncio.sleep(interval)
 
 
@@ -303,10 +308,11 @@ async def benchmark(
     best_of: int,
     use_beam_search: bool,
     request_rate: float,
-    max_output_token: int = 1024
+    max_output_token: int = 1024,
+    mode:str="uniform"
 ) -> None:
     tasks: List[asyncio.Task] = []
-    async for request in get_request(input_requests, request_rate):
+    async for request in get_request(input_requests, request_rate, mode):
         prompt, prompt_len, images, audios = request
         task = asyncio.create_task(send_request(backend, 
                                                 model_dir, 
@@ -351,7 +357,9 @@ def main(args: argparse.Namespace):
                           args.best_of,
                           args.use_beam_search, 
                           args.request_rate, 
-                          args.max_output_token))
+                          args.max_output_token,
+                          args.mode
+                          ))
     
     benchmark_end_time = time.time()
     benchmark_time = benchmark_end_time - benchmark_start_time
@@ -401,6 +409,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Benchmark the online serving throughput with distributed Fake Data.")
     parser.add_argument("--backend", type=str, default="vllm",
                         choices=["vllm", "lightllm", "sglang"])
+    parser.add_argument("--mode", type=str, default="uniform",
+                        choices=["uniform", "poisson"])
     parser.add_argument("--host", type=str, default="localhost")
     parser.add_argument("--port", type=int, default=8000)
     parser.add_argument("--tokenizer", type=str, required=True, help="Name or path of the tokenizer.")

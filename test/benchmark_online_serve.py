@@ -101,13 +101,14 @@ def apply_eviction_policies(
             history_text = "<image>".join(new_text_parts)
 
     # --- 2. 文本预算淘汰 (基于 im_start 安全拆分) ---
-    base_text_tokens = len(tokenizer.encode(history_text.replace("<image>", "").replace("<audio>", "")))
+    # 排除 system prompt 的 token 数，只统计对话轮次的文本预算
+    blocks = history_text.split("<|im_start|>")
+    # blocks[0] 是空串, blocks[1] 是 system block，从 blocks[2:] 开始是对话轮次
+    conversation_text = "<|im_start|>".join([""] + blocks[2:]) if len(blocks) > 2 else ""
+    base_text_tokens = len(tokenizer.encode(conversation_text.replace("<image>", "").replace("<audio>", "")))
     total_text_tokens = base_text_tokens + sum(a["tokens"] for a in history_audios)
-    
+
     if total_text_tokens > args.text_token_bucket:
-       
-        blocks = history_text.split("<|im_start|>")
-        
         while total_text_tokens > args.text_token_bucket // 2 and len(blocks) > 2:
             # 弹出最早的对话块 (blocks[0]是空字符串, blocks[1]是system prompt, 所以弹 blocks[2])
             dropped_block = "<|im_start|>" + blocks.pop(2)
@@ -234,7 +235,10 @@ async def send_request_sglang(req_type, api_url, prompt, prompt_len, images_b64_
 async def simulated_user_session(user_id: int, api_url: str, tokenizer, data_pool: DynamicDataPool, args: argparse.Namespace):
     session_start_time = time.time()
     
-    history_text = "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n"
+    system_prompt_body = "You are a helpful assistant.\n"
+    if args.system_prompt_tokens > 0:
+        system_prompt_body += gen_random_input_text(args.system_prompt_tokens, tokenizer)
+    history_text = f"<|im_start|>system\n{system_prompt_body}<|im_end|>\n"
     history_images = [] 
     history_audios = [] 
     
@@ -472,6 +476,10 @@ def main():
     parser.add_argument("--max_output_token", type=int, default=64)
     parser.add_argument("--gamma-shape", type=float, default=2.0) # 均值30，众数15个字
     parser.add_argument("--gamma-scale", type=float, default=15.0)
+
+    # System Prompt 参数
+    parser.add_argument("--system-prompt-tokens", type=int, default=10000,
+                        help="每个用户会话的 system prompt 固定填充 token 数（模拟真实长 system prompt）")
 
     # 请求模式控制（用于排查显存泄漏）
     parser.add_argument("--request-mode", type=str, default="all",

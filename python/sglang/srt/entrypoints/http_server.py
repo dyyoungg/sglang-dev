@@ -751,9 +751,8 @@ async def generate_request(obj: GenerateReqInput, request: Request):
             ):
                 yield b"data: " + dumps_json(out) + b"\n\n"
         except ValueError as e:
-            out = {"error": {"message": str(e)}}
             logger.error(f"[http_server] Error: {e}")
-            yield b"data: " + dumps_json(out) + b"\n\n"
+            return
         yield b"data: [DONE]\n\n"
 
     return StreamingResponse(
@@ -1956,7 +1955,7 @@ def _execute_server_warmup(server_args: ServerArgs):
                         },
                         {
                             "type": "text",
-                            "text": "Describe the image.",
+                            "text": "<image>Describe the image.",
                         },
                     ],
                 }
@@ -1983,6 +1982,7 @@ def _execute_server_warmup(server_args: ServerArgs):
     warmup_timeout = envs.SGLANG_WARMUP_TIMEOUT.get()
     try:
         if server_args.disaggregation_mode == "null":
+           
             res = requests.post(
                 url + request_name,
                 json=json_data,

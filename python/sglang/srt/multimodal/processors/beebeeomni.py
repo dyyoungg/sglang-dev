@@ -55,6 +55,7 @@ from sglang.srt.utils.cuda_ipc_transport_utils import (
 from sglang.utils import logger
 from sglang.srt.server_args import get_global_server_args
 from sglang.srt.mem_cache.multimodal_cache import EmbeddingResult
+from sglang.srt.models.beebee_audio_encoders import _get_feat_extract_output_lengths
 
 # ── Audio constants (Aligned with LightLLM / Whisper) ─────────────
 WHISPER_SAMPLING_RATE = 16000   
@@ -113,6 +114,32 @@ def compute_audio_num_tokens(
             feature_len = length // audio_frame_length
             token_num = (feature_len + audio_downsample_ratio - 1) // audio_downsample_ratio
             total_tokens += token_num
+        counts.append(total_tokens)
+    return counts
+
+
+def compute_audio_num_tokens_qwen3(
+    raw_waveform_lengths_list: List[List[int]],
+    audio_downsample_ratio: int,
+    n_window: int = 50,
+) -> List[int]:
+    """
+    Qwen3 audio encoder token count:
+      mel_frames = waveform_len // 160 (Whisper mel hop_length)
+      encoder_tokens = _get_feat_extract_output_lengths(mel_frames, n_window)
+      projector_tokens = ceil(encoder_tokens / downsample_ratio)
+    """
+    MEL_HOP_LENGTH = 160
+    counts = []
+    for chunk_lens in raw_waveform_lengths_list:
+        total_tokens = 0
+        for length in chunk_lens:
+            mel_frames = length // MEL_HOP_LENGTH
+            encoder_tokens = _get_feat_extract_output_lengths(
+                torch.tensor([mel_frames]), n_window
+            ).item()
+            proj_tokens = (encoder_tokens + audio_downsample_ratio - 1) // audio_downsample_ratio
+            total_tokens += proj_tokens
         counts.append(total_tokens)
     return counts
 
@@ -183,6 +210,9 @@ class BeeBeeOmniProcessor(SGLangBaseProcessor):
         aud_cfg = getattr(hf_config, "audio_config", None)
         self.audio_downsample_ratio: int = getattr(aud_cfg, "audio_downsample_ratio", 10)
         self.audio_frame_length: int = getattr(aud_cfg, "audio_frame_length", 320)
+        self.audio_encoder_type: str = getattr(aud_cfg, "model_type", "beebee_audio_model")
+        if self.audio_encoder_type == "beebee_qwen3_audio_model":
+            self.qwen3_n_window: int = getattr(aud_cfg, "n_window", 50)
 
         image_token = "<|image_pad|>"
         audio_token = "<|vision_pad|>"
@@ -221,6 +251,16 @@ class BeeBeeOmniProcessor(SGLangBaseProcessor):
 
         self._patch_size = getattr(
             self._processor.image_processor, "patch_size", 14
+        )
+
+    def _compute_audio_tokens(self, raw_waveform_lengths: List[List[int]]) -> List[int]:
+        """Dispatch to correct token-count formula based on audio encoder type."""
+        if self.audio_encoder_type == "beebee_qwen3_audio_model":
+            return compute_audio_num_tokens_qwen3(
+                raw_waveform_lengths, self.audio_downsample_ratio, self.qwen3_n_window
+            )
+        return compute_audio_num_tokens(
+            raw_waveform_lengths, self.audio_frame_length, self.audio_downsample_ratio
         )
 
     @classmethod
@@ -888,9 +928,7 @@ class BeeBeeOmniProcessor(SGLangBaseProcessor):
                 mel, chunk_lens = aud_hit[i]
                 mel_list.append(mel)
                 raw_waveform_lengths.append(chunk_lens)
-            audio_num_tokens = compute_audio_num_tokens(
-                raw_waveform_lengths, self.audio_frame_length, self.audio_downsample_ratio
-            )
+            audio_num_tokens = self._compute_audio_tokens(raw_waveform_lengths)
 
         # === Build token sequence and mm_items ===
         expanded_ids, offsets, modality_list = self._encode_and_expand_text(
@@ -1004,9 +1042,7 @@ class BeeBeeOmniProcessor(SGLangBaseProcessor):
         audio_num_tokens = []
         if base_output.audios:
             # mel_list 为 [num_chunks, 128, 3000] 的列表
-            audio_num_tokens = compute_audio_num_tokens(
-                raw_waveform_lengths, self.audio_frame_length, self.audio_downsample_ratio
-            )
+            audio_num_tokens = self._compute_audio_tokens(raw_waveform_lengths)
 
         # 正则切分、编码并展开占位符
         expanded_ids, offsets, modality_list = self._encode_and_expand_text(

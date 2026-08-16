@@ -775,6 +775,23 @@ class TokenizerManager(TokenizerControlMixin, TokenizerManagerScoreMixin):
                 self._validate_mm_limits(obj)
 
             mm_inputs = None
+            if input_text:
+                if obj.image_data:
+                    num_image_tags = input_text.count("<image>")
+                    num_images = len(obj.image_data) if isinstance(obj.image_data, list) else 1
+                    if num_image_tags != num_images:
+                        raise ValueError(
+                            f"<image> tag count ({num_image_tags}) != "
+                            f"image count ({num_images}). Aborting."
+                        )
+                if obj.audio_data:
+                    num_audio_tags = input_text.count("<audio>")
+                    num_audios = len(obj.audio_data) if isinstance(obj.audio_data, list) else 1
+                    if num_audio_tags != num_audios:
+                        raise ValueError(
+                            f"<audio> tag count ({num_audio_tags}) != "
+                            f"audio count ({num_audios}). Aborting."
+                        )
 
             if (
                 not self.server_args.language_only
@@ -819,7 +836,7 @@ class TokenizerManager(TokenizerControlMixin, TokenizerManagerScoreMixin):
                 f"{(_t_mm_end - _t_mm_start)*1000:.1f}ms "
                 f"(images={_num_images}, audios={_num_audios})"
             )
-            
+           
             if mm_inputs and mm_inputs.input_ids is not None:
                 input_ids = mm_inputs.input_ids
             if mm_inputs and mm_inputs.token_type_ids is not None:

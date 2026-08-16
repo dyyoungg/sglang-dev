@@ -25,7 +25,7 @@ from sglang.srt.managers.schedule_batch import (
 from sglang.srt.model_executor.forward_batch_info import ForwardBatch, PPProxyTensors
 from sglang.srt.model_loader.weight_utils import default_weight_loader
 from sglang.srt.models.qwen3_moe import Qwen3MoeModel
-from sglang.srt.models.beebee_audio_encoders import BeeBeeAudioEncoder
+from sglang.srt.models.beebee_audio_encoders import BeeBeeAudioEncoder, BeeBeeQwen3AudioEncoder
 from sglang.srt.models.beebee_vision_encoders import BeeBeeQwen25VisionModel, BeeBeeQwen3MoeVisionModel
 from sglang.srt.configs.beebeeomni_moe_config import BeeBeeMoEOmniConfig
 from sglang.srt.models.utils import WeightsMapper
@@ -142,10 +142,17 @@ class BeeBeeMoEOmniForConditionalGeneration(nn.Module):
             raise NotImplementedError(f"{self.vision_config.model_type} is not supported yet!")
 
         self.max_image_bs = getattr(get_global_server_args(), "max_image_bs", 16)
-        self.audio_encoder = BeeBeeAudioEncoder(
-            audio_config=self.audio_config,
-            out_hidden_size=self.text_config.hidden_size,
-        )
+        audio_model_type = getattr(self.audio_config, "model_type", "beebee_audio_model")
+        if audio_model_type == "beebee_qwen3_audio_model":
+            self.audio_encoder = BeeBeeQwen3AudioEncoder(
+                audio_config=self.audio_config,
+                out_hidden_size=self.text_config.hidden_size,
+            )
+        else:
+            self.audio_encoder = BeeBeeAudioEncoder(
+                audio_config=self.audio_config,
+                out_hidden_size=self.text_config.hidden_size,
+            )
         
         self.is_mrope_enabled = False
 
@@ -230,16 +237,19 @@ class BeeBeeMoEOmniForConditionalGeneration(nn.Module):
         if not items:
             return torch.empty(0, device=self.audio_encoder.device)
 
-        all_mel_chunks = []
-        all_chunk_lengths = []
-        WHISPER_HOP_LENGTH = 320
-        
+        # Whisper encoder needs post-conv frame count (÷320);
+        # Qwen3 encoder needs raw mel frame count (÷160).
+        if isinstance(self.audio_encoder, BeeBeeQwen3AudioEncoder):
+            audio_hop_length = 160
+        else:
+            audio_hop_length = 320
+
         if self.use_data_parallel:
             items_mel_chunks = []
             items_chunk_lengths = []
             for item in items:
                 mel_chunks = item.feature.to(self.audio_encoder.device, self.audio_encoder.dtype)
-                chunk_lengths = [l // WHISPER_HOP_LENGTH for l in item.model_specific_data["audio_length"]]
+                chunk_lengths = [l // audio_hop_length for l in item.model_specific_data["audio_length"]]
                 items_mel_chunks.append(mel_chunks)
                 items_chunk_lengths.append(chunk_lengths)
 
@@ -253,7 +263,7 @@ class BeeBeeMoEOmniForConditionalGeneration(nn.Module):
             all_chunk_lengths = []
             for item in items:
                 mel_chunks = item.feature.to(self.audio_encoder.device, self.audio_encoder.dtype)
-                chunk_lengths = [l // WHISPER_HOP_LENGTH for l in item.model_specific_data["audio_length"]]
+                chunk_lengths = [l // audio_hop_length for l in item.model_specific_data["audio_length"]]
                 all_mel_chunks.append(mel_chunks)
                 all_chunk_lengths.extend(chunk_lengths)
 
@@ -453,24 +463,29 @@ class BeeBeeMoEOmniForConditionalGeneration(nn.Module):
             if is_moe_expert:
                 continue
 
-            # stack weight 
+            # stack weight
+            # Skip stacked q/k/v mapping for Qwen3 audio encoder (uses separate projections)
             is_stacked = False
-            for param_name, weight_name, shard_id in stacked_params_mapping:
-                
-                if f".{weight_name}." not in name and not name.endswith(f".{weight_name}"):
-                    continue
-                
-                mapped_name = name.replace(weight_name, param_name)
-                if mapped_name not in params_dict:
-                    print(f"{mapped_name} not in the params_dict.")
-                    continue
+            is_qwen3_audio = name.startswith("audio_encoder.") and isinstance(
+                self.audio_encoder, BeeBeeQwen3AudioEncoder
+            )
+            if not is_qwen3_audio:
+                for param_name, weight_name, shard_id in stacked_params_mapping:
 
-                param = params_dict[mapped_name]
-                weight_loader = getattr(param, "weight_loader", default_weight_loader)
-                weight_loader(param, loaded_weight, shard_id)
+                    if f".{weight_name}." not in name and not name.endswith(f".{weight_name}"):
+                        continue
 
-                is_stacked = True
-                break
+                    mapped_name = name.replace(weight_name, param_name)
+                    if mapped_name not in params_dict:
+                        print(f"{mapped_name} not in the params_dict.")
+                        continue
+
+                    param = params_dict[mapped_name]
+                    weight_loader = getattr(param, "weight_loader", default_weight_loader)
+                    weight_loader(param, loaded_weight, shard_id)
+
+                    is_stacked = True
+                    break
             
             if is_stacked:
                 continue

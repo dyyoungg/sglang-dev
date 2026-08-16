@@ -26,6 +26,64 @@ class BeeBeeMoEVisionConfig(Qwen3_5MoeVisionConfig):
         self.return_hidden_states   = return_hidden_states
 
 
+class BeeBeeQwen3AudioConfig(PretrainedConfig):
+    """
+    Qwen3 Audio Encoder config + BeeBee projector fields.
+
+    Architecture: 3x Conv2d (8x temporal downsample) + sinusoidal PE
+                  + N transformer encoder layers + LN + projector.
+    """
+
+    model_type = "beebee_qwen3_audio_model"
+
+    def __init__(
+        self,
+        # ── Encoder architecture ──────────────────────────────────────────
+        num_mel_bins: int = 128,
+        encoder_layers: int = 32,
+        encoder_attention_heads: int = 20,
+        encoder_ffn_dim: int = 5120,
+        d_model: int = 1280,
+        dropout: float = 0.0,
+        attention_dropout: float = 0.0,
+        activation_function: str = "gelu",
+        activation_dropout: float = 0.0,
+        scale_embedding: bool = False,
+        n_window: int = 50,
+        n_window_infer: int = 800,
+        downsample_hidden_size: int = 480,
+        max_source_positions: int = 1500,
+        conv_chunksize: int = 500,
+        # ── Projector ─────────────────────────────────────────────────────
+        audio_projector_type: str = "multi_conv",
+        audio_downsample_size: int = 2,
+        output_size: int = 5120,
+        return_hidden_states: bool = False,
+        **kwargs,
+    ):
+        super().__init__(**kwargs)
+        self.num_mel_bins = num_mel_bins
+        self.encoder_layers = encoder_layers
+        self.encoder_attention_heads = encoder_attention_heads
+        self.encoder_ffn_dim = encoder_ffn_dim
+        self.d_model = d_model
+        self.dropout = dropout
+        self.attention_dropout = attention_dropout
+        self.activation_function = activation_function
+        self.activation_dropout = activation_dropout
+        self.scale_embedding = scale_embedding
+        self.n_window = n_window
+        self.n_window_infer = n_window_infer
+        self.downsample_hidden_size = downsample_hidden_size
+        self.max_source_positions = max_source_positions
+        self.conv_chunksize = conv_chunksize
+        # Projector fields
+        self.audio_downsample_ratio = audio_downsample_size
+        self.audio_projector_type = audio_projector_type
+        self.output_size = output_size
+        self.return_hidden_states = return_hidden_states
+
+
 class BeeBeeAudioConfig(WhisperConfig):
     """
     Whisper encoder config + BeeBee AudioConvUpScale projector fields.
@@ -76,11 +134,11 @@ def _init_config(config_dict: Optional[Dict[str, Any] | PretrainedConfig]) -> Op
 # ── Encoder wrapper ───────────────────────────────────────────────────────────
 
 class BeeBeeMoEOmniEncoderConfig(PretrainedConfig):
-  
+
     model_type = "llavaqwen2_encoder"
     sub_configs = {
         "image_config": BeeBeeMoEVisionConfig,
-        "audio_config": BeeBeeAudioConfig,
+        "audio_config": AutoConfig,
     }
 
     def __init__(
@@ -184,6 +242,7 @@ class BeeBeeMoEOmniConfig(PretrainedConfig):
 
 AutoConfig.register("beebee_qwen35moe_vision_model", BeeBeeMoEVisionConfig,  exist_ok=True)
 AutoConfig.register("beebee_audio_model",      BeeBeeAudioConfig,   exist_ok=True)
+AutoConfig.register("beebee_qwen3_audio_model", BeeBeeQwen3AudioConfig, exist_ok=True)
 AutoConfig.register("llavaqwen3moe_omni",         BeeBeeMoEOmniConfig,    exist_ok=True)
 
 

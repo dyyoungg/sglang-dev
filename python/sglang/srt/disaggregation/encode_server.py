@@ -2444,7 +2444,7 @@ class MMEncoder:
                     f"_encode PARTIAL ({modality.name}): "
                     f"hash={( t_cache - t0)*1000:.2f}ms, "
                     f"proc={( t_proc - t_cache)*1000:.2f}ms, "
-                    f"get_feature={( t_vit - t_proc)*1000:.2f}ms, "
+                    f"vi_forward={( t_vit - t_proc)*1000:.2f}ms, "
                     f"cache_store={( t_end - t_vit)*1000:.2f}ms, "
                     f"total={( t_end - t0)*1000:.2f}ms "
                     f"({hit_count} hits, {len(missing_indices)} misses)"
