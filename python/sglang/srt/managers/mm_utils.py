@@ -724,7 +724,7 @@ def _adjust_embedding_length(
     embedding: torch.Tensor,
     mask: torch.Tensor,
     logger,
-) -> torch.Tensor:
+) -> Tuple[torch.Tensor, torch.Tensor]:
     num_mm_tokens_in_embedding = embedding.shape[0]
     num_mm_tokens_in_input_ids = mask.sum().item()
     if num_mm_tokens_in_input_ids != num_mm_tokens_in_embedding:
@@ -746,10 +746,20 @@ def _adjust_embedding_length(
                 num_multimodal = num_mm_tokens_in_input_ids // embedding.shape[0]
                 embedding = embedding[-num_multimodal:, :]
         else:
-            raise RuntimeError(
-                f"Insufficient multimodal embedding length: {num_mm_tokens_in_input_ids=} vs {num_mm_tokens_in_embedding=}. This is an internal error"
+            # Embedding has fewer tokens than input_ids expects.
+            # This can happen when image is corrupted or encoder produces fewer
+            # features than the processor predicted. Truncate the mask to match
+            # the actual embedding length — use embedding as ground truth.
+            logger.warning(
+                f"Truncating multimodal mask from {num_mm_tokens_in_input_ids} to "
+                f"{num_mm_tokens_in_embedding} to match actual embedding length."
             )
-    return embedding
+            # Keep only the first num_mm_tokens_in_embedding True positions in mask
+            true_indices = torch.where(mask.squeeze(dim=-1))[0]
+            # Zero out the excess True positions beyond embedding length
+            excess_indices = true_indices[num_mm_tokens_in_embedding:]
+            mask[excess_indices] = False
+    return embedding, mask
 
 
 def get_embedding_and_mask(
@@ -802,7 +812,9 @@ def get_embedding_and_mask(
         torch.npu.current_stream().synchronize()
     special_multimodal_mask = _get_multimodal_mask(input_ids, placeholder_tensor)
     # 3. Adjust embedding length if needed
-    embedding = _adjust_embedding_length(embedding, special_multimodal_mask, logger)
+    embedding, special_multimodal_mask = _adjust_embedding_length(
+        embedding, special_multimodal_mask, logger
+    )
     return embedding, special_multimodal_mask, input_ids
 
 

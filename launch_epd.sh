@@ -26,12 +26,18 @@
 
 export SGLANG_SKIP_SGL_KERNEL_VERSION_CHECK=True
 export SGLANG_IO_WORKERS=8
-export SGLANG_VLM_CACHE_SIZE_MB=2048
+export SGLANG_VLM_CACHE_SIZE_MB=40960
+export SGLANG_IMG_PREPROCESS_BACKEND="torch"
+export SGLANG_IMG_TORCH_THREADS=16
+
 
 export MOONCAKE_TE_META_DATA_SERVER="http://127.0.0.1:8080/metadata"
 export MOONCAKE_MASTER="127.0.0.1:50051"
-export MOONCAKE_PROTOCOL="rdma"    # 没有 RDMA 网卡就用 tcp
-export MOONCAKE_GLOBAL_SEGMENT_SIZE="16gb"
+export MOONCAKE_PROTOCOL="rdma"  
+# export MOONCAKE_GLOBAL_SEGMENT_SIZE="16gb"
+export UCX_TLS=cuda_ipc,cuda_copy,tcp
+export UCX_MEMTYPE_CACHE=n
+export SGLANG_DISAGGREGATION_NIXL_BACKEND_PARAMS='{"TLS": "cuda_ipc,cuda_copy,tcp"}'
 
 MODEL_PATH=${1:?Usage: $0 <model_path> <role> [tp_size] [extra_args...]}
 ROLE=${2:?Usage: $0 <model_path> <role> [tp_size] [extra_args...]}
@@ -47,9 +53,9 @@ COMMON_ARGS=(
     --model-impl sglang
     --host 0.0.0.0
     --log-level debug
-    --chunked-prefill-size 8192
+    --chunked-prefill-size 16384
     --model-loader-extra-config '{"enable_multithread_load": true,"num_threads": 8}'
-    --cuda-graph-max-bs 16
+    --cuda-graph-max-bs 8
     --tp-size "$TP_SIZE"
     --enable-mfu-metrics
     --enable-metrics
@@ -89,7 +95,8 @@ case "$ROLE" in
             --encoder-only \
             --encoder-transfer-backend zmq_to_scheduler \
             --enable-prefix-mm-cache \
-            --mm-attention-backend fa2
+            --mm-attention-backend fa2 \
+            --max-image-bs 32 \
             # --mm-global-cache-pool-size-gb 8.0 \
             # --mm-global-cache-max-batch-groups 256 \
         ;;
@@ -140,7 +147,7 @@ case "$ROLE" in
             --language-only \
             --encoder-urls $ENCODER_URLS \
             --encoder-transfer-backend zmq_to_scheduler \
-            --warmups "beebee_omni_warmup"
+            --warmups "beebee_omni_warmup" \
         ;;
 
     # ─── EPD: Prefill ───────────────────────────────────────────────────
@@ -157,7 +164,8 @@ case "$ROLE" in
             --disaggregation-mode prefill \
             --language-only \
             --encoder-urls $ENCODER_URLS \
-            --encoder-transfer-backend mooncake
+            --encoder-transfer-backend zmq_to_scheduler \
+            --disaggregation-transfer-backend nixl
         ;;
 
     # ─── EPD: Decode ────────────────────────────────────────────────────
@@ -167,7 +175,8 @@ case "$ROLE" in
         sglang serve \
             "${COMMON_ARGS[@]}" \
             --port $DECODE_PORT \
-            --disaggregation-mode decode
+            --disaggregation-mode decode \
+            --disaggregation-transfer-backend nixl
         ;;
 
     # ─── EPD: Router ────────────────────────────────────────────────────
