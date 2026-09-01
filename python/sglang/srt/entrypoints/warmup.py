@@ -146,7 +146,7 @@ async def beebee_omni_warmup(disaggregation_mode: str, tokenizer_manager):
     img_b64_str = base64.b64encode(img_buffer.getvalue()).decode("utf-8")
     dummy_image_input1 = f"data:image/jpeg;base64,{img_b64_str}"
 
-    dummy_img = Image.new("RGB", (1288, 728), (0, 0, 0))
+    dummy_img = Image.new("RGB", (1120, 672), (0, 0, 0))
     img_buffer = io.BytesIO()
     dummy_img.save(img_buffer, format="JPEG")
     img_b64_str = base64.b64encode(img_buffer.getvalue()).decode("utf-8")

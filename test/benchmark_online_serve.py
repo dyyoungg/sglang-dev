@@ -48,9 +48,29 @@ def get_adaptive_pool_size(M, N, scale=16):
     r = 1 / math.sqrt(scale)
     return max(1, int(np.round(M * r))), max(1, int(np.round(N * r)))
 
-def get_image_token_count(image_width: int, image_height: int) -> int:
-    h, w = get_adaptive_pool_size(image_height // 14 // 2, image_width // 14 // 2, scale=16)
+def get_image_token_count(image_width: int, image_height: int, patch_size, downsample_ratio) -> int:
+    h, w = get_adaptive_pool_size(image_height // patch_size // 2, image_width // patch_size // 2, scale=downsample_ratio)
     return (h * w) // 2
+
+def compute_image_resolution(target_tokens: int, patch_size: int, downsample_ratio: int,
+                             aspect_ratio: float = 16 / 9) -> Tuple[int, int]:
+    """从目标 token 数 + patch_size/downsample_ratio 反推图像分辨率 (width, height)"""
+    r = 1 / math.sqrt(downsample_ratio)
+    hw_pool = target_tokens * 2  # h_pool * w_pool
+    h_pool = max(1, round(math.sqrt(hw_pool / aspect_ratio)))
+    w_pool = max(1, round(hw_pool / h_pool))
+
+    # 反推 adaptive pool 前的 M, N
+    M = max(1, round(h_pool / r))
+    N = max(1, round(w_pool / r))
+
+    height = M * patch_size * 2
+    width = N * patch_size * 2
+
+    actual = get_image_token_count(width, height, patch_size, downsample_ratio)
+    if actual != target_tokens:
+        print(f"[WARN] 目标 {target_tokens} tokens, 实际 {actual} tokens (分辨率 {width}x{height}, patch={patch_size}, ds={downsample_ratio})")
+    return width, height
 
 def get_audio_token_count(audio_sec: float) -> int:
     audio_downsample_ratio = 10
@@ -130,8 +150,10 @@ def apply_eviction_policies(
 
 
 class DynamicDataPool:
-    def __init__(self, max_workers=16):
+    def __init__(self, patch_size: int, downsample_ratio: int, max_workers=16):
         print(f"Initializing Dynamic Data Generator (On-the-fly mode with {max_workers} threads)...")
+        self.patch_size = patch_size
+        self.downsample_ratio = downsample_ratio
         self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=max_workers)
 
     def _gen_image_sync(self, width: int, height: int) -> dict:
@@ -140,7 +162,7 @@ class DynamicDataPool:
         buffered = io.BytesIO()
         img.save(buffered, format="JPEG")
         b64_str = base64.b64encode(buffered.getvalue()).decode("utf-8")
-        tok_count = get_image_token_count(width, height)
+        tok_count = get_image_token_count(width, height, self.patch_size, self.downsample_ratio)
         return {"b64": b64_str, "tokens": tok_count}
 
     def _gen_audio_sync(self, duration: float) -> dict:
@@ -390,15 +412,24 @@ async def simulated_user_session(user_id: int, api_url: str, tokenizer, data_poo
 async def run_benchmark(args):
     api_url = f"http://{args.host}:{args.port}/generate_stream"
     tokenizer = get_tokenizer(args.tokenizer, "fast")
-    
-    data_pool = DynamicDataPool(max_workers=16)
-    
+
+    # 从 token 数动态计算图像分辨率
+    args.small_image_width, args.small_image_height = compute_image_resolution(
+        args.small_image_tokens, args.patch_size, args.downsample_ratio, args.image_aspect_ratio)
+    args.large_image_width, args.large_image_height = compute_image_resolution(
+        args.large_image_tokens, args.patch_size, args.downsample_ratio, args.image_aspect_ratio)
+
+    data_pool = DynamicDataPool(patch_size=args.patch_size, downsample_ratio=args.downsample_ratio, max_workers=16)
+
     print(f"\n--- Starting Multi-Turn Stateful Benchmark ---")
     print(f"Backend: SGLang")
     print(f"Request Mode: {args.request_mode}")
     print(f"Concurrent Users: {args.num_users}")
     print(f"Test Duration: {args.active_time} seconds")
     print(f"Max Context Limit: {args.max_context_len} tokens")
+    print(f"Patch Size: {args.patch_size}, Downsample Ratio: {args.downsample_ratio}")
+    print(f"Small Image: {args.small_image_width}x{args.small_image_height} ({args.small_image_tokens} tokens)")
+    print(f"Large Image: {args.large_image_width}x{args.large_image_height} ({args.large_image_tokens} tokens)")
    
     
     benchmark_start_time = time.time()
@@ -453,17 +484,20 @@ def main():
     parser.add_argument("--image-token-bucket", type=int, default=3500)
     parser.add_argument("--text-token-bucket", type=int, default=3000)
     
-    # 图像生成与采样参数
-    parser.add_argument("--small-image-width", type=int, default=644)
-    parser.add_argument("--small-image-height", type=int, default=364)
-    parser.add_argument("--large-image-width", type=int, default=1288)
-    parser.add_argument("--large-image-height", type=int, default=728)
+    # 图像生成与采样参数（分辨率由 token 数 + patch_size/downsample_ratio 动态计算）
+    parser.add_argument("--small-image-tokens", type=int, default=9, help="每张小图的目标 token 数")
+    parser.add_argument("--large-image-tokens", type=int, default=42, help="每张大图的目标 token 数")
+    parser.add_argument("--image-aspect-ratio", type=float, default=16/9, help="图像宽高比")
     parser.add_argument("--small-image-ratio", type=float, default=0.75)
     
     parser.add_argument("--warmup-images", type=int, default=36)
     parser.add_argument("--proactive-image-count", type=int, default=20)
     parser.add_argument("--image-sample-rate", type=float, default=4.0, help="每秒语音采样几张图")
     parser.add_argument("--max-active-images", type=int, default=16, help="Stage 2 抽图上限")
+
+    # 视觉编码器参数
+    parser.add_argument("--patch-size", type=int, default=14, help="视觉编码器 patch size")
+    parser.add_argument("--downsample-ratio", type=int, default=16, help="视觉编码器下采样比例")
     
     # 音频与对数正态分布参数
     parser.add_argument("--num-audios", type=int, default=1)

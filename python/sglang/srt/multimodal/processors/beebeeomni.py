@@ -931,6 +931,10 @@ class BeeBeeOmniProcessor(SGLangBaseProcessor):
             audio_num_tokens = self._compute_audio_tokens(raw_waveform_lengths)
 
         # === Build token sequence and mm_items ===
+        logger.info(
+            f"[TOKEN COUNT] image_num_tokens={image_num_tokens} (sum={sum(image_num_tokens)}), "
+            f"audio_num_tokens={audio_num_tokens} (sum={sum(audio_num_tokens)}), "
+        )
         expanded_ids, offsets, modality_list = self._encode_and_expand_text(
             input_text, image_num_tokens, audio_num_tokens
         )
