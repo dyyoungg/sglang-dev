@@ -16,6 +16,42 @@ logger = logging.getLogger(__name__)
 _is_hip = is_hip()
 
 
+@functools.lru_cache(maxsize=1)
+def _get_device_shared_mem_limit() -> int:
+    """Return max dynamic shared memory per block (bytes). 0 if detection fails.
+
+    Triton's OutOfResources check uses the per-block opt-in limit from
+    cuDeviceGetAttribute(CU_DEVICE_ATTRIBUTE_MAX_SHARED_MEMORY_PER_BLOCK_OPTIN).
+    torch exposes the per-SM value which is always >= per-block, so it works as
+    a conservative upper bound. On architectures where the two are equal (e.g.
+    SM120 Blackwell = 101376) this is exact.
+    """
+    try:
+        import torch
+
+        if torch.cuda.is_available():
+            props = torch.cuda.get_device_properties(torch.cuda.current_device())
+            # Prefer the per-block attribute if available (PyTorch ≥2.4),
+            # otherwise fall back to per-SM which is always a safe upper bound.
+            limit = getattr(
+                props,
+                "max_shared_memory_per_block_optin",
+                getattr(props, "shared_memory_per_multiprocessor", 0),
+            )
+            return limit
+    except Exception:
+        pass
+    return 0
+
+
+def _estimate_smem_bytes(
+    block_m: int, block_n: int, block_k: int, num_stages: int, elem_bytes: int = 1
+) -> int:
+    """Rough estimate of Triton pipeline shared memory: (A_tile + B_tile) * (num_stages - 1)."""
+    per_stage = (block_m * block_k + block_n * block_k) * elem_bytes
+    return per_stage * max(num_stages - 1, 1)
+
+
 def get_config_file_name(
     E: int,
     N: int,
@@ -172,6 +208,24 @@ def get_default_config(
                     "num_warps": 4,
                     "num_stages": 2 if _is_hip else 4,
                 }
+            # Clamp num_stages if shared memory would exceed hardware limit
+            # (e.g. SM120 Blackwell has only ~99KB vs SM90 Hopper's ~228KB)
+            smem_limit = _get_device_shared_mem_limit()
+            if smem_limit > 0:
+                while config["num_stages"] > 1:
+                    est = _estimate_smem_bytes(
+                        config["BLOCK_SIZE_M"],
+                        config["BLOCK_SIZE_N"],
+                        config["BLOCK_SIZE_K"],
+                        config["num_stages"],
+                    )
+                    if est <= smem_limit:
+                        break
+                    config["num_stages"] -= 1
+                    logger.info(
+                        f"Reduced MoE FP8 num_stages to {config['num_stages']} "
+                        f"(smem est {est} > hw limit {smem_limit})"
+                    )
         else:
             # Block-wise quant: BLOCK_SIZE_K must be divisible by block_shape[1]
             config = {
