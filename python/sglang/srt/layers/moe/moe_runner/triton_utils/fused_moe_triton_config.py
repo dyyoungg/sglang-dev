@@ -222,10 +222,10 @@ def get_default_config(
                     if est <= smem_limit:
                         break
                     config["num_stages"] -= 1
-                    logger.info(
-                        f"Reduced MoE FP8 num_stages to {config['num_stages']} "
-                        f"(smem est {est} > hw limit {smem_limit})"
-                    )
+                    # logger.info(
+                    #     f"Reduced MoE FP8 num_stages to {config['num_stages']} "
+                    #     f"(smem est {est} > hw limit {smem_limit})"
+                    # )
         else:
             # Block-wise quant: BLOCK_SIZE_K must be divisible by block_shape[1]
             config = {

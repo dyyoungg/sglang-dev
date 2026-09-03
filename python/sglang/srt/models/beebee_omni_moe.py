@@ -168,7 +168,7 @@ class BeeBeeMoEOmniForConditionalGeneration(nn.Module):
     
     
     def get_image_feature(self, items: List[MultimodalDataItem]) -> torch.Tensor:
-      
+
         if not items:
             return torch.empty(0, device=self.image_encoder.device)
 
@@ -190,6 +190,12 @@ class BeeBeeMoEOmniForConditionalGeneration(nn.Module):
             )
             image_grid_thw = torch.concat([item.image_grid_thw for item in chunk_items], dim=0)
 
+            # 提取 per-image downsample ratio
+            chunk_ratios = [
+                item.model_specific_data.get("downsample_ratio", self.downsample_ratio)
+                for item in chunk_items
+            ]
+
             # 提前返回逻辑
             if pixel_values.dim() == 2:
                 current_dim = pixel_values.shape[-1]
@@ -199,7 +205,7 @@ class BeeBeeMoEOmniForConditionalGeneration(nn.Module):
 
             assert pixel_values.dim() == 2, pixel_values.dim()
             assert image_grid_thw.dim() == 2, image_grid_thw.dim()
-            
+
             # 正常执行视觉模型推理
             if self.use_data_parallel:
                 chunk_embeds = run_dp_sharded_beebee_vision_model(
@@ -207,11 +213,14 @@ class BeeBeeMoEOmniForConditionalGeneration(nn.Module):
                     pixel_values,
                     image_grid_thw.tolist(),
                     merge_size=2,
-                    downsample_ratio=self.downsample_ratio
+                    downsample_ratios=chunk_ratios,
                 )
             else:
-                chunk_embeds, _ = self.image_encoder(pixel_values, grid_thw=image_grid_thw)
-                
+                chunk_embeds, _ = self.image_encoder(
+                    pixel_values, grid_thw=image_grid_thw,
+                    downsample_ratios=chunk_ratios,
+                )
+
             all_image_embeds.append(chunk_embeds)
 
         # 拼接所有分块的特征

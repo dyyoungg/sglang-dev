@@ -251,11 +251,13 @@ class DynamicAvgPoolProjector(nn.Module):
         self,
         images_feature: torch.Tensor,
         images_thw: torch.Tensor,
+        downsample_ratios: Optional[List[int]] = None,
     ) -> Tuple[torch.Tensor, List[int]]:
         """
         Args:
             images_feature: [N_merged_patches, encoder_hidden]
             images_thw: [n_images, 3] -> (t, h_merged, w_merged)
+            downsample_ratios: per-image ratio list, falls back to self.mm_downsample_ratio
         """
         nvtx.range_push("DynamicAvgPoolProjector.forward")
         outputs = []
@@ -263,17 +265,18 @@ class DynamicAvgPoolProjector(nn.Module):
         start = 0
         hidden_size = images_feature.shape[-1]
 
-        for thw in images_thw:
+        for idx, thw in enumerate(images_thw):
             t, h_m, w_m = int(thw[0].item()), int(thw[1].item()), int(thw[2].item())
             length = t * h_m * w_m
-            
+
             img_seq = images_feature[start : start + length]
             start += length
 
             # [t, h_m, w_m, D] -> [D, t, h_m, w_m]
             img_feat = img_seq.view(t, h_m, w_m, -1).permute(3, 0, 1, 2)
-            
-            Mh, Nw = _adaptive_pool_size(h_m, w_m, scale=self.mm_downsample_ratio)
+
+            ratio = downsample_ratios[idx] if downsample_ratios else self.mm_downsample_ratio
+            Mh, Nw = _adaptive_pool_size(h_m, w_m, scale=ratio)
             
             pooled = F.adaptive_avg_pool2d(img_feat, (Mh, Nw))
             
@@ -443,10 +446,11 @@ class BeeBeeQwen25VisionModel(nn.Module, RotaryPosMixin):
         self,
         x: torch.Tensor,
         grid_thw: torch.Tensor,
+        downsample_ratios: Optional[List[int]] = None,
     ) -> torch.Tensor:
         nvtx.range_push("Qwen25VisionModel.forward")
         if self.enable_cg:
-            result = self.forward_with_cuda_graph(x, grid_thw)
+            result = self.forward_with_cuda_graph(x, grid_thw, downsample_ratios=downsample_ratios)
             nvtx.range_pop()
             return result
 
@@ -534,7 +538,7 @@ class BeeBeeQwen25VisionModel(nn.Module, RotaryPosMixin):
         proj_thw = grid_thw.clone()
         proj_thw[:, 1] = grid_thw[:, 1] // self.spatial_merge_size
         proj_thw[:, 2] = grid_thw[:, 2] // self.spatial_merge_size
-        features, seq_lens = self.mm_projector(x, proj_thw)
+        features, seq_lens = self.mm_projector(x, proj_thw, downsample_ratios=downsample_ratios)
         nvtx.range_pop()  # vision_mm_projector
 
         nvtx.range_pop()  # Qwen25VisionModel.forward
@@ -544,6 +548,7 @@ class BeeBeeQwen25VisionModel(nn.Module, RotaryPosMixin):
         self,
         x: torch.Tensor,
         grid_thw: torch.Tensor,
+        downsample_ratios: Optional[List[int]] = None,
     ) -> torch.Tensor:
         # patchify
         x = x.to(device=self.device, dtype=self.dtype)
@@ -609,10 +614,10 @@ class BeeBeeQwen25VisionModel(nn.Module, RotaryPosMixin):
         proj_thw[:, 1] = grid_thw[:, 1] // self.spatial_merge_size
         proj_thw[:, 2] = grid_thw[:, 2] // self.spatial_merge_size
         
-        features, seq_lens = self.mm_projector(x, proj_thw)
-        
+        features, seq_lens = self.mm_projector(x, proj_thw, downsample_ratios=downsample_ratios)
+
         return features, seq_lens
-    
+
 
 class Qwen3_VisionMLP(nn.Module):
 
@@ -1250,6 +1255,7 @@ class BeeBeeQwen3MoeVisionModel(nn.Module, RotaryPosMixin):
         self,
         x: torch.Tensor,
         grid_thw: torch.Tensor,
+        downsample_ratios: Optional[List[int]] = None,
     ) -> torch.Tensor:
         # patchify
         (
@@ -1276,18 +1282,19 @@ class BeeBeeQwen3MoeVisionModel(nn.Module, RotaryPosMixin):
         proj_thw = grid_thw.clone()
         proj_thw[:, 1] = grid_thw[:, 1] // self.spatial_merge_size
         proj_thw[:, 2] = grid_thw[:, 2] // self.spatial_merge_size
-        
-        features, seq_lens = self.mm_projector(x, proj_thw)
+
+        features, seq_lens = self.mm_projector(x, proj_thw, downsample_ratios=downsample_ratios)
         return features, seq_lens
 
     def forward(
         self,
         x: torch.Tensor,
         grid_thw: torch.Tensor,
+        downsample_ratios: Optional[List[int]] = None,
     ) -> torch.Tensor:
         nvtx.range_push("Qwen3MoeVisionModel.forward")
         if self.enable_cg:
-            result = self.forward_with_cuda_graph(x, grid_thw)
+            result = self.forward_with_cuda_graph(x, grid_thw, downsample_ratios=downsample_ratios)
             nvtx.range_pop()
             return result
 
@@ -1337,7 +1344,7 @@ class BeeBeeQwen3MoeVisionModel(nn.Module, RotaryPosMixin):
         proj_thw = grid_thw.clone()
         proj_thw[:, 1] = grid_thw[:, 1] // self.spatial_merge_size
         proj_thw[:, 2] = grid_thw[:, 2] // self.spatial_merge_size
-        features, seq_lens = self.mm_projector(x, proj_thw)
+        features, seq_lens = self.mm_projector(x, proj_thw, downsample_ratios=downsample_ratios)
         nvtx.range_pop()  # moe_vision_mm_projector
 
         nvtx.range_pop()  # Qwen3MoeVisionModel.forward

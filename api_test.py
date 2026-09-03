@@ -17,7 +17,7 @@ import tempfile
 from concurrent.futures import ThreadPoolExecutor
 import av
 import imageio.v3 as iio
-
+import math
 # ceph_client = CepthClient("/mnt/afs/yangdeyu/aoss_ydy_game.conf")
 
 
@@ -190,8 +190,9 @@ class MultiModalClient:
         images: Optional[List[Image.Image]] = None,
         audios: Optional[List[Union[np.ndarray, str, bytes]]] = None,
         target_sizes: Optional[List[Tuple]] = None,
+        image_downsample_ratios: Optional[List[int]] = None,
     ) -> AsyncGenerator[str, None]:
-        
+
         image_data_list = []
         if images:
             for i, image in enumerate(images):
@@ -218,9 +219,13 @@ class MultiModalClient:
         # SGLang 支持单图传入 string，多图传入 list
         if image_data_list:
             payload["image_data"] = image_data_list if len(image_data_list) > 1 else image_data_list[0]
-            
+
         if audio_data_list:
             payload["audio_data"] = audio_data_list if len(audio_data_list) > 1 else audio_data_list[0]
+
+        # 动态压缩率
+        if image_downsample_ratios is not None:
+            payload["image_downsample_ratios"] = image_downsample_ratios
 
         try:
             async with aiohttp.ClientSession() as session:
@@ -336,68 +341,161 @@ def extract_frames_from_video(video_path, max_frames=8):
 
     return frames
 
+    
+def round_by_factor(number: int, factor: int) -> int:
+    """Returns the closest integer to 'number' that is divisible by 'factor'."""
+    return round(number / factor) * factor
+
+
+def ceil_by_factor(number: int, factor: int) -> int:
+    """Returns the smallest integer greater than or equal to 'number' that is divisible by 'factor'."""
+    return math.ceil(number / factor) * factor
+
+
+def floor_by_factor(number: int, factor: int) -> int:
+    """Returns the largest integer less than or equal to 'number' that is divisible by 'factor'."""
+    return math.floor(number / factor) * factor
+
+IMAGE_FACTOR=32
+MIN_PIXELS_SEQ = 64
+MIN_PIXELS_SEQ = 64  # 64 token
+MAX_PIXELS_SEQ = 1980 # 1980 token
+IMAGE_MIN_SIDE = IMAGE_FACTOR * 4 * 1
+
+def smart_resize(
+    height: int, 
+    width: int, 
+    factor: int = IMAGE_FACTOR, 
+    min_pixels: int = MIN_PIXELS_SEQ * IMAGE_FACTOR**2, 
+    max_pixels: int = MAX_PIXELS_SEQ * IMAGE_FACTOR**2,
+    min_side: int = IMAGE_MIN_SIDE
+) -> tuple[int, int]:
+    """
+    Rescales the image so that the following conditions are met:
+
+    1. Both dimensions (height and width) are divisible by 'factor'.
+
+    2. The total number of pixels is within the range ['min_pixels', 'max_pixels'].
+
+    3. The aspect ratio of the image is maintained as closely as possible.
+    """
+    # possible_resolution = [[644,364], [336,336], [448, 448], [364, 644], [560, 168], [168, 560]]
+    # width, height = select_best_resolution((width, height), possible_resolution)
+    h_bar = max(factor, round_by_factor(height, factor))
+    w_bar = max(factor, round_by_factor(width, factor))
+    if h_bar * w_bar > max_pixels:
+        beta = math.sqrt((height * width) / max_pixels)
+        h_bar = floor_by_factor(height / beta, factor)
+        w_bar = floor_by_factor(width / beta, factor)
+    elif h_bar * w_bar < min_pixels:
+        beta = math.sqrt(min_pixels / (height * width))
+        h_bar = ceil_by_factor(height * beta, factor)
+        w_bar = ceil_by_factor(width * beta, factor)
+
+    if min_side > 0:
+        
+        if h_bar < min_side:
+            beta = min_side / float(h_bar)
+            h_bar = ceil_by_factor(min_side, factor)
+            w_bar = ceil_by_factor(w_bar * beta, factor)
+        
+        if w_bar < min_side:
+            beta = min_side / float(w_bar)
+            w_bar = ceil_by_factor(min_side, factor)
+            h_bar = ceil_by_factor(h_bar * beta, factor)
+    
+    return h_bar, w_bar
 
 async def main():
-   
+
     client = MultiModalClient(
-        url="http://127.0.0.1:18003/generate_stream",
+        url="http://127.0.0.1:18004/generate_stream",
         default_sampling_params={
             "max_new_tokens": 2048,
             "temperature": 0.7,
             "top_p": 0.8,
             "top_k": 20,
-            "frequency_penalty": 1.05,  # 替换了原有的 repetition_penalty
-            "stop": "<|im_end|>",       # SGLang 通常需要显式指定 stop token
+            "frequency_penalty": 1.05,
+            "stop": "<|im_end|>",
         },
     )
 
-   
-    print("=== 测试图像推理 ===")
-    test_video = [
-                #  "/mnt/afs/yangdeyu/dependency/lightllm-dev/hRpeLQ1rApQ_7339235330479882240.mp4",
-                  "/mnt/afs/yangdeyu/dependency/lightllm-dev/data/0BZAD.mp4",
-                #   "/mnt/afs/yangdeyu/dependency/lightllm-dev/data/0CESB.mp4",
-                #  "/mnt/afs/yangdeyu/dependency/lightllm-dev/data/0CG15.mp4",
-                #  "/mnt/afs/yangdeyu/dependency/lightllm-dev/data/0F453.mp4",
-                #  "/mnt/afs/yangdeyu/dependency/lightllm-dev/data/0HGNK.mp4",
-                #  "/mnt/afs/yangdeyu/dependency/lightllm-dev/data/0KZYF.mp4",
-                #  "/mnt/afs/yangdeyu/dependency/lightllm-dev/data/0OE6M.mp4",
-                #  "/mnt/afs/yangdeyu/dependency/lightllm-dev/data/0OSJY.mp4",
-                #  "/mnt/afs/yangdeyu/dependency/lightllm-dev/data/0PVKV.mp4",
-                #  "/mnt/afs/yangdeyu/dependency/lightllm-dev/data/0TKKR.mp4",
+    image = Image.open("/mnt/afs/yangdeyu/dependency/sglang/ScreenShot_2026-07-28_212000_993.png")
+    width, height = image.size
 
-    ]
-    # test_video = "s3://gamedata/PLM_video_splits/1v9ZMmYS4aE_7340988604434350080.mp4"
-    
-    target_sizes = [(448, 448)] * 256
-    max_frames = 16  # 你可以改为任意数量
+    # ═══════════════════════════════════════════════════════
+    # 测试1: 不传 image_downsample_ratios（回退到 config 默认值）
+    # ═══════════════════════════════════════════════════════
+    print("=== 测试1: 默认 downsample_ratio ===")
+    mm_downsample_ratio = 12
+    resized_height, resized_width = smart_resize(
+        height, width,
+        factor=IMAGE_FACTOR * math.ceil(math.sqrt(mm_downsample_ratio)),
+        min_pixels=MIN_PIXELS_SEQ * IMAGE_FACTOR**2,
+        max_pixels=MAX_PIXELS_SEQ * IMAGE_FACTOR**2,
+        min_side=IMAGE_MIN_SIDE,
+    )
+    resized_image = image.resize((resized_width, resized_height), resample=Image.BICUBIC)
+    images = [resized_image, resized_image]
+    prompt = construct_prompt(query="识别这张图的所有文字", image_num=len(images))
+    target_sizes = [(resized_width, resized_height)] * 256
 
-    for video in test_video:
-        images = extract_frames_from_video(video, max_frames=max_frames)
-        print(len(images))
-        prompt = construct_prompt(query="描述一下视频发生的事情", image_num=len(images))
-        first_time = 0
-        t1 = time.time()
-        async for token in client.generate(prompt, images=images, target_sizes=target_sizes):
-            if first_time == 0:
-                first_time = time.time() - t1
-            print(token, end="", flush=True)
-
-        print("\n")
-        time.sleep(1)
-
-    # print("\n\n=== 测试多模态推理 (图像+音频) ===")
-    audios = ["/mnt/afs/yangdeyu/dependency/sglang/07039219.wav"] * 5 + ["/mnt/afs/yangdeyu/dependency/sglang/22d5e544df0c397fe3fcbd171bf8327a.wav"]*10  # 音频文件路径
-
-    # 测试多模态推理
     t1 = time.time()
     first_time = 0
-    prompt = construct_prompt(query="", image_num=len(images), audio_nums=len(audios))
-    async for token in client.generate(prompt, images=images, audios=audios, target_sizes=target_sizes):
+    async for token in client.generate(prompt, images=images, target_sizes=target_sizes):
         if first_time == 0:
             first_time = time.time() - t1
         print(token, end="", flush=True)
-    print(first_time)
+    print(f"\n[默认ratio] TTFT={first_time:.3f}s\n")
+
+    # ═══════════════════════════════════════════════════════
+    # 测试2: 传入固定 image_downsample_ratios=[4]
+    #   一对图 → 一个 ratio 值
+    # ═══════════════════════════════════════════════════════
+    print("=== 测试2: downsample_ratio=4 (高压缩, 少token) ===")
+    t1 = time.time()
+    first_time = 0
+    async for token in client.generate(
+        prompt, images=images, target_sizes=target_sizes,
+        image_downsample_ratios=[4],
+    ):
+        if first_time == 0:
+            first_time = time.time() - t1
+        print(token, end="", flush=True)
+    print(f"\n[ratio=4] TTFT={first_time:.3f}s\n")
+
+    # ═══════════════════════════════════════════════════════
+    # 测试3: 传入 image_downsample_ratios=[1] (低压缩, 多token)
+    # ═══════════════════════════════════════════════════════
+    print("=== 测试3: downsample_ratio=1 (无压缩, 最多token) ===")
+    t1 = time.time()
+    first_time = 0
+    async for token in client.generate(
+        prompt, images=images, target_sizes=target_sizes,
+        image_downsample_ratios=[1],
+    ):
+        if first_time == 0:
+            first_time = time.time() - t1
+        print(token, end="", flush=True)
+    print(f"\n[ratio=1] TTFT={first_time:.3f}s\n")
+
+    # ═══════════════════════════════════════════════════════
+    # 测试4: 多对图 + 不同 ratio
+    #   4张图 → 2对 → ratios=[1, 16]
+    # ═══════════════════════════════════════════════════════
+    print("=== 测试4: 多对图不同ratio [4, 12] ===")
+    images_multi = [resized_image] * 4  # 4张图 → 2对
+    prompt_multi = construct_prompt(query="描述这些图片", image_num=len(images_multi))
+    t1 = time.time()
+    first_time = 0
+    async for token in client.generate(
+        prompt_multi, images=images_multi, target_sizes=target_sizes,
+        image_downsample_ratios=[4, 12],
+    ):
+        if first_time == 0:
+            first_time = time.time() - t1
+        print(token, end="", flush=True)
+    print(f"\n[ratios=[1,16]] TTFT={first_time:.3f}s\n")
 
 
 asyncio.run(main())

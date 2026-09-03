@@ -68,31 +68,35 @@ MIN_AUDIO_LEN         = 4000     # default min audio len
 def compute_image_num_tokens_dynamic(
     grid_thw: torch.Tensor,
     spatial_merge_size: int,
-    downsample_ratio: int,
+    downsample_ratios: Union[int, List[int]],
 ) -> List[int]:
     """
     专门针对图像的计算逻辑：每两张图合并为一个 grid_thw。
     计算出总 Token 数后，平分为两半，连续返回两次，以满足 Prompt 中的两个连续 <image> 标签。
+
+    downsample_ratios: 单个 int（所有图共用）或 List[int]（每个 grid_thw 对应一个 ratio）。
     """
-    r = 1.0 / math.sqrt(downsample_ratio)
+    if isinstance(downsample_ratios, (int, float)):
+        downsample_ratios = [int(downsample_ratios)] * len(grid_thw)
     counts = []
-    
-    for thw in grid_thw:
+
+    for thw, ratio in zip(grid_thw, downsample_ratios):
+        r = 1.0 / math.sqrt(ratio)
         t  = int(thw[0].item())
         h_patches = int(thw[1].item())
         w_patches = int(thw[2].item())
 
         M = h_patches / spatial_merge_size
         N = w_patches / spatial_merge_size
-        
+
         Mh  = max(1, int(np.round(M * r)))
         Nw  = max(1, int(np.round(N * r)))
-      
+
         total_tokens = t * (Mh * Nw)
         half_tokens = total_tokens // 2
-        
+
         counts.append(half_tokens)
-        counts.append(total_tokens - half_tokens) 
+        counts.append(total_tokens - half_tokens)
     return counts
 
 
@@ -626,12 +630,22 @@ class BeeBeeOmniProcessor(SGLangBaseProcessor):
         """
         img_grid_thw = kwargs.get("img_grid_thw", None)
         audio_feature_lens = kwargs.get("audio_feature_lens", None)
+        per_pair_ratios = kwargs.get("image_downsample_ratios", None)
 
         # ── Image token counts (paired: each grid_thw → 2 <image> tokens) ──
         image_num_tokens = []
         if img_grid_thw is not None and len(img_grid_thw) > 0:
+            num_pairs = len(img_grid_thw)
+            if per_pair_ratios is None:
+                per_pair_ratios = [self.image_downsample_ratio] * num_pairs
+            else:
+                per_pair_ratios = [int(r) for r in per_pair_ratios]
+                if len(per_pair_ratios) < num_pairs:
+                    per_pair_ratios.extend(
+                        [self.image_downsample_ratio] * (num_pairs - len(per_pair_ratios))
+                    )
             image_num_tokens = compute_image_num_tokens_dynamic(
-                img_grid_thw, self._spatial_merge_size, self.image_downsample_ratio
+                img_grid_thw, self._spatial_merge_size, per_pair_ratios
             )
 
         # ── Audio token counts (one per audio) ──
@@ -770,6 +784,18 @@ class BeeBeeOmniProcessor(SGLangBaseProcessor):
         # ═══ Front-load Batch Padding ═══
         if image_data and len(image_data) % 2 != 0:
             image_data = list(image_data) + [image_data[-1]]
+
+        # ═══ Per-pair downsample ratios ═══
+        per_pair_ratios = getattr(request_obj, 'image_downsample_ratios', None)
+        num_pairs = len(image_data) // 2 if image_data else 0
+        if per_pair_ratios is None:
+            per_pair_ratios = [self.image_downsample_ratio] * num_pairs
+        else:
+            per_pair_ratios = [int(r) for r in per_pair_ratios]
+            if len(per_pair_ratios) < num_pairs:
+                per_pair_ratios.extend(
+                    [self.image_downsample_ratio] * (num_pairs - len(per_pair_ratios))
+                )
 
         # ══════════════════════════════════════════════════════════════════
         # STAGE 1: Hash + cache lookup (no decode, pure CPU, < 2ms)
@@ -920,7 +946,7 @@ class BeeBeeOmniProcessor(SGLangBaseProcessor):
             pixel_values_list = [img_hit_pixels[i] for i in range(num_pairs)]
             image_grid_thw = torch.stack([img_hit_grids[i] for i in range(num_pairs)])
             image_num_tokens = compute_image_num_tokens_dynamic(
-                image_grid_thw, self._spatial_merge_size, self.image_downsample_ratio
+                image_grid_thw, self._spatial_merge_size, per_pair_ratios
             )
 
         if audio_data:
@@ -960,7 +986,10 @@ class BeeBeeOmniProcessor(SGLangBaseProcessor):
                     offsets=[new_offset],
                     feature=feat,
                     hash=pair_hashes[i],
-                    model_specific_data={"image_grid_thw": thw},
+                    model_specific_data={
+                        "image_grid_thw": thw,
+                        "downsample_ratio": per_pair_ratios[i],
+                    },
                 ))
 
         for i, mel in enumerate(mel_list):
@@ -1006,6 +1035,18 @@ class BeeBeeOmniProcessor(SGLangBaseProcessor):
         t0 = time.perf_counter()
         loop = asyncio.get_running_loop()
 
+        # ═══ Per-pair downsample ratios ═══
+        num_pairs = len(image_data) // 2 if image_data else 0
+        per_pair_ratios = getattr(request_obj, 'image_downsample_ratios', None)
+        if per_pair_ratios is None:
+            per_pair_ratios = [self.image_downsample_ratio] * num_pairs
+        else:
+            per_pair_ratios = [int(r) for r in per_pair_ratios]
+            if len(per_pair_ratios) < num_pairs:
+                per_pair_ratios.extend(
+                    [self.image_downsample_ratio] * (num_pairs - len(per_pair_ratios))
+                )
+
         def _sync_load_data():
             return self.load_mm_data(
                 prompt=input_text,
@@ -1040,7 +1081,7 @@ class BeeBeeOmniProcessor(SGLangBaseProcessor):
         image_num_tokens = []
         if image_grid_thw is not None and len(image_grid_thw) > 0:
             image_num_tokens = compute_image_num_tokens_dynamic(
-                image_grid_thw, self._spatial_merge_size, self.image_downsample_ratio
+                image_grid_thw, self._spatial_merge_size, per_pair_ratios
             )
        
         audio_num_tokens = []
@@ -1068,11 +1109,14 @@ class BeeBeeOmniProcessor(SGLangBaseProcessor):
                 feat = pixel_values[i] if pixel_values is not None else None
                 
                 mm_items.append(MultimodalDataItem(
-                    modality=Modality.IMAGE, 
-                    offsets=[new_offset], 
+                    modality=Modality.IMAGE,
+                    offsets=[new_offset],
                     feature=feat,
-                    hash=None, 
-                    model_specific_data={"image_grid_thw": thw},
+                    hash=None,
+                    model_specific_data={
+                        "image_grid_thw": thw,
+                        "downsample_ratio": per_pair_ratios[i],
+                    },
                 ))
 
         for i, mel in enumerate(mel_list):

@@ -152,6 +152,10 @@ class GenerateReqInput(BaseReq):
     audio_data: Optional[MultimodalDataInputFormat] = None
     # Whether to extract and process audio from video inputs.
     use_audio_in_video: bool = False
+    # Per-image-pair downsample ratios for vision token compression.
+    # Length should match the number of image pairs (len(image_data) // 2).
+    # If None, uses the default ratio from model config.
+    image_downsample_ratios: Optional[Union[List[int], List[float]]] = None
     # The sampling_params. See descriptions below.
     sampling_params: Optional[Union[List[Dict], Dict]] = None
     # Whether to return logprobs.

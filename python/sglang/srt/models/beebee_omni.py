@@ -193,6 +193,12 @@ class BeeBeeOmniForConditionalGeneration(nn.Module):
             )
             image_grid_thw = torch.concat([item.image_grid_thw for item in chunk_items], dim=0)
 
+            # 提取 per-image downsample ratio
+            chunk_ratios = [
+                item.model_specific_data.get("downsample_ratio", self.downsample_ratio)
+                for item in chunk_items
+            ]
+
             # 提前返回逻辑
             if pixel_values.dim() == 2:
                 current_dim = pixel_values.shape[-1]
@@ -211,10 +217,13 @@ class BeeBeeOmniForConditionalGeneration(nn.Module):
                     pixel_values,
                     image_grid_thw.tolist(),
                     merge_size=2,
-                    downsample_ratio=self.downsample_ratio
+                    downsample_ratios=chunk_ratios,
                 )
             else:
-                chunk_embeds, _ = self.image_encoder(pixel_values, grid_thw=image_grid_thw)
+                chunk_embeds, _ = self.image_encoder(
+                    pixel_values, grid_thw=image_grid_thw,
+                    downsample_ratios=chunk_ratios,
+                )
 
             # 及时释放输入 tensor，减少 GPU 显存碎片
             del pixel_values, image_grid_thw

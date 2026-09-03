@@ -681,10 +681,10 @@ def run_dp_sharded_beebee_vision_model(
     vision_model: torch.nn.Module,
     pixel_values: torch.Tensor,
     grid_thw_list: list,
-    downsample_ratio: int = 16,
+    downsample_ratios: list = None,
     merge_size: int = 2,
 ):
- 
+
     from sglang.srt.layers.dp_attention import (
         get_attention_tp_group,
         get_attention_tp_rank,
@@ -692,22 +692,33 @@ def run_dp_sharded_beebee_vision_model(
     )
     from sglang.srt.multimodal.mm_utils import get_dp_encoder_lb_assignment
 
+    # 兼容旧调用：如果没传 downsample_ratios，从 vision_model 的 projector 取 config 默认值
+    if downsample_ratios is None:
+        default_ratio = getattr(
+            getattr(vision_model, "mm_projector", None),
+            "mm_downsample_ratio",
+            getattr(vision_model, "downsample_ratio", 16),
+        )
+        downsample_ratios = [default_ratio] * len(grid_thw_list)
+
     tp_size = get_attention_tp_size()
     if tp_size == 1:
-        # 单卡模式下，直接调用模型的 lm_encode 或 forward，注意它返回的是 (features, seq_lens)
-        features, _ = vision_model(pixel_values, grid_thw=torch.tensor(grid_thw_list))
+        features, _ = vision_model(
+            pixel_values, grid_thw=torch.tensor(grid_thw_list),
+            downsample_ratios=downsample_ratios,
+        )
         return features
 
     tp_rank_local = get_attention_tp_rank()
 
     patches_per_image = [math.prod(grid_thw) for grid_thw in grid_thw_list]
     cum_patches_per_image = [0, *itertools.accumulate(patches_per_image)]
-    
+
     # 提前精确计算每张图经过 DynamicAvgPool 后的【输出 Token 数量】
     out_tokens_per_image = []
-    for t, h, w in grid_thw_list:
+    for i, (t, h, w) in enumerate(grid_thw_list):
         h_m, w_m = h // merge_size, w // merge_size
-        Mh, Nw = get_adaptive_pool_size(h_m, w_m, scale=downsample_ratio)
+        Mh, Nw = get_adaptive_pool_size(h_m, w_m, scale=downsample_ratios[i])
         out_tokens_per_image.append(t * Mh * Nw)
 
     image_to_tp_rank, gpu_sample_counts, _ = get_dp_encoder_lb_assignment(patches_per_image, tp_size)
@@ -730,8 +741,9 @@ def run_dp_sharded_beebee_vision_model(
         pixel_values_local = torch.empty(
             (0, pixel_values.shape[1]), device=pixel_values.device, dtype=pixel_values.dtype
         )
-        
+
     local_grid_thw_list = [grid_thw_list[i] for i in image_idxs_local]
+    local_ratios = [downsample_ratios[i] for i in image_idxs_local]
 
     # 4. 核心修改：计算每个 Rank 的输出长度，并找到 max_len_per_rank 用于 Padding
     grouped_output_len = [0] * tp_size
@@ -746,9 +758,10 @@ def run_dp_sharded_beebee_vision_model(
 
     # 5. 运行局部的 Vision Model
     if pixel_values_local.shape[0] > 0:
-       
+
         image_embeds_local, _ = vision_model(
-            pixel_values_local, torch.tensor(local_grid_thw_list, device=pixel_values.device)
+            pixel_values_local, torch.tensor(local_grid_thw_list, device=pixel_values.device),
+            downsample_ratios=local_ratios,
         )
     else:
         image_embeds_local = torch.empty(
