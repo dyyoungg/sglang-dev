@@ -162,15 +162,20 @@ async def beebee_omni_warmup(disaggregation_mode: str, tokenizer_manager):
     audio_b64_str = base64.b64encode(audio_buffer.getvalue()).decode("utf-8")
     dummy_audio_input = f"data:audio/wav;base64,{audio_b64_str}"
     try:
-       
-        req_vision = GenerateReqInput(
-            text="<image>"*16 + "<audio>"*8 + "请描述这段画面。",
-            image_data=[dummy_image_input1]*8 + [dummy_image_input2] * 8 ,
-            audio_data=[dummy_audio_input]*8,
-            sampling_params={"max_new_tokens": 1}
-        )
-        await tokenizer_manager.generate_request(req_vision, None).__anext__()
-               
+        dp_size = tokenizer_manager.server_args.dp_size
+
+        async def _run_one_warmup():
+            req = GenerateReqInput(
+                text="<image>"*16 + "<audio>"*8 + "请描述这段画面。",
+                image_data=[dummy_image_input1]*8 + [dummy_image_input2] * 8,
+                audio_data=[dummy_audio_input]*8,
+                sampling_params={"max_new_tokens": 1}
+            )
+            await tokenizer_manager.generate_request(req, None).__anext__()
+
+        import asyncio
+        await asyncio.gather(*[_run_one_warmup() for _ in range(dp_size)])
+
         logger.info("✅ warmup successfully!!")
     except Exception as e:
         logger.error(f"❌ warmup failed! error:{e}")
