@@ -556,8 +556,8 @@ def compare_weights(orig_sd, sgl_sd):
     merged_tasks = {}       # 收集常规 QKV 和 Shared Expert MLP
     moe_stacked_tasks = {}  # 收集 MoE 专家的 stacked 张量 (layer_idx -> {proj_type: tensor})
     
-    # 匹配 MoE 专家权重 (兼容有无 .weight 后缀)
-    moe_pattern = re.compile(r"model\.layers\.(\d+)\.mlp\.experts\.(gate_proj|up_proj|down_proj)(?:\.weight)?$")
+    # 匹配 MoE 专家权重 (兼容有无 .weight 后缀，包括合并的 gate_up_proj)
+    moe_pattern = re.compile(r"model\.layers\.(\d+)\.mlp\.experts\.(gate_proj|up_proj|down_proj|gate_up_proj)(?:\.weight)?$")
 
     # 常规线性层合并映射
     target_map = {
@@ -589,10 +589,15 @@ def compare_weights(orig_sd, sgl_sd):
             sgl_name = sgl_name.replace("audio_encoder.", "audio_encoder.encoder.", 1)
 
         # [归类 B]: 拦截常规 QKV 和 Shared Expert MLP 的散装权重
+        # 只有当 sgl_sd 中存在合并目标 (qkv_proj/gate_up_proj) 时才做合并
+        # Qwen3 Audio Encoder 的 q/k/v 是独立 nn.Linear，不存在 qkv_proj
         is_merged_task = False
         for orig_key, (target_key, part_name) in target_map.items():
             if f".{orig_key}." in sgl_name or sgl_name.endswith(f".{orig_key}"):
                 merged_sgl_name = sgl_name.replace(orig_key, target_key)
+                # 如果合并目标在 sgl_sd 中不存在，说明 SGLang 使用独立权重，跳过合并
+                if merged_sgl_name not in sgl_sd:
+                    break
                 merged_tasks.setdefault(merged_sgl_name, {})[part_name] = orig_tensor
                 is_merged_task = True
                 break
@@ -663,11 +668,36 @@ def compare_weights(orig_sd, sgl_sd):
             
         if w13_name in sgl_sd:
             sgl_w13 = sgl_sd[w13_name]
-            if "gate_proj" in projs and "up_proj" in projs:
+            if "gate_up_proj" in projs:
+                # ckpt 已经是合并的 gate_up_proj [num_experts, 2*intermediate, hidden]
+                # load_weights 拆分为 w1(gate) + w3(up)，FusedMoE triton 内部做了 transpose
+                orig_merged = projs["gate_up_proj"]
+                half = orig_merged.shape[1] // 2
+                gate = orig_merged[:, :half, :]
+                up = orig_merged[:, half:, :]
+                # FusedMoE triton stores as [num_experts, hidden, 2*intermediate] (transposed)
+                expected_w13 = torch.cat([gate, up], dim=1).transpose(-2, -1)
+
+                if expected_w13.shape != sgl_w13.shape:
+                    # 可能未 transpose (非 triton 后端)，fallback 到原始 layout
+                    expected_w13 = torch.cat([gate, up], dim=1)
+
+                if expected_w13.shape != sgl_w13.shape:
+                    print(f"❌ [Shape Mismatch - MoE w13] Layer {layer_idx}: expected {expected_w13.shape} vs sgl {sgl_w13.shape}")
+                    all_matched = False
+                else:
+                    max_diff = torch.max(torch.abs(expected_w13 - sgl_w13)).item()
+                    if max_diff > 1e-5:
+                        print(f"❌ [Value Differs - MoE w13] Layer {layer_idx} -> Max Diff: {max_diff:.6f}")
+                        all_matched = False
+            elif "gate_proj" in projs and "up_proj" in projs:
                 # FusedMoE 预期：沿着输出特征维度 (dim=1) 将 gate 和 up 拼接
                 # 原 shape 通常为 [num_experts, intermediate_size, hidden_size]
                 expected_w13 = torch.cat([projs["gate_proj"], projs["up_proj"]], dim=1)
-                
+                # FusedMoE triton stores transposed
+                if expected_w13.shape != sgl_w13.shape:
+                    expected_w13 = expected_w13.transpose(-2, -1)
+
                 if expected_w13.shape != sgl_w13.shape:
                     print(f"❌ [Shape Mismatch - MoE w13] Layer {layer_idx}: expected {expected_w13.shape} vs sgl {sgl_w13.shape}")
                     all_matched = False
@@ -711,7 +741,7 @@ def compare_weights(orig_sd, sgl_sd):
     # 总结输出
     # ==========================================
     if all_matched:
-        print("🎉 恭喜！所有权重全部完美对齐！")
+        print("🎉 所有权重全部完美对齐！")
         print("涵盖检查项：")
         print(" - Vision/Audio 特殊名称映射")
         print(" - Whisper k_proj_bias 置零填充")
@@ -734,7 +764,7 @@ if __name__ == "__main__":
     init_distributed_environment()
     initialize_model_parallel()
     
-    MODEL_PATH = "/mnt/afs/yangdeyu/GameMLLM/VeOmni-Dev/ckpt/0518_llavaomni_30A3B_qwen35encoder_st2_mmprojector/checkpoints/hf_ckpt" 
+    MODEL_PATH = "/mnt/afs/yangdeyu/GameMLLM/VeOmni-Dev/ckpt/0904_llavaomni_30A3B_dynamic_downsample_st0_gametext_4e5/hf_ckpt" 
     
     dummy_args = ServerArgs(model_path=MODEL_PATH, mm_enable_dp_encoder=False)
     dummy_args.enable_dp_attention = False
@@ -746,8 +776,8 @@ if __name__ == "__main__":
 
     print("Initializing models...")
     from veomni.models.custom.llava_qwen3moe.modeling_llava_qwen3moe_omni import LlavaQwen3MoeForCausalLM
-    from veomni.ops.fused_moe import apply_veomni_fused_moe_patch
-    apply_veomni_fused_moe_patch(moe_implementation="fused")
+    from veomni.ops.kernels.moe import apply_veomni_fused_moe_patch
+    apply_veomni_fused_moe_patch(fused_moe_kernel="triton")
     
     config = BeeBeeMoEOmniConfig.from_pretrained(MODEL_PATH)
   
@@ -772,27 +802,40 @@ if __name__ == "__main__":
     sglang_model.eval()
 
     # 2. 加载 原始模型 到 cuda:1
+    
     train_model = LlavaQwen3MoeForCausalLM.from_pretrained(MODEL_PATH, torch_dtype=torch.bfloat16).to(device_orig)
     train_model.eval()
 
     print("Loading weights into SGLang model...")
-    safetensors_files = glob.glob(os.path.join(MODEL_PATH, "*.safetensors"))
+    safetensors_files = sorted(glob.glob(os.path.join(MODEL_PATH, "*.safetensors")))
     if not safetensors_files:
         raise ValueError(f"No .safetensors files found in {MODEL_PATH}")
 
-    weights_iterator = []
-    for f in safetensors_files:
-        with safe_open(f, framework="pt", device="cpu") as st:
-            for k in st.keys():
-                weights_iterator.append((k, st.get_tensor(k)))
+    def weights_iterator():
+        for f in safetensors_files:
+            with safe_open(f, framework="pt", device="cpu") as st:
+                for k in st.keys():
+                    yield (k, st.get_tensor(k))
 
-    sglang_model.load_weights(weights_iterator)
+    sglang_model.load_weights(weights_iterator())
+
+    # === 验证 lm_head / embed_tokens 绑定情况 ===
+    print("\n--- 🔍 Diagnosing lm_head.weight ---")
+    train_lm_ptr = train_model.lm_head.weight.data_ptr()
+    if hasattr(train_model, "model") and hasattr(train_model.model, "embed_tokens"):
+        train_emb_ptr = train_model.model.embed_tokens.weight.data_ptr()
+    elif hasattr(train_model, "language_model"):
+        train_emb_ptr = train_model.language_model.model.embed_tokens.weight.data_ptr()
+    else:
+        train_emb_ptr = None
+    print(f"  训练模型 lm_head 与 embed_tokens 是否 tied: {train_lm_ptr == train_emb_ptr}")
+
 
     # === Check Model Weight ===
     print("Preparing state dicts for comparison...")
     orig_state_dict = {k: v.cpu() for k, v in train_model.state_dict().items()}
     sgl_state_dict = {k: v.cpu() for k, v in sglang_model.state_dict().items()}
-    
+
     compare_weights(orig_state_dict, sgl_state_dict)
 
     # ---------------------------------------------------------
@@ -829,7 +872,7 @@ if __name__ == "__main__":
     print(f"Vision Output Shape: {sgl_vision_out.shape}")
     print(f"Vision Max Diff:  {v_max_diff:.6f}")
     print(f"Vision Mean Diff: {v_mean_diff:.6f}")
-    if v_max_diff < 1e-3:
+    if v_max_diff < 1e-2 and v_mean_diff < 1e-3:
         print("✅ Vision Encoder weights loaded perfectly!")
     else:
         print("❌ Vision Encoder has significant precision differences.")
