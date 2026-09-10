@@ -165,20 +165,32 @@ class OpimizedCLIPImageProcessor(CLIPImageProcessor):
         do_convert_rgb: bool = True,
         **kwargs,
     ) -> None:
-        super().__init__(
-            do_resize,
-            size,
-            resample,
-            do_center_crop,
-            crop_size,
-            do_rescale,
-            rescale_factor,
-            do_normalize,
-            image_mean,
-            image_std,
-            do_convert_rgb,
+        init_kwargs = dict(
+            do_resize=do_resize,
+            resample=resample,
+            do_center_crop=do_center_crop,
+            do_rescale=do_rescale,
+            rescale_factor=rescale_factor,
+            do_normalize=do_normalize,
+            image_mean=image_mean,
+            image_std=image_std,
+            do_convert_rgb=do_convert_rgb,
             **kwargs,
         )
+        if size is not None:
+            init_kwargs["size"] = size
+        if crop_size is not None:
+            init_kwargs["crop_size"] = crop_size
+        super().__init__(**init_kwargs)
+
+        if not hasattr(self, "_valid_processor_keys"):
+            vk = getattr(self, "valid_kwargs", None)
+            if vk is not None and hasattr(vk, "__annotations__"):
+                self._valid_processor_keys = list(vk.__annotations__.keys())
+            elif isinstance(vk, (set, list, tuple)):
+                self._valid_processor_keys = list(vk)
+            else:
+                self._valid_processor_keys = []
 
     @lru_cache(maxsize=10)
     def _fuse_mean_std_and_rescale_factor(
@@ -535,20 +547,23 @@ class Qwen25VLImageProcessorOptimized(OpimizedCLIPImageProcessor):
         merge_size: int = 2,
         **kwargs,
     ):
-        super().__init__(
-            do_resize,
-            size,
-            resample,
-            do_center_crop,
-            crop_size,
-            do_rescale,
-            rescale_factor,
-            do_normalize,
-            image_mean,
-            image_std,
-            do_convert_rgb,
+        init_kwargs = dict(
+            do_resize=do_resize,
+            resample=resample,
+            do_center_crop=do_center_crop,
+            do_rescale=do_rescale,
+            rescale_factor=rescale_factor,
+            do_normalize=do_normalize,
+            image_mean=image_mean,
+            image_std=image_std,
+            do_convert_rgb=do_convert_rgb,
             **kwargs,
         )
+        if size is not None:
+            init_kwargs["size"] = size
+        if crop_size is not None:
+            init_kwargs["crop_size"] = crop_size
+        super().__init__(**init_kwargs)
         self.min_pixels = min_pixels
         self.max_pixels = max_pixels
         self.patch_size = patch_size

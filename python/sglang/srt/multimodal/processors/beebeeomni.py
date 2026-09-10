@@ -235,7 +235,7 @@ class BeeBeeOmniProcessor(SGLangBaseProcessor):
         ).build(_processor)
 
         try:
-            model_path = getattr(vis_cfg, "model_path", get_global_server_args().model_path)
+            model_path = getattr(vis_cfg, "model_path", None) or server_args.model_path
             optimized_image_processor = Qwen25VLImageProcessorOptimized.from_pretrained(model_path)
             self._processor.image_processor = optimized_image_processor
             logger.info("🚀 Successfully injected Qwen25VLImageProcessorOptimized (numexpr + torch)!")
@@ -474,11 +474,12 @@ class BeeBeeOmniProcessor(SGLangBaseProcessor):
             for p in bucket_pairs:
                 batch_images.extend(p["images"])
             t_pre = time.perf_counter()
+            preprocess_kwargs = dict(return_tensors="pt", **kwargs)
+            if isinstance(self._processor.image_processor, Qwen25VLImageProcessorOptimized):
+                preprocess_kwargs["patch_reshape_method"] = "torch"
             image_outputs = self._processor.image_processor.preprocess(
                 batch_images,
-                return_tensors="pt",
-                patch_reshape_method="torch",
-                **kwargs
+                **preprocess_kwargs,
             )
             t_post = time.perf_counter()
             # logger.info(

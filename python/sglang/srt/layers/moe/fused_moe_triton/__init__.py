@@ -4,6 +4,7 @@ from sglang.srt.layers.moe.fused_moe_triton.layer import (
 )
 from sglang.srt.layers.moe.moe_runner.triton_utils import (
     fused_experts,
+    fused_moe,
     get_config,
     get_config_file_name,
     moe_align_block_size,
@@ -16,6 +17,7 @@ __all__ = [
     "FusedMoeWeightScaleSupported",
     "override_config",
     "get_config",
+    "fused_moe",
     "fused_experts",
     "get_config_file_name",
     "moe_align_block_size",

@@ -432,6 +432,29 @@ class BeeBeeMoEOmniForConditionalGeneration(nn.Module):
             if name.startswith("audio_encoder.") and not name.startswith("audio_encoder.audio_projector."):
                 name = name.replace("audio_encoder.", "audio_encoder.encoder.", 1)
 
+            if "mlp.experts.gate_up_proj" in name:
+                mapped_name = name.replace("experts.gate_up_proj", "experts.w13_weight")
+                if mapped_name not in params_dict:
+                    alt_name = name.replace("experts.gate_up_proj", "experts.weight13")
+                    if alt_name in params_dict:
+                        mapped_name = alt_name
+
+                if mapped_name in params_dict:
+                    param = params_dict[mapped_name]
+                    weight_loader = getattr(param, "weight_loader", default_weight_loader)
+                    global_num_experts = loaded_weight.shape[0]
+                    half = loaded_weight.shape[1] // 2
+
+                    for global_idx in range(global_num_experts):
+                        expert_weight = loaded_weight[global_idx]
+                        gate_weight = expert_weight[:half]
+                        up_weight = expert_weight[half:]
+                        weight_loader(param=param, loaded_weight=gate_weight, weight_name=mapped_name, shard_id="w1", expert_id=global_idx)
+                        weight_loader(param=param, loaded_weight=up_weight, weight_name=mapped_name, shard_id="w3", expert_id=global_idx)
+                else:
+                    logger.warning(f"Failed to map MoE pre-merged gate_up_proj: {mapped_name}")
+                continue
+
             moe_expert_mapping = [
                 ("gate_proj", "w13_weight", "weight13", "w1"),
                 ("up_proj",   "w13_weight", "weight13", "w3"),

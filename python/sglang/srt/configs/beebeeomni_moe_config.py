@@ -235,7 +235,7 @@ class BeeBeeMoEOmniConfig(PretrainedConfig):
             **kwargs,
         )
 
-    def get_text_config(self) -> PretrainedConfig:
+    def get_text_config(self, decoder=None, encoder=None) -> PretrainedConfig:
         """Return the LLM backbone config (used by SGLang model loader)."""
         return self.text_config
 
