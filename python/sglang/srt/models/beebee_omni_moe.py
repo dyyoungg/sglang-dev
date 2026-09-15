@@ -339,6 +339,7 @@ class BeeBeeMoEOmniForConditionalGeneration(nn.Module):
                     f"(3, seq_len) positions, but got {positions.size()}"
                 )
 
+        torch.cuda.nvtx.range_push("mm_embed_routine")
         hidden_states = general_mm_embed_routine(
             input_ids=input_ids,
             forward_batch=forward_batch,
@@ -347,6 +348,7 @@ class BeeBeeMoEOmniForConditionalGeneration(nn.Module):
             positions=positions,
             pp_proxy_tensors=pp_proxy_tensors,
         )
+        torch.cuda.nvtx.range_pop()
 
         aux_hidden_states = None
         if self.capture_aux_hidden_states:
@@ -354,13 +356,16 @@ class BeeBeeMoEOmniForConditionalGeneration(nn.Module):
 
         if self.pp_group.is_last_rank:
             if not get_embedding:
-                return self.logits_processor(
+                torch.cuda.nvtx.range_push("logits_processor")
+                result = self.logits_processor(
                     input_ids,
                     hidden_states,
                     self.lm_head,
                     forward_batch,
                     aux_hidden_states,
                 )
+                torch.cuda.nvtx.range_pop()
+                return result
             else:
                 return self.pooler(hidden_states, forward_batch)
         else:
@@ -766,7 +771,7 @@ if __name__ == "__main__":
     
     MODEL_PATH = "/mnt/afs/yangdeyu/GameMLLM/VeOmni-Dev/ckpt/0904_llavaomni_30A3B_dynamic_downsample_st0_gametext_4e5/hf_ckpt" 
     
-    dummy_args = ServerArgs(model_path=MODEL_PATH, mm_enable_dp_encoder=False)
+    dummy_args = ServerArgs(model_path=MODEL_PATH, mm_enable_dp_encoder=False, mm_attention_backend="fa2")
     dummy_args.enable_dp_attention = False
     dummy_args.dp_size = 1
     dummy_args.moe_dense_tp_size = None
@@ -800,7 +805,7 @@ if __name__ == "__main__":
     # 1. 加载 SGLang 模型到 cuda:0
     sglang_model = BeeBeeMoEOmniForConditionalGeneration(config).to(torch.bfloat16).to(device_sgl)
     sglang_model.eval()
-
+    print(f"[DEBUG] backend = {sglang_model.image_encoder.blocks[0].attn.qkv_backend.__class__.__name__}")
     # 2. 加载 原始模型 到 cuda:1
     
     train_model = LlavaQwen3MoeForCausalLM.from_pretrained(MODEL_PATH, torch_dtype=torch.bfloat16).to(device_orig)

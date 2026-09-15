@@ -173,7 +173,7 @@ class ViTCudaGraphRunner:
 
                 if override_backend == "triton_attn":
                     cu_seq_len_ws = [cu_seqlens_now, cu_seqlens_kk_now, max_len]
-                elif override_backend == "fa3":
+                elif override_backend in ("fa2", "fa3"):
                     cu_seq_len_ws = [cu_seqlens_now, max_len]
                 else:
                     raise RuntimeError("Not supported ViT attention backend")

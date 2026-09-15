@@ -726,7 +726,9 @@ def _adjust_embedding_length(
     logger,
 ) -> Tuple[torch.Tensor, torch.Tensor]:
     num_mm_tokens_in_embedding = embedding.shape[0]
+    torch.cuda.nvtx.range_push("mask_sum_item")
     num_mm_tokens_in_input_ids = mask.sum().item()
+    torch.cuda.nvtx.range_pop()
     if num_mm_tokens_in_input_ids != num_mm_tokens_in_embedding:
         logger.warning(
             f"Number of tokens in multimodal embedding does not match those in the input text. "
@@ -792,10 +794,13 @@ def get_embedding_and_mask(
         - If EVS is used, the pruned input ids tensor; otherwise, the original input ids tensor
     """
     # 1. Get embedding
+    torch.cuda.nvtx.range_push("get_precomputed_embedding")
     embedding = _get_precomputed_embedding(
         embedding_items, items_size, prefix_length, extend_length, items_offset_list
     )
+    torch.cuda.nvtx.range_pop()
     if embedding is None:
+        torch.cuda.nvtx.range_push("get_chunked_prefill_embedding")
         embedding, input_ids = _get_chunked_prefill_embedding(
             data_embedding_func,
             embedding_items,
@@ -805,16 +810,21 @@ def get_embedding_and_mask(
             items_offset_list,
             input_ids,
         )
+        torch.cuda.nvtx.range_pop()
         if embedding is None:
             return None, None, input_ids
     # 2. Get mask
     if _is_npu:
         torch.npu.current_stream().synchronize()
+    torch.cuda.nvtx.range_push("get_multimodal_mask")
     special_multimodal_mask = _get_multimodal_mask(input_ids, placeholder_tensor)
+    torch.cuda.nvtx.range_pop()
     # 3. Adjust embedding length if needed
+    torch.cuda.nvtx.range_push("adjust_embedding_length")
     embedding, special_multimodal_mask = _adjust_embedding_length(
         embedding, special_multimodal_mask, logger
     )
+    torch.cuda.nvtx.range_pop()
     return embedding, special_multimodal_mask, input_ids
 
 
@@ -940,6 +950,7 @@ def embed_mm_inputs(
         other_info["input_deepstack_embeds"] = input_deepstack_embeds
 
     # 4. scatter embeddings into input embedding
+    torch.cuda.nvtx.range_push("scatter_embeddings")
     for i, modality, embedding, mask in zip(
         range(len(embeddings)), modalities, embeddings, masks
     ):
@@ -953,6 +964,7 @@ def embed_mm_inputs(
                 input_embeds.device, input_embeds.dtype
             )
 
+    torch.cuda.nvtx.range_pop()  # scatter_embeddings
     return input_embeds, other_info
 
 

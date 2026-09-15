@@ -265,8 +265,9 @@ class DynamicAvgPoolProjector(nn.Module):
         start = 0
         hidden_size = images_feature.shape[-1]
 
-        for idx, thw in enumerate(images_thw):
-            t, h_m, w_m = int(thw[0].item()), int(thw[1].item()), int(thw[2].item())
+        images_thw_cpu = images_thw.tolist() if isinstance(images_thw, torch.Tensor) else images_thw
+        for idx, thw in enumerate(images_thw_cpu):
+            t, h_m, w_m = int(thw[0]), int(thw[1]), int(thw[2])
             length = t * h_m * w_m
 
             img_seq = images_feature[start : start + length]
@@ -676,6 +677,7 @@ class Qwen3VLVisionPatchEmbed(nn.Module):
             kernel_size=kernel_size,
             stride=kernel_size,
             bias=True,
+            disable_linear=True,
         )
 
     def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
@@ -727,6 +729,7 @@ class Qwen3_VisionBlock(nn.Module):
             use_data_parallel=use_data_parallel,
             use_dp_attention_reduce=is_dp_attention_enabled(),
             workspace_buffer=workspace_buffer,
+            use_compiled_rope=get_global_server_args().mm_use_compiled_rope,
         )
         self.mlp = Qwen3_VisionMLP(
             dim,
@@ -838,6 +841,10 @@ class BeeBeeQwen3MoeVisionModel(nn.Module, RotaryPosMixin):
             base=10000.0,
             is_neox_style=True,
         )
+        # Pre-compute inv_freq on GPU to avoid CPU→GPU sync in rot_pos_emb
+        self._rotary_inv_freq = self.rotary_pos_emb._compute_inv_freq(
+            self.rotary_pos_emb.base
+        ).to(self.device)
         workspace_buffer = None
         if get_global_server_args().mm_attention_backend == "flashinfer_cudnn":
             if torch.cuda.is_available() and (not is_npu()):
@@ -902,13 +909,12 @@ class BeeBeeQwen3MoeVisionModel(nn.Module, RotaryPosMixin):
             pos_ids.append(base if t == 1 else base.repeat(t, 1))
 
         pos_ids = torch.cat(pos_ids, dim=0).to(self.device, non_blocking=True)
-        max_grid_size = max(max(h, w) for _, h, w in grid_thw)
 
-        # Use pre-computed cos_sin_cache from RotaryEmbedding
-        cos, sin = self.rotary_pos_emb.get_cos_sin(max_grid_size)
-
-        cos_combined = cos[pos_ids].flatten(1)
-        sin_combined = sin[pos_ids].flatten(1)
+        # Compute cos/sin in float32 to match training-side precision.
+        inv_freq = self._rotary_inv_freq.to(self.device, non_blocking=True)
+        angles = (pos_ids.unsqueeze(-1).float() * inv_freq).flatten(1)
+        cos_combined = angles.cos()
+        sin_combined = angles.sin()
 
         return cos_combined, sin_combined
     
@@ -1257,6 +1263,12 @@ class BeeBeeQwen3MoeVisionModel(nn.Module, RotaryPosMixin):
         grid_thw: torch.Tensor,
         downsample_ratios: Optional[List[int]] = None,
     ) -> torch.Tensor:
+        # Compute proj_thw on CPU BEFORE graph replay to avoid sync
+        proj_thw = grid_thw.clone()
+        proj_thw[:, 1] = grid_thw[:, 1] // self.spatial_merge_size
+        proj_thw[:, 2] = grid_thw[:, 2] // self.spatial_merge_size
+        proj_thw_cpu = proj_thw.tolist()
+
         # patchify
         (
             x,
@@ -1279,11 +1291,8 @@ class BeeBeeQwen3MoeVisionModel(nn.Module, RotaryPosMixin):
             cu_window_seqlens=None,
             output_indices=None,
         )
-        proj_thw = grid_thw.clone()
-        proj_thw[:, 1] = grid_thw[:, 1] // self.spatial_merge_size
-        proj_thw[:, 2] = grid_thw[:, 2] // self.spatial_merge_size
 
-        features, seq_lens = self.mm_projector(x, proj_thw, downsample_ratios=downsample_ratios)
+        features, seq_lens = self.mm_projector(x, proj_thw_cpu, downsample_ratios=downsample_ratios)
         return features, seq_lens
 
     def forward(
@@ -1316,9 +1325,14 @@ class BeeBeeQwen3MoeVisionModel(nn.Module, RotaryPosMixin):
 
         cu_seqlens = torch.repeat_interleave(
             grid_thw[:, 1] * grid_thw[:, 2], grid_thw[:, 0]
-        ).cumsum(dim=0).to(device=x.device, dtype=torch.int32)
+        ).cumsum(dim=0, dtype=torch.int32)
 
         cu_seqlens = torch.cat([cu_seqlens.new_zeros(1), cu_seqlens])
+
+        seq_lens = cu_seqlens[1:] - cu_seqlens[:-1]
+        max_seqlen = int(seq_lens.max().item())
+
+        cu_seqlens = cu_seqlens.to(device=x.device, non_blocking=True)
 
         nvtx.range_push("moe_vision_transformer_blocks")
         x = x.unsqueeze(1)
@@ -1330,7 +1344,7 @@ class BeeBeeQwen3MoeVisionModel(nn.Module, RotaryPosMixin):
                 cu_seqlens=cu_seqlens,
                 rotary_pos_emb_cos=rotary_pos_emb_cos,
                 rotary_pos_emb_sin=rotary_pos_emb_sin,
-                max_seqlen=None,
+                max_seqlen=max_seqlen,
                 sequence_lengths=None,
             )
             nvtx.range_pop()  # moe_vit_block_N

@@ -813,6 +813,8 @@ class Qwen3MoeDecoderLayer(nn.Module):
         **kwargs,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
 
+        torch.cuda.nvtx.range_push(f"decoder_layer_{self.layer_id}")
+
         hidden_states, residual = (
             self.layer_communicator.prepare_attn_and_capture_last_layer_outputs(
                 hidden_states,
@@ -824,11 +826,13 @@ class Qwen3MoeDecoderLayer(nn.Module):
         )
 
         if hidden_states.shape[0] != 0:
+            torch.cuda.nvtx.range_push(f"llm_attn_layer_{self.layer_id}")
             hidden_states = self.self_attn(
                 positions=positions,
                 hidden_states=hidden_states,
                 forward_batch=forward_batch,
             )
+            torch.cuda.nvtx.range_pop()
 
         hidden_states, residual = self.layer_communicator.prepare_mlp(
             hidden_states, residual, forward_batch
@@ -845,9 +849,11 @@ class Qwen3MoeDecoderLayer(nn.Module):
             forward_batch
         )
 
+        torch.cuda.nvtx.range_push(f"llm_moe_mlp_layer_{self.layer_id}")
         hidden_states = self.mlp(
             hidden_states, forward_batch, should_allreduce_fusion, use_reduce_scatter
         )
+        torch.cuda.nvtx.range_pop()
 
         if should_allreduce_fusion:
             hidden_states._sglang_needs_allreduce_fusion = True
@@ -856,6 +862,7 @@ class Qwen3MoeDecoderLayer(nn.Module):
                 hidden_states, residual, forward_batch
             )
 
+        torch.cuda.nvtx.range_pop()
         return hidden_states, residual
 
     def op_comm_prepare_attn(

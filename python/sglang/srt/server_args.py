@@ -544,6 +544,7 @@ class ServerArgs:
     sampling_backend: Optional[str] = None
     grammar_backend: Optional[str] = None
     mm_attention_backend: Optional[str] = None
+    mm_use_compiled_rope: bool = True
     fp8_gemm_runner_backend: str = "auto"
     fp4_gemm_runner_backend: str = "auto"
     nsa_prefill_backend: Optional[str] = (
@@ -5413,6 +5414,12 @@ class ServerArgs:
             ],
             default=ServerArgs.mm_attention_backend,
             help="Set multimodal attention backend.",
+        )
+        parser.add_argument(
+            "--no-mm-use-compiled-rope",
+            dest="mm_use_compiled_rope",
+            action="store_false",
+            help="Disable torch.compile for multimodal RoPE for exact precision match with training.",
         )
         parser.add_argument(
             "--nsa-prefill-backend",

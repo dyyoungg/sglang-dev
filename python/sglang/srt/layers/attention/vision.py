@@ -67,6 +67,7 @@ from sglang.srt.layers.linear import (
 )
 from sglang.srt.layers.quantization import QuantizationConfig
 from sglang.srt.layers.rotary_embedding import apply_rotary_pos_emb
+from sglang.srt.layers.rotary_embedding.utils import rotate_half
 from sglang.srt.server_args import get_global_server_args
 from sglang.srt.utils import add_prefix, get_bool_env_var
 
@@ -75,6 +76,22 @@ _use_aiter = get_bool_env_var("SGLANG_USE_AITER") and _is_hip
 ROTARY_EMBED_CLASSES = {
     "normal": apply_rotary_pos_emb,
 }
+
+
+def _apply_rotary_pos_emb_vision(
+    q: torch.Tensor,
+    k: torch.Tensor,
+    cos: torch.Tensor,
+    sin: torch.Tensor,
+) -> tuple:
+    """RoPE without torch.compile to match training-side precision."""
+    orig_q_dtype, orig_k_dtype = q.dtype, k.dtype
+    q, k = q.float(), k.float()
+    cos = cos.unsqueeze(1).float()
+    sin = sin.unsqueeze(1).float()
+    q_embed = (q * cos) + (rotate_half(q) * sin)
+    k_embed = (k * cos) + (rotate_half(k) * sin)
+    return q_embed.to(orig_q_dtype), k_embed.to(orig_k_dtype)
 
 # === Vision Encoder === #
 FLASHINFER_WORKSPACE_SIZE_BYTES = 128 * 1024 * 1024
@@ -365,8 +382,10 @@ class VisionTritonAttention(nn.Module):
             # [b * s, head, head_size]
             output = torch.empty_like(q)
 
-            seq_lens = cu_seqlens[1:] - cu_seqlens[:-1]
-            max_seqlen = seq_lens.max().item()
+            max_seqlen = kwargs.get("max_seqlen", None)
+            if max_seqlen is None:
+                seq_lens = cu_seqlens[1:] - cu_seqlens[:-1]
+                max_seqlen = seq_lens.max().item()
             context_attention_fwd(
                 q,
                 k,
@@ -431,8 +450,11 @@ class VisionFlash3Attention(nn.Module):
         else:
             cu_seqlens = resolve_seqlens(cu_seqlens, bsz, seq_len, device=q.device)
             cu_seqlens = cu_seqlens.to(dtype=torch.int32).to(q.device)
-            seq_lens = cu_seqlens[1:] - cu_seqlens[:-1]
-            max_seqlen = seq_lens.max().item()
+
+            max_seqlen = kwargs.get("max_seqlen", None)
+            if max_seqlen is None:
+                seq_lens = cu_seqlens[1:] - cu_seqlens[:-1]
+                max_seqlen = seq_lens.max().item()
 
             fa_kwargs = dict(
                 cu_seqlens_q=cu_seqlens,
@@ -485,8 +507,11 @@ class VisionFlash4Attention(nn.Module):
             cu_seqlens = cu_seqlens.get_data()
 
         cu_seqlens = cu_seqlens.to(dtype=torch.int32).to(q.device)
-        seq_lens = cu_seqlens[1:] - cu_seqlens[:-1]
-        max_seqlen = seq_lens.max().item()
+
+        max_seqlen = kwargs.get("max_seqlen", None)
+        if max_seqlen is None:
+            seq_lens = cu_seqlens[1:] - cu_seqlens[:-1]
+            max_seqlen = seq_lens.max().item()
 
         output = flash_attn_varlen_func(
             q,
@@ -657,8 +682,11 @@ class VisionAiterAttention(nn.Module):
         cu_seqlens = resolve_seqlens(cu_seqlens, bsz, seq_len, device=q.device)
 
         cu_seqlens = cu_seqlens.to(dtype=torch.int32).to(q.device)
-        seq_lens = cu_seqlens[1:] - cu_seqlens[:-1]
-        max_seqlen = seq_lens.max().item()
+
+        max_seqlen = kwargs.get("max_seqlen", None)
+        if max_seqlen is None:
+            seq_lens = cu_seqlens[1:] - cu_seqlens[:-1]
+            max_seqlen = seq_lens.max().item()
 
         return self.flash_attn_varlen_func(
             q=q,
@@ -756,10 +784,29 @@ class VisionFlash2Attention(nn.Module):
 
         window_size = kwargs.get("window_size", (-1, -1))
 
+        if envs.SGLANG_VIT_ENABLE_CUDA_GRAPH.get():
+            max_seqlen = cu_seqlens[1]
+            output = _fa2_varlen_func(
+                q,
+                k,
+                v,
+                cu_seqlens_q=cu_seqlens[0],
+                cu_seqlens_k=cu_seqlens[0],
+                max_seqlen_q=max_seqlen,
+                max_seqlen_k=max_seqlen,
+                softmax_scale=softmax_scale,
+                causal=False,
+                window_size=window_size,
+            )
+            return output
+
         cu_seqlens = resolve_seqlens(cu_seqlens, bsz, seq_len, device=q.device)
         cu_seqlens = cu_seqlens.to(dtype=torch.int32, device=q.device)
-        seq_lens = cu_seqlens[1:] - cu_seqlens[:-1]
-        max_seqlen = seq_lens.max().item()
+
+        max_seqlen = kwargs.get("max_seqlen", None)
+        if max_seqlen is None:
+            seq_lens = cu_seqlens[1:] - cu_seqlens[:-1]
+            max_seqlen = seq_lens.max().item()
 
         output = _fa2_varlen_func(
             q,
@@ -831,6 +878,7 @@ class VisionAttention(nn.Module):
         workspace_buffer: Optional[torch.Tensor] = None,
         use_sink: bool = False,
         window_size: Tuple[int, int] = (-1, -1),
+        use_compiled_rope: bool = True,
         **kwargs,
     ):
         super().__init__()
@@ -889,6 +937,11 @@ class VisionAttention(nn.Module):
             customized_position_embedding_applier
         )
         self.softmax_scale = softmax_scale
+        self._apply_rope = (
+            apply_rotary_pos_emb
+            if use_compiled_rope
+            else _apply_rotary_pos_emb_vision
+        )
         self.qkv_backend = QKV_BACKEND_IMPL[qkv_backend](
             head_dim=self.head_size,
             num_heads=self.num_attention_heads_per_partition,
@@ -1170,7 +1223,7 @@ class VisionAttention(nn.Module):
                 cos = torch.cat([cos, cos], dim=-1)
                 sin = torch.cat([sin, sin], dim=-1)
 
-            q, k = apply_rotary_pos_emb(q, k, cos, sin)
+            q, k = self._apply_rope(q, k, cos, sin)
             q = q.view(original_q_shape)
             k = k.view(original_k_shape)
 

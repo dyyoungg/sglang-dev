@@ -37,3 +37,4 @@ sglang serve \
    --warmups "beebee_omni_warmup" \
    --mm-attention-backend fa2 \
    --max-image-bs 32 \
+   --no-mm-use-compiled-rope \
