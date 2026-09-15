@@ -733,15 +733,17 @@ class BeeBeeOmniProcessor(SGLangBaseProcessor):
             hasher.update(repr(item).encode("utf-8"))
         return int.from_bytes(hasher.digest()[:8], byteorder="big", signed=False)
 
-    def _compute_pair_hashes(self, image_data: List) -> List[int]:
+    def _compute_pair_hashes(self, image_data: List, per_pair_ratios: List[int] = None) -> List[int]:
         """Compute pair-wise hashes directly from raw image_data (no decode).
 
         Assumes len(image_data) is even (padding done at entry).
+        Includes downsample_ratio in hash so the same image with different
+        ratios produces different cache keys.
         """
         import hashlib
 
         pair_hashes = []
-        for i in range(0, len(image_data), 2):
+        for pair_idx, i in enumerate(range(0, len(image_data), 2)):
             hasher = hashlib.sha256()
             item0, item1 = image_data[i], image_data[i + 1]
             if isinstance(item0, bytes):
@@ -752,6 +754,8 @@ class BeeBeeOmniProcessor(SGLangBaseProcessor):
                 hasher.update(item1)
             else:
                 hasher.update(str(item1).encode("utf-8"))
+            if per_pair_ratios is not None:
+                hasher.update(str(per_pair_ratios[pair_idx]).encode("utf-8"))
             pair_hashes.append(
                 int.from_bytes(hasher.digest()[:8], byteorder="big", signed=False)
             )
@@ -811,7 +815,7 @@ class BeeBeeOmniProcessor(SGLangBaseProcessor):
 
         if image_data:
             t_hash_start = time.perf_counter()
-            pair_hashes = self._compute_pair_hashes(image_data)
+            pair_hashes = self._compute_pair_hashes(image_data, per_pair_ratios)
             for i, h in enumerate(pair_hashes):
                 cached = self._pixel_cache.get_single(h)
                 if cached is not None:
