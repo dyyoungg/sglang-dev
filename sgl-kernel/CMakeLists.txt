@@ -176,7 +176,7 @@ list(APPEND SGL_KERNEL_CUDA_FLAGS
 option(SGL_KERNEL_ENABLE_BF16             "Enable BF16"             ON)
 option(SGL_KERNEL_ENABLE_FP8              "Enable FP8"              ON)
 option(SGL_KERNEL_ENABLE_FP4              "Enable FP4"              OFF)
-option(SGL_KERNEL_ENABLE_FA3              "Enable FA3"              OFF)
+include(${CMAKE_CURRENT_LIST_DIR}/cmake/optional_kernels.cmake)
 option(SGL_KERNEL_ENABLE_SM90A            "Enable SM90A"            OFF)
 option(SGL_KERNEL_ENABLE_SM100A           "Enable SM100A"           OFF)
 
@@ -234,7 +234,6 @@ if ("${CUDA_VERSION}" VERSION_GREATER_EQUAL "12.8" OR SGL_KERNEL_ENABLE_SM100A)
 endif()
 
 if ("${CUDA_VERSION}" VERSION_GREATER_EQUAL "12.4")
-    set(SGL_KERNEL_ENABLE_FA3 ON)
     list(APPEND SGL_KERNEL_CUDA_FLAGS
         "-gencode=arch=compute_90a,code=sm_90a"
     )
@@ -261,22 +260,16 @@ set(SOURCES
     "csrc/elementwise/fused_add_rms_norm_kernel.cu"
     "csrc/elementwise/pos_enc.cu"
     "csrc/elementwise/topk.cu"
-    #"csrc/expert_specialization/es_fp8_blockwise.cu"
-    #"csrc/expert_specialization/es_sm100_mxfp8_blockscaled.cu"
-    #"csrc/expert_specialization/es_sm100_mxfp8_blockscaled_group_quant.cu"
 
     "csrc/gemm/awq_kernel.cu"
-    #"csrc/gemm/bmm_fp8.cu"
     "csrc/gemm/dsv3_fused_a_gemm.cu"
     "csrc/gemm/dsv3_router_gemm_bf16_out.cu"
     "csrc/gemm/dsv3_router_gemm_entry.cu"
     "csrc/gemm/dsv3_router_gemm_float_out.cu"
-    #"csrc/gemm/fp8_blockwise_gemm_kernel.cu"
-    #"csrc/gemm/fp8_gemm_kernel.cu"
     "csrc/gemm/int8_gemm_kernel.cu"
     "csrc/gemm/per_token_group_quant_8bit.cu"
     "csrc/gemm/per_token_group_quant_8bit_v2.cu"
-    #"csrc/gemm/per_token_quant_fp8.cu"
+    "csrc/gemm/per_token_quant_fp8.cu"
     "csrc/gemm/qserve_w4a8_per_chn_gemm.cu"
     "csrc/gemm/qserve_w4a8_per_group_gemm.cu"
     "csrc/gemm/gptq/gptq_kernel.cu"
@@ -297,7 +290,6 @@ set(SOURCES
     "csrc/moe/moe_sum_reduce.cu"
     "csrc/moe/moe_topk_softmax_kernels.cu"
     "csrc/moe/moe_topk_sigmoid_kernels.cu"
-    #"csrc/moe/fp8_blockwise_moe_kernel.cu"
     "csrc/moe/prepare_moe_input.cu"
 
     "csrc/quantization/gguf/gguf_kernel.cu"
@@ -315,6 +307,22 @@ set(SOURCES
     "${repo-flash-attention_SOURCE_DIR}/csrc/flash_attn/src/flash_fwd_sparse_hdim128_fp16_sm80.cu"
     "${repo-flash-attention_SOURCE_DIR}/csrc/flash_attn/flash_sparse_api.cpp"
 )
+
+# common_extension.cc registers these interfaces unconditionally. Every build
+# must provide their symbols, even when its GPU cannot execute the kernels.
+if (SGL_KERNEL_A100_BUILD)
+    list(APPEND SOURCES "csrc/gemm/fp8_a100_stubs.cpp")
+else()
+    list(APPEND SOURCES
+        "csrc/expert_specialization/es_fp8_blockwise.cu"
+        "csrc/expert_specialization/es_sm100_mxfp8_blockscaled.cu"
+        "csrc/expert_specialization/es_sm100_mxfp8_blockscaled_group_quant.cu"
+        "csrc/gemm/bmm_fp8.cu"
+        "csrc/gemm/fp8_blockwise_gemm_kernel.cu"
+        "csrc/gemm/fp8_gemm_kernel.cu"
+        "csrc/moe/fp8_blockwise_moe_kernel.cu"
+    )
+endif()
 
 set(INCLUDES
     ${repo-cutlass_SOURCE_DIR}/include
@@ -380,8 +388,39 @@ add_subdirectory(
     ${CMAKE_CURRENT_BINARY_DIR}/mscclpp-build
 )
 
+# CMake can filter /usr/include out of target include directories, whereas a
+# Conda compiler searches its own sysroot instead. Stage only libnuma's headers
+# so MSCCL++ can find them without importing the host's entire libc header set.
+if (NUMA_INCLUDE_DIRS STREQUAL "/usr/include")
+    set(SGL_KERNEL_NUMA_INCLUDE_DIR "${CMAKE_CURRENT_BINARY_DIR}/numa-include")
+    file(MAKE_DIRECTORY "${SGL_KERNEL_NUMA_INCLUDE_DIR}")
+    foreach(header numa.h numacompat1.h numaif.h)
+        if (EXISTS "${NUMA_INCLUDE_DIRS}/${header}")
+            configure_file("${NUMA_INCLUDE_DIRS}/${header}"
+                "${SGL_KERNEL_NUMA_INCLUDE_DIR}/${header}" COPYONLY)
+        endif()
+    endforeach()
+    target_include_directories(mscclpp_obj SYSTEM BEFORE PRIVATE "${SGL_KERNEL_NUMA_INCLUDE_DIR}")
+    message(STATUS "MSCCL++ NUMA headers: ${SGL_KERNEL_NUMA_INCLUDE_DIR}")
+endif()
+
 target_link_libraries(common_ops_sm90_build PRIVATE ${TORCH_LIBRARIES} c10 cuda cublas cublasLt mscclpp_static)
 target_link_libraries(common_ops_sm100_build PRIVATE ${TORCH_LIBRARIES} c10 cuda cublas cublasLt mscclpp_static)
+
+# ELF shared-library linking allows unresolved symbols. Check each variant in
+# its own Python process so an incomplete common_ops fails before wheel creation.
+# Loading registers the operators but does not run any CUDA kernels.
+if (NOT CMAKE_CROSSCOMPILING)
+    foreach(common_target common_ops_sm90_build common_ops_sm100_build)
+        add_custom_command(TARGET ${common_target} POST_BUILD
+            COMMAND "${Python_EXECUTABLE}" -c
+                "import ctypes, sys, torch; ctypes.CDLL(sys.argv[1])"
+                "$<TARGET_FILE:${common_target}>"
+            COMMENT "Checking ${common_target} shared-library loading"
+            VERBATIM
+        )
+    endforeach()
+endif()
 
 # sparse flash attention
 target_compile_definitions(common_ops_sm90_build PRIVATE

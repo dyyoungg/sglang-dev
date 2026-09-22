@@ -1,6 +1,10 @@
 #include <torch/all.h>
 
+#include <cutlass/arch/config.h>
+
+#if defined(CUTLASS_ARCH_MMA_SM100_SUPPORTED)
 #include "es_sm100_mxfp8_blockscaled_launcher.cuh"
+#endif
 
 void es_sm100_mxfp8_blockscaled_grouped_mm(
     const torch::Tensor& a,

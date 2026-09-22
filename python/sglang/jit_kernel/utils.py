@@ -5,6 +5,7 @@ import importlib.util
 import logging
 import os
 import pathlib
+import platform
 from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import (
@@ -128,6 +129,22 @@ def make_cpp_args(*args: CPP_TEMPLATE_TYPE) -> CPPArgList:
     return CPPArgList(_convert(arg) for arg in args)
 
 
+def _get_cuda_runtime_ldflags() -> List[str]:
+    # Use the same toolkit as TVM-FFI, including its CUDA_HOME/CUDA_PATH and
+    # nvcc lookup. Conda places libcudart outside TVM-FFI's default lib64 path.
+    from tvm_ffi.cpp.extension import _find_cuda_home
+
+    cuda_home = pathlib.Path(_find_cuda_home())
+    for directory in (
+        cuda_home / "lib64",
+        cuda_home / "targets" / f"{platform.machine()}-linux" / "lib",
+        cuda_home / "lib",
+    ):
+        if (directory / "libcudart.so").is_file():
+            return [f"-L{directory}"]
+    return []
+
+
 def load_jit(
     *args: str,
     cpp_files: List[str] | None = None,
@@ -188,6 +205,9 @@ def load_jit(
 
     cpp_files = [str((KERNEL_PATH / "csrc" / f).resolve()) for f in cpp_files]
     cuda_files = [str((KERNEL_PATH / "csrc" / f).resolve()) for f in cuda_files]
+
+    if (cuda_files or cuda_wrappers) and not is_hip_runtime():
+        extra_ldflags = _get_cuda_runtime_ldflags() + extra_ldflags
 
     for dep in set(extra_dependencies or []):
         if dep not in _REGISTERED_DEPENDENCIES:

@@ -1,19 +1,34 @@
 from functools import lru_cache
+from importlib import import_module
 from typing import Optional, Union
 
 import torch
 from sgl_kernel.debug_utils import maybe_wrap_debug_kernel
 
 try:
-    from sgl_kernel import flash_ops
-except:
-    raise ImportError(
-        "Can not import FA3 in sgl_kernel. Please check your installation."
-    )
+    flash_ops = import_module("sgl_kernel.flash_ops")
+except ModuleNotFoundError as exc:
+    if exc.name != "sgl_kernel.flash_ops":
+        raise
+    # Optional builds (e.g. SGL_KERNEL_A100_BUILD) intentionally omit FA3.
+    # Keep model discovery/imports working, but never silently run another op.
+    flash_ops = None
+
+
+def _require_flash_ops():
+    if flash_ops is None:
+        raise ImportError(
+            "FA3 flash_ops was not built in this sgl_kernel installation. "
+            "Use a compatible backend such as --attention-backend flashinfer "
+            "and --mm-attention-backend fa2, or rebuild with "
+            "-DSGL_KERNEL_A100_BUILD=OFF -DSGL_KERNEL_ENABLE_FA3=ON."
+        )
 
 
 @lru_cache(maxsize=1)
 def is_fa3_supported(device=None) -> bool:
+    if flash_ops is None or torch.version.cuda is None:
+        return False
     #  There some fa3 FYI
     #  FA3 can fail without a enough shared memory for a some shapes, such as higher
     #  hidden_dim or some special cases.
@@ -159,6 +174,7 @@ def flash_attn_with_kvcache(
             normalization factor).
     """
 
+    _require_flash_ops()
     assert k_cache.stride(-1) == 1, "k_cache must have contiguous last dimension"
     assert v_cache.stride(-1) == 1, "v_cache must have contiguous last dimension"
     if softmax_scale is None:
@@ -260,6 +276,7 @@ def flash_attn_varlen_func(
     out=None,
 ):
 
+    _require_flash_ops()
     if not is_fa3_supported():
         raise NotImplementedError(
             "flash_attn at sgl-kernel is only supported on sm90 and above"
@@ -347,6 +364,7 @@ def get_scheduler_metadata(
     scheduler_metadata to flash_attn_with_kvcache / flash_attn_varlen_func.
     This avoids the prepare_varlen_num_blocks kernel running on every layer.
     """
+    _require_flash_ops()
     cache_seqlens = maybe_contiguous(cache_seqlens)
     if headdim_v is None:
         headdim_v = headdim

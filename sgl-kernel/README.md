@@ -44,6 +44,40 @@ make build MAX_JOBS=2
 make build MAX_JOBS=2 CMAKE_ARGS="-DSGL_KERNEL_COMPILE_THREADS=1"
 ```
 
+### Building for A100 without the optional FA3 extension
+
+Append `-DSGL_KERNEL_A100_BUILD=ON` to your existing `CMAKE_ARGS` to skip
+`flash_ops` (including Hopper FA3 instantiations). This preset keeps SM80
+support and both `common_ops` variants: A100 loads the precise-math library
+installed under `sgl_kernel/sm100`, despite that directory's name. It does not
+remove all non-SM80 code from the common libraries or change their Python API.
+The preset is explicit to preserve cross-compilation and GPU-less wheel builds.
+
+FP8 Tensor Core GEMM/BMM and expert-specialization kernels are replaced with
+throwing implementations in this preset. Their registered symbols remain
+available so `common_ops` can load, but calling them reports that the A100 build
+does not support the operation. Per-token and per-group FP8 quantization kernels
+remain compiled; the preset does not disable FP8 KV storage. This does not add
+an FP8 GEMM fallback: the inference backend must select an A100-compatible path.
+
+```bash
+make build MAX_JOBS=4 CMAKE_ARGS="-DSGL_KERNEL_A100_BUILD=ON -DSGL_KERNEL_COMPILE_THREADS=1"
+```
+
+Keep any existing CUDA, NUMA and local-dependency arguments in `CMAKE_ARGS`.
+Use a compatible LLM backend, for example `--attention-backend flashinfer`,
+and `--mm-attention-backend fa2` for supported vision encoders. The separate
+`flash_attn` package used by FA2 and BeeBee audio encoders is still required.
+Importing `sgl_kernel.flash_attn` works without `flash_ops`, and
+`is_fa3_supported()` returns false; calling an FA3 function gives an explicit
+error instead of silently changing attention implementations.
+
+Without the A100 preset, `SGL_KERNEL_ENABLE_FA3` defaults to ON for CUDA 12.4+
+in a fresh build directory. An explicit `-DSGL_KERNEL_ENABLE_FA3=OFF` is now
+respected, including an OFF value retained in an existing CMake cache. To enable
+FA3 again, pass both `-DSGL_KERNEL_A100_BUILD=OFF` and
+`-DSGL_KERNEL_ENABLE_FA3=ON`.
+
 ## Contribution
 
 ### Steps to add a new kernel:

@@ -51,14 +51,57 @@ def get_tokenizer(
     return tokenizer
 
 
-def gen_random_input_text(target_token_len: int, tokenizer: Union[PreTrainedTokenizer, PreTrainedTokenizerFast]) -> str:
-    """Generate fake text by randomly sampling token IDs and decoding."""
-    if target_token_len <= 0:
+def gen_random_input_text(
+    target_token_len: int,
+    tokenizer: Union[PreTrainedTokenizer, PreTrainedTokenizerFast],
+    prefix: str = "",
+    suffix: str = "",
+) -> str:
+    """Generate text whose full prompt re-encodes to exactly target_token_len.
+
+    The budget includes prefix, suffix, and the tokenizer's default special
+    tokens. Token IDs do not necessarily survive a decode/encode round trip.
+    """
+    overhead = len(tokenizer.encode(prefix + suffix))
+    if target_token_len < overhead:
+        raise ValueError(
+            f"Prompt length {target_token_len} is smaller than the "
+            f"template/special-token overhead ({overhead} tokens)."
+        )
+    if target_token_len == overhead:
         return ""
-    
-    random_ids = [random.randint(512, 8192) for _ in range(target_token_len)]
-    random_text = tokenizer.decode(random_ids)
-    return random_text
+
+    special_ids = set(tokenizer.all_special_ids)
+    token_pool = [
+        token_id for token_id in tokenizer.get_vocab().values()
+        if token_id not in special_ids
+    ]
+    if not token_pool:
+        raise ValueError("Tokenizer has no non-special tokens to sample.")
+
+    token_ids = random.choices(token_pool, k=target_token_len - overhead)
+    for attempt in range(128):
+        text = tokenizer.decode(token_ids, clean_up_tokenization_spaces=False)
+        # These strings are reserved for actual media in generate_fake_requests.
+        text = text.replace("<image>", "").replace("<audio>", "")
+        actual_len = len(tokenizer.encode(prefix + text + suffix))
+        if actual_len == target_token_len:
+            return text
+
+        token_ids = tokenizer.encode(text, add_special_tokens=False)
+        difference = target_token_len - actual_len
+        if difference > 0:
+            token_ids.extend(random.choices(token_pool, k=difference))
+        else:
+            token_ids = token_ids[:max(0, len(token_ids) + difference)]
+        # Restart occasionally if boundary merges prevent convergence.
+        if (attempt + 1) % 16 == 0:
+            token_ids = random.choices(token_pool, k=target_token_len - overhead)
+
+    raise RuntimeError(
+        f"Could not generate a prompt with exactly {target_token_len} tokens "
+        "after 128 attempts."
+    )
 
 
 def get_adaptive_pool_size(M, N, scale=16):
@@ -80,12 +123,23 @@ def generate_fake_requests(
 ) -> List[Tuple[str, int, List[Image.Image], List[np.ndarray]]]:
     """Generates synthetic requests with distributed text lengths, images, and audio."""
     
+    if not 0 <= prompt_len_min <= prompt_len_max:
+        raise ValueError("Require 0 <= prompt_len_min <= prompt_len_max.")
+
     sampled_requests = []
+    # random.seed(1)
     
     assert num_images % 2 == 0, "image nums must be divided by 2."
 
     system_prompt = "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n"
-    user_format = "<|im_start|>user\n{content}<|im_end|>\n<|im_start|>assistant\n"
+    text_prefix = system_prompt + "<|im_start|>user\n\n"
+    text_suffix = "<|im_end|>\n<|im_start|>assistant\n"
+    template_len = len(tokenizer.encode(text_prefix + text_suffix))
+    if prompt_len_min < template_len:
+        raise ValueError(
+            f"prompt_len_min must be at least {template_len} tokens "
+            "to fit the chat template."
+        )
    
     for _ in range(num_requests):
         images_list = []
@@ -101,14 +155,22 @@ def generate_fake_requests(
             audios_list.append(audio_data)
 
         target_text_len = random.randint(prompt_len_min, prompt_len_max)
-        base_text = gen_random_input_text(target_text_len, tokenizer)
+        base_text = gen_random_input_text(
+            target_text_len, tokenizer, prefix=text_prefix, suffix=text_suffix
+        )
         
     
         media_tags =  ("<image>" * num_images) +  ("<audio>" * num_audios)
-        full_content = media_tags + "\n" + base_text
-        question = system_prompt + user_format.format(content=full_content)
+        question = (
+            system_prompt + "<|im_start|>user\n" + media_tags
+            + "\n" + base_text + text_suffix
+        )
 
-        text_token_ids = tokenizer([question.replace("<image>", "").replace("<audio>", "")]).input_ids[0]
+        text_token_ids = tokenizer.encode(
+            question.replace("<image>", "").replace("<audio>", "")
+        )
+        if len(text_token_ids) != target_text_len:
+            raise RuntimeError("Generated text prompt does not match its token budget.")
         
         # Audio tokens estimation (based on chunking logic)
         audio_downsample_ratio = 10
@@ -125,7 +187,7 @@ def generate_fake_requests(
     print(f"Total Requests: {len(sampled_requests)}")
     if sampled_requests:
         avg_len = np.mean([req[1] for req in sampled_requests])
-        print(f"Average Total Prompt Token Length: {avg_len:.1f} (Min: {prompt_len_min}, Max: {prompt_len_max})")
+        print(f"Average Total Prompt Token Length: {avg_len:.1f} (Text token range: {prompt_len_min}–{prompt_len_max}; includes chat template)")
     return sampled_requests
 
 
@@ -415,8 +477,8 @@ if __name__ == "__main__":
     parser.add_argument("--port", type=int, default=8000)
     parser.add_argument("--tokenizer", type=str, required=True, help="Name or path of the tokenizer.")
     
-    parser.add_argument("--prompt-len-min", type=int, default=512, help="Minimum text prompt token length.")
-    parser.add_argument("--prompt-len-max", type=int, default=2048, help="Maximum text prompt token length.")
+    parser.add_argument("--prompt-len-min", type=int, default=512, help="Minimum text prompt token length, including chat template; excludes media tokens.")
+    parser.add_argument("--prompt-len-max", type=int, default=2048, help="Maximum text prompt token length, including chat template; excludes media tokens.")
     
     parser.add_argument("--num-images", type=int, default=1, help="Number of fake images per request.")
     parser.add_argument("--image-width", type=int, default=644, help="Width of the fake image.")
