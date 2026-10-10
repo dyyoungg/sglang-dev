@@ -130,6 +130,53 @@ _INCREMENTAL_STREAMING_META_INFO_KEYS = (
     "output_token_ids_logprobs",
 )
 
+import re
+def get_assistant_penalty_tokens(text, tokenizer):
+    pattern = r"<\|im_start\|>assistant\n(.*?)(?=<\|im_end\|>)"
+    matches = re.findall(pattern, text, re.DOTALL)
+    
+    if not matches:
+        return []
+    
+    final_penalty_ids = []
+    # 取最后5轮对话
+    print("penalty_text: ")
+    for segment in matches[-5:]:
+        segment = re.sub(r'\(.*?\)', '', segment) # 去除英文括号
+        segment = re.sub(r'（.*?）', '', segment) # 去除中文括号
+        segment = segment.strip()
+        
+        if not segment:
+            continue
+            
+        try:
+            token_ids = tokenizer.encode(
+                segment,
+                multimodal_params=None,
+                add_special_tokens=False,
+            )
+        except TypeError:
+            token_ids = tokenizer.encode(
+                segment,
+                add_special_tokens=False,
+            )
+
+        valid_segment_tokens = []
+        for token_id in token_ids:
+            token_str = tokenizer.decode([token_id])
+            clean_str = re.sub(r'[^\w\s\u4e00-\u9fff]', '', token_str).strip()
+            
+            if clean_str:
+                print(clean_str, end=" ")
+                valid_segment_tokens.append(token_id)
+                
+            if len(valid_segment_tokens) == 5:
+                break
+                
+        final_penalty_ids.extend(valid_segment_tokens)
+        
+    return final_penalty_ids
+
 
 @dataclasses.dataclass
 class ReqState:
@@ -522,6 +569,18 @@ class TokenizerManager(TokenizerControlMixin, TokenizerManagerScoreMixin):
         import time as _time
         _t_gen_start = _time.time()
         self.auto_create_handle_loop()
+        
+        prompt_text = obj.text
+        
+        # 计算当前请求专属的 penalty_ids
+        penalty_ids = get_assistant_penalty_tokens(text=prompt_text, tokenizer=self.tokenizer)
+        
+        # 将计算结果注入到该请求的 sampling_params 中
+        # 兼容 dict 格式或 SamplingParams 对象格式
+        if isinstance(obj.sampling_params, dict):
+            obj.sampling_params["custom_penalty_ids"] = penalty_ids
+        elif obj.sampling_params is not None:
+            obj.sampling_params.custom_penalty_ids = penalty_ids
 
         # Normalize the request
         obj.normalize_batch_and_arguments()

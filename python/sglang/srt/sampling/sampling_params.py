@@ -41,6 +41,7 @@ class SamplingParams:
         self,
         max_new_tokens: int = 128,
         stop: Optional[Union[str, List[str]]] = None,
+        min_sequences_length_forstop: int = 0,
         stop_token_ids: Optional[List[int]] = None,
         stop_regex: Optional[Union[str, List[str]]] = None,
         temperature: float = 1.0,
@@ -48,6 +49,7 @@ class SamplingParams:
         top_k: int = -1,
         min_p: float = 0.0,
         frequency_penalty: float = 0.0,
+        custom_penalty_ids: Optional[List[int]] = None,
         presence_penalty: float = 0.0,
         repetition_penalty: float = 1.0,
         min_new_tokens: int = 0,
@@ -69,6 +71,7 @@ class SamplingParams:
         # (e.g. /generate) can pass null without crashing verify().
         self.max_new_tokens = max_new_tokens
         self.stop_strs = stop
+        self.min_sequences_length_forstop = min_sequences_length_forstop
         if stop_token_ids:
             filtered = {int(t) for t in stop_token_ids if t is not None}
             self.stop_token_ids = filtered or None
@@ -82,6 +85,7 @@ class SamplingParams:
         self.frequency_penalty = (
             frequency_penalty if frequency_penalty is not None else 0.0
         )
+        self.custom_penalty_ids = custom_penalty_ids
         self.presence_penalty = (
             presence_penalty if presence_penalty is not None else 0.0
         )
