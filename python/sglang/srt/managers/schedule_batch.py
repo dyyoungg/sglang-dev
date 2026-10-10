@@ -1088,6 +1088,22 @@ class Req(ReqDllmMixin):
 
         return self.surr_and_decode_ids, self.read_offset - self.surr_offset
 
+    # def tail_str(self) -> str:
+    #     # Check stop strings and stop regex patterns together
+    #     if (
+    #         len(self.sampling_params.stop_strs) == 0
+    #         and len(self.sampling_params.stop_regex_strs) == 0
+    #     ):
+    #         return ""
+
+    #     max_len_tail_str = max(
+    #         self.sampling_params.stop_str_max_len + 1,
+    #         self.sampling_params.stop_regex_max_len + 1,
+    #     )
+
+    #     tail_len = min(max_len_tail_str, len(self.output_ids))
+    #     return self.tokenizer.decode(self.output_ids[-tail_len:])
+    
     def tail_str(self) -> str:
         # Check stop strings and stop regex patterns together
         if (
@@ -1096,13 +1112,28 @@ class Req(ReqDllmMixin):
         ):
             return ""
 
+        # 获取设定的最小长度 (默认 0)
+        min_len = getattr(self.sampling_params, "min_sequences_length_forstop", 0)
+
+        # 如果当前总长度还没达到最低要求，直接返回空串
+        # 引擎会认为没有任何 stop_str，任由模型继续生成
+        if len(self.output_ids) < min_len:
+            return ""
+
         max_len_tail_str = max(
             self.sampling_params.stop_str_max_len + 1,
             self.sampling_params.stop_regex_max_len + 1,
         )
 
-        tail_len = min(max_len_tail_str, len(self.output_ids))
-        return self.tokenizer.decode(self.output_ids[-tail_len:])
+        # 为了防止把 min_len 之前生成的旧 stop_str 误认为现在的 stop，
+        # 我们只从 min_len 之后的 tokens 中进行截取检查
+        valid_output_ids = self.output_ids[min_len:]
+        
+        tail_len = min(max_len_tail_str, len(valid_output_ids))
+        if tail_len == 0:
+            return ""
+            
+        return self.tokenizer.decode(valid_output_ids[-tail_len:])
 
     def check_match_stop_str_prefix(self) -> bool:
         """
@@ -2288,28 +2319,43 @@ class ScheduleBatch(ScheduleBatchDisaggregationDecodeMixin):
             # if spec decoding is used, the decode batch is prepared inside
             # `forward_batch_speculative_generation` after running draft models.
             return
-
+        
+        vocab_size = self.model_config.vocab_size
+        
+    
         if self.sampling_info.penalizer_orchestrator.is_required:
-            if self.enable_overlap:
-                # TODO: this can be slow, optimize this.
+            if self.enable_overlap:                
+                # 修复逻辑
+                safe_delayed_ids = []
+                for req in self.reqs:
+                    if len(req.output_ids) > 0:
+                        last_id = req.output_ids[-1]
+                    else:
+                        last_id = req.origin_input_ids[-1]
+                    # 如果 Token ID 是负数或者超出了文本词表范围（比如多模态图像Token 754494504）
+                    # 那么将其强制设为 0，防止惩罚器显存越界崩溃
+                    if last_id < 0 or last_id >= vocab_size:
+                        last_id = 0
+                        
+                    safe_delayed_ids.append(last_id)
+
                 delayed_output_ids = torch.tensor(
-                    [
-                        (
-                            req.output_ids[-1]
-                            if len(req.output_ids)
-                            else req.origin_input_ids[-1]
-                        )
-                        for req in self.reqs
-                    ],
+                    safe_delayed_ids,
                     dtype=torch.int64,
                     device=self.device,
                 )
+                # print("delayed_output_ids", delayed_output_ids, flush=True)
                 self.sampling_info.penalizer_orchestrator.cumulate_output_tokens(
                     delayed_output_ids
                 )
             else:
+                # 非 overlap 模式同理做一层安全保护
+                safe_output_ids = self.output_ids.clone().to(torch.int64)
+                is_invalid = (safe_output_ids < 0) | (safe_output_ids >= vocab_size)
+                safe_output_ids = torch.where(is_invalid, torch.zeros_like(safe_output_ids), safe_output_ids)
+
                 self.sampling_info.penalizer_orchestrator.cumulate_output_tokens(
-                    self.output_ids.to(torch.int64)
+                    safe_output_ids
                 )
 
         # Update fields
