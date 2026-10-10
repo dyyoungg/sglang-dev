@@ -798,6 +798,7 @@ class BeeBeeQwen3MoeVisionModel(nn.Module, RotaryPosMixin):
         use_data_parallel: bool = False,
     ) -> None:
         super().__init__()
+        self.config = vision_config
         self.pp_group = get_pp_group()
         self.hidden_size = vision_config.hidden_size
         self.num_heads = vision_config.num_heads
