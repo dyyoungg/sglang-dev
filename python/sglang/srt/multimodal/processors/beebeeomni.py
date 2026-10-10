@@ -884,7 +884,10 @@ class BeeBeeOmniProcessor(SGLangBaseProcessor):
                     multimodal_tokens=self.mm_tokens,
                 )
 
-            base_output = await loop.run_in_executor(self.io_executor, _load_misses)
+            # load_mm_data submits item loads to io_executor and waits for them.
+            # Its caller must run in a different pool, or concurrent cache misses
+            # can occupy every IO worker while waiting for queued item loads.
+            base_output = await loop.run_in_executor(None, _load_misses)
             miss_images = base_output.images if base_output.images else None
             miss_audios = base_output.audios if base_output.audios else None
 
@@ -905,7 +908,8 @@ class BeeBeeOmniProcessor(SGLangBaseProcessor):
             return None
 
         image_task = loop.run_in_executor(self.io_executor, _process_images)
-        audio_task = loop.run_in_executor(self.io_executor, _process_audios)
+        # Multi-audio preprocessing also fans out to io_executor internally.
+        audio_task = loop.run_in_executor(None, _process_audios)
         img_result, aud_result = await asyncio.gather(image_task, audio_task)
 
         t_compute_end = time.perf_counter()
@@ -1059,7 +1063,7 @@ class BeeBeeOmniProcessor(SGLangBaseProcessor):
                 audio_data=audio_data,
                 multimodal_tokens=self.mm_tokens,
             )
-        base_output = await loop.run_in_executor(self.io_executor, _sync_load_data)
+        base_output = await loop.run_in_executor(None, _sync_load_data)
 
         raw_images = [item for m, item in base_output.organize_results() if m == Modality.IMAGE]
        
@@ -1075,7 +1079,7 @@ class BeeBeeOmniProcessor(SGLangBaseProcessor):
             return [], []
 
         image_task = loop.run_in_executor(self.io_executor, _sync_process_images)
-        audio_task = loop.run_in_executor(self.io_executor, _sync_process_audios)
+        audio_task = loop.run_in_executor(None, _sync_process_audios)
 
 
         hf_ret, (mel_list, raw_waveform_lengths) = await asyncio.gather(image_task, audio_task)

@@ -1545,8 +1545,10 @@ def apply_fp8_linear(
         if not cutlass_compatible_b or use_triton_w8a8_fp8_kernel:
             # Massage the input to be 2D
             qinput = qinput.view(-1, qinput.shape[-1])
+            # Online quantization stores channel scales as [1, N] for CUTLASS;
+            # the Triton fallback requires [N, 1], including unaligned TP shards.
             output = triton_scaled_mm(
-                qinput, weight, x_scale, weight_scale, input.dtype, bias
+                qinput, weight, x_scale, weight_scale.reshape(-1, 1), input.dtype, bias
             )
         else:
             output = fp8_scaled_mm(

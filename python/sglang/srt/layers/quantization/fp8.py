@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from functools import lru_cache
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Union
 
 import torch
@@ -62,6 +63,7 @@ from sglang.srt.layers.quantization.fp8_utils import (
     mxfp8_group_quantize,
     normalize_e4m3fn_to_e4m3fnuz,
     requant_weight_ue8m0_inplace,
+    use_triton_w8a8_fp8_kernel,
 )
 from sglang.srt.layers.quantization.kv_cache import BaseKVCacheMethod
 from sglang.srt.layers.quantization.marlin_utils_fp8 import prepare_fp8_layer_for_marlin
@@ -123,6 +125,12 @@ if _use_aiter:
 ACTIVATION_SCHEMES = ["static", "dynamic"]
 
 logger = logging.getLogger(__name__)
+
+
+@lru_cache(maxsize=128)
+def _log_fp8_diagnostics_once(message: str) -> None:
+    # Called only during initialization/weight processing, never in forward.
+    log_info_on_rank0(logger, f"[FP8 diagnostics] {message}")
 
 
 class Fp8Config(QuantizationConfig):
@@ -716,6 +724,66 @@ class Fp8LinearMethod(LinearMethodBase):
             prepare_fp8_layer_for_marlin(layer, not self.block_quant)
             # Activations not quantized for marlin.
             del layer.input_scale
+
+        self._log_quantization_after_loading(layer)
+
+    def _log_quantization_after_loading(self, layer: Module) -> None:
+        source = (
+            "serialized FP8 checkpoint"
+            if self.is_checkpoint_fp8_serialized
+            else "online quantization during weight loading"
+        )
+        if self.use_marlin:
+            kernel = "sglang.apply_fp8_marlin_linear (W8A16)"
+            activation = "unquantized"
+            weight = (
+                f"block={self.quant_config.weight_block_size}"
+                if self.block_quant
+                else "per-channel"
+            )
+        elif self.block_quant:
+            dispatcher = (
+                self.w8a8_mxfp8_linear if self.use_mxfp8 else self.w8a8_block_fp8_linear
+            )
+            kernel = f"dispatcher={dispatcher.__name__} (may fall back by input shape)"
+            if use_intel_amx_backend(layer):
+                kernel = "sgl_kernel.fp8_scaled_mm_cpu"
+            weight = f"block={self.quant_config.weight_block_size}"
+            activation = (
+                "dynamic per-token-group, "
+                f"group_size={self.quant_config.weight_block_size[1]}"
+            )
+        else:
+            per_channel = layer.weight_scale.numel() == layer.weight.shape[1]
+            weight = "per-channel scale layout" if per_channel else "per-tensor"
+            if layer.input_scale is not None:
+                activation = "static per-tensor (broadcast for CUTLASS)"
+            elif _is_cuda:
+                activation = "dynamic per-token (sgl_kernel.sgl_per_token_quant_fp8)"
+            else:
+                activation = (
+                    "dynamic; "
+                    f"use_per_token_if_dynamic={self.use_per_token_if_dynamic}"
+                )
+            if self.cutlass_fp8_supported and per_channel:
+                aligned = all(size % 16 == 0 for size in layer.weight.shape)
+                kernel = (
+                    "triton_scaled_mm"
+                    if use_triton_w8a8_fp8_kernel or not aligned
+                    else "sgl_kernel.fp8_scaled_mm (CUTLASS)"
+                )
+            else:
+                kernel = (
+                    "apply_fp8_linear (torch._scaled_mm / AITER; "
+                    "scaling-dependent dispatch)"
+                )
+        _log_fp8_diagnostics_once(
+            f"Linear method={type(self).__name__}, source={source}, "
+            f"stored_weight_dtype={layer.weight.dtype}, weight_quant={weight}, "
+            f"activation_quant={activation}, kernel={kernel}, "
+            f"cutlass_supported={self.cutlass_fp8_supported}, use_marlin={self.use_marlin}. "
+            "Serialized per-tensor scales may be expanded to a per-channel layout."
+        )
 
     def apply(
         self,
@@ -1648,6 +1716,27 @@ class Fp8MoEMethod(FusedMoEMethodBase):
         else:
             # TODO(cwan): refactor other backends
             pass
+
+        runner = getattr(self, "runner", None)
+        fused_func = getattr(runner, "fused_func", None)
+        runner_core = getattr(runner, "runner_core", None)
+        activation_quant = self.quant_config.activation_scheme
+        if moe_runner_backend.is_triton():
+            granularity = "per-token-group" if self.block_quant else "per-tensor"
+            activation_quant += f" {granularity}"
+        _log_fp8_diagnostics_once(
+            f"MoE method={type(self).__name__}, "
+            f"backend_requested={get_moe_runner_backend().value}, "
+            f"backend_resolved={moe_runner_backend.value}, "
+            f"a2a_backend={get_moe_a2a_backend().value}, "
+            f"runner_core={type(runner_core).__name__ if runner_core is not None else None}, "
+            f"fused_func={getattr(fused_func, '__qualname__', None)}, "
+            f"checkpoint_fp8={self.quant_config.is_checkpoint_fp8_serialized}, "
+            f"weight_quant={'block' if self.block_quant else 'per-tensor per-expert'}, "
+            f"weight_block_size={self.quant_config.weight_block_size}, "
+            f"activation_quant={activation_quant}, "
+            f"use_mxfp8={self.use_mxfp8}"
+        )
 
     def get_triton_quant_info(self, layer: torch.nn.Module) -> TritonMoeQuantInfo:
         return TritonMoeQuantInfo(

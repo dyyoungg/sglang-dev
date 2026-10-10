@@ -57,9 +57,18 @@ def get_model_config(
         group_size = weights_config.get("group_size")
         block_shape = [0, group_size]
         assert len(block_shape) == 2
-    # Replace config with text_config for encoder-decoder models after getting block_shape and architecture
-    if hasattr(config, "text_config"):
-        config = config.get_text_config()
+    # Multimodal Qwen3-MoE checkpoints may store the language-model config as
+    # ``text_config`` or ``foundation_config``. Resolve that nested config
+    # before reading MoE dimensions. Keep the outer architecture name for the
+    # model-family dispatch below.
+    if hasattr(config, "get_text_config"):
+        text_config = config.get_text_config()
+        if text_config is not None and text_config is not config:
+            config = text_config
+    elif hasattr(config, "text_config"):
+        config = config.text_config
+    elif hasattr(config, "foundation_config"):
+        config = config.foundation_config
 
     hidden_size = config.hidden_size
     if architecture == "DbrxForCausalLM":
@@ -76,8 +85,18 @@ def get_model_config(
         "Qwen3NextForCausalLM",
         "Qwen3VLMoeForConditionalGeneration",
         "Qwen3_5MoeForConditionalGeneration",
+        # BeeBee/LLaVA Qwen3-MoE wrappers keep the actual Qwen3 MoE config in
+        # foundation_config (or get_text_config()).
+        "LlavaQwen3MoeForCausalLM",
+        "BeeBeeMoEOmniForConditionalGeneration",
     ]:
-        E = config.num_experts // ep_size
+        # Transformers versions differ between num_experts and
+        # num_local_experts for Qwen3-MoE configs. Prefer the explicitly local
+        # expert count when num_experts is absent.
+        num_experts = getattr(config, "num_experts", None)
+        if num_experts is None:
+            num_experts = getattr(config, "num_local_experts")
+        E = num_experts // ep_size
         topk = config.num_experts_per_tok
         intermediate_size = config.moe_intermediate_size
     elif architecture in [

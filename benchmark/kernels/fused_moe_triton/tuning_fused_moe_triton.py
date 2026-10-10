@@ -383,6 +383,16 @@ def main(args: argparse.Namespace):
     dtype = model_config["dtype"]
     block_shape = model_config["block_shape"]
 
+    print(
+        "Resolved MoE tuning shape: "
+        f"architecture={model_config['architecture']}, "
+        f"E={E}, topk={topk}, hidden_size={hidden_size}, "
+        f"shard_intermediate_size={shard_intermediate_size}, "
+        f"N={shard_intermediate_size // 2}, "
+        f"tp_size={args.tp_size}, ep_size={args.ep_size}, "
+        f"dtype={dtype}"
+    )
+
     use_fp8_w8a8 = args.dtype == "fp8_w8a8"
     use_int8_w8a8 = args.dtype == "int8_w8a8"
     use_int8_w8a16 = args.dtype == "int8_w8a16"

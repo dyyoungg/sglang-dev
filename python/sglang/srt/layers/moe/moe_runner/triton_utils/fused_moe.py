@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import functools
+import os
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 import torch
@@ -643,6 +644,23 @@ def _fused_moe_kernel_sequence(
         intermediate_cache2 = torch.square(F.relu(intermediate_cache1.view(-1, N)))
     else:
         raise ValueError(f"Unsupported activation: {activation=}, with {is_gated=}")
+
+    # Capture both matched inputs before in-place output can overwrite x.
+    if os.getenv("SGLANG_FP8_ACTIVATION_DUMP_DIR"):
+        from sglang.srt.debug_utils.fp8_activation_capture import (
+            get_fp8_activation_capture,
+        )
+
+        capture = get_fp8_activation_capture()
+        if capture is not None and capture.context is not None:
+            capture.moe(
+                w1,
+                hidden_states,
+                intermediate_cache2,
+                topk_ids,
+                sorted_token_ids,
+                down_moe_use_tma,
+            )
 
     del intermediate_cache1
 

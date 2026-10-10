@@ -1,0 +1,2115 @@
+[
+  {
+    "id": "dev_Accounting_1",
+    "image_path": [
+      "s3://gamedata/eval_sglang/ca009c8d3b6c_dev_Accounting_1_1.jpg"
+    ],
+    "question": "Each of the following situations relates to a different company. <image 1> For company B, find the missing amounts.",
+    "candidates": [
+      "$63,020",
+      "$58,410",
+      "$71,320",
+      "$77,490"
+    ],
+    "answer": "$77,490",
+    "category": "MMMU-dev"
+  },
+  {
+    "id": "dev_Accounting_2",
+    "image_path": [
+      "s3://gamedata/eval_sglang/3727f45aab09_dev_Accounting_2_1.jpg"
+    ],
+    "question": "Here are facts for the Hudson Roofing Company for December. <image 1> Assuming no investments or withdrawals, what is the ending balance in the owners' capital account?",
+    "candidates": [
+      "$171,900",
+      "$170,000",
+      "$172,500",
+      "$181,900"
+    ],
+    "answer": "$171,900",
+    "category": "MMMU-dev"
+  },
+  {
+    "id": "dev_Accounting_3",
+    "image_path": [
+      "s3://gamedata/eval_sglang/352d57f89483_dev_Accounting_3_1.jpg"
+    ],
+    "question": "For 2015, calculate the cash flow from assets(1) ________, cash flow to creditors(2) ________, and cash flow to stockholders(3) ________.<image 1>",
+    "candidates": [
+      "1): -$493.02 (2):-$2,384 (3):$1,890.98",
+      "1): $1843.98 (2): -$2,384 (3):$493.02",
+      "1): -$493.02 (2):  -$2,384 (3):-$1,890.98"
+    ],
+    "answer": "1): -$493.02 (2):  -$2,384 (3):-$1,890.98",
+    "category": "MMMU-dev"
+  },
+  {
+    "id": "dev_Accounting_4",
+    "image_path": [
+      "s3://gamedata/eval_sglang/e0cfa02d31a5_dev_Accounting_4_1.jpg"
+    ],
+    "question": "Paper Submarine Manufacturing is investigating a lockbox system to reduce its collection time. It has determined the following:<image 1> The total collection time will be reduced by three days if the lockbox system is adopted.What is the net cash flow per check from adopting? ",
+    "candidates": [
+      "$.02",
+      "$7.79",
+      "$8.65"
+    ],
+    "answer": "$.02",
+    "category": "MMMU-dev"
+  },
+  {
+    "id": "dev_Accounting_5",
+    "image_path": [
+      "s3://gamedata/eval_sglang/7510c2bb90de_dev_Accounting_5_1.jpg"
+    ],
+    "question": "Solve for the unknown number of years in each of the following:<image 1>",
+    "candidates": [
+      "10.52 years; 14.73 years; 20.02 years; 24.73 years",
+      "10.64 years; 14.81 years; 20.35 years; 25.01 years",
+      "10.96 years; 15.22 years; 20.83 years; 25.96 years"
+    ],
+    "answer": "10.64 years; 14.81 years; 20.35 years; 25.01 years",
+    "category": "MMMU-dev"
+  },
+  {
+    "id": "dev_Agriculture_1",
+    "image_path": [
+      "s3://gamedata/eval_sglang/b2761b5c716f_dev_Agriculture_1_1.jpg"
+    ],
+    "question": "<image 1> This isn't related to plant diseases, but it's crucial for the production of potatoes. Can you tell me if either of these two insects, or maybe even both, are harmful to potatoes?",
+    "candidates": [
+      "Neither are pest of potato",
+      "The one with black coloured antennae",
+      "The one with tan coloured antennae",
+      "Both are pests of potato"
+    ],
+    "answer": "The one with black coloured antennae",
+    "category": "MMMU-dev"
+  },
+  {
+    "id": "dev_Agriculture_2",
+    "image_path": [
+      "s3://gamedata/eval_sglang/fc3d21617575_dev_Agriculture_2_1.jpg"
+    ],
+    "question": "<image 1> What is the count of pathogens infecting this sunflower leaf?",
+    "candidates": [
+      "One pathogen",
+      "Two pathogens",
+      "Three pathogens",
+      "There is no pathogen involved",
+      "I don't know and I don't want to guess"
+    ],
+    "answer": "Three pathogens",
+    "category": "MMMU-dev"
+  },
+  {
+    "id": "dev_Agriculture_3",
+    "image_path": [
+      "s3://gamedata/eval_sglang/8cf1eefc2a38_dev_Agriculture_3_1.jpg"
+    ],
+    "question": "<image 1> What could be the reason behind the massive gum production on the trunks of these grapefruit trees in Cyprus, even though they appeared healthy when observed from a higher point on a hillside?",
+    "candidates": [
+      "Don't know or not sure",
+      "Physiological stress",
+      "Bacterial disease",
+      "Harvesting damage when cutting with knives",
+      "Fungal gummosis"
+    ],
+    "answer": "Physiological stress",
+    "category": "MMMU-dev"
+  },
+  {
+    "id": "dev_Agriculture_4",
+    "image_path": [
+      "s3://gamedata/eval_sglang/628f49036a87_dev_Agriculture_4_1.jpg"
+    ],
+    "question": "<image 1> Which among the following assertions holds true?",
+    "candidates": [
+      "Laboratory work with micro manipulators can mimic the transmission of viruses.",
+      "All plant feeding insects can transmit viruses.",
+      "All plant viruses can be transmitted by insects.",
+      "Most viruses have a specific relationship with their vectors.",
+      "I don't know and I don't want to guess"
+    ],
+    "answer": "Most viruses have a specific relationship with their vectors.",
+    "category": "MMMU-dev"
+  },
+  {
+    "id": "dev_Agriculture_5",
+    "image_path": [
+      "s3://gamedata/eval_sglang/64d20883cfe7_dev_Agriculture_5_1.jpg"
+    ],
+    "question": "<image 1> What among the listed issues would not be the cause for the petioles of this rhubarb splitting?",
+    "candidates": [
+      "Physiological problems",
+      "Phytoplasma infection",
+      "I don't know and don't want to guess.",
+      "Animal damage",
+      "Bacteria"
+    ],
+    "answer": "Bacteria",
+    "category": "MMMU-dev"
+  },
+  {
+    "id": "dev_Architecture_and_Engineering_1",
+    "image_path": [
+      "s3://gamedata/eval_sglang/bdfb4b769237_dev_Architecture_and_Engineering_1_1.jpg"
+    ],
+    "question": "While making a reconnaissance survey through the woods, a surveyor with a hand compass, started from a point A and walked a thousand steps in the direction S67°W and reached a point B. Then he changed his direction and walked 512 steps in the direction N10°E and reached a point C. Then again he changed his direction and walked 1504 steps in the direction S65°E and reached a point D as shown in Fig. 5.10. Now, the surveyor wants to return to the starting point A. In which direction should he move and how many steps should he take.<image 1>",
+    "candidates": [
+      "S45°30'32\"E,745.03 $\\approx$ steps",
+      "N45°30'32\"E,745.03 $\\approx$ steps",
+      "N45°30'32\"W,745.03 $\\approx$ steps",
+      "S45°30'32\"W,745.03 $\\approx$ steps"
+    ],
+    "answer": "N45°30'32\"W,745.03 $\\approx$ steps",
+    "category": "MMMU-dev"
+  },
+  {
+    "id": "dev_Architecture_and_Engineering_2",
+    "image_path": [
+      "s3://gamedata/eval_sglang/ede844f5f705_dev_Architecture_and_Engineering_2_1.jpg"
+    ],
+    "question": "The following mean values of the three angles of a triangle were observed<image 1>Determine the corrected values of the angles by the method of least squares.",
+    "candidates": [
+      "$\\angle $A = 54°12'12.98\",$\\angle $B = 48°45'52.21\",$\\angle $C = 77°01'54.81\"",
+      "$\\angle $A = 44°12'12.98\",$\\angle $B = 48°45'52.21\",$\\angle $C = 77°01'54.81\"",
+      "$\\angle $A = 56°12'12.98\",$\\angle $B = 48°45'52.21\",$\\angle $C = 77°01'54.81\"",
+      "$\\angle $A = 57°12'12.98\",$\\angle $B = 48°45'52.21\",$\\angle $C = 77°01'54.81\""
+    ],
+    "answer": "$\\angle $A = 54°12'12.98\",$\\angle $B = 48°45'52.21\",$\\angle $C = 77°01'54.81\"",
+    "category": "MMMU-dev"
+  },
+  {
+    "id": "dev_Architecture_and_Engineering_3",
+    "image_path": [
+      "s3://gamedata/eval_sglang/a5589cf35518_dev_Architecture_and_Engineering_3_1.jpg"
+    ],
+    "question": "For the truss in Figure P8.4, compute the vertical displacement of joint C.<image 1>",
+    "candidates": [
+      "0.117 in",
+      "0.232 in",
+      "0.123 in",
+      "0.217 in"
+    ],
+    "answer": "0.217 in",
+    "category": "MMMU-dev"
+  },
+  {
+    "id": "dev_Architecture_and_Engineering_4",
+    "image_path": [
+      "s3://gamedata/eval_sglang/7aed65692f41_dev_Architecture_and_Engineering_4_1.jpg"
+    ],
+    "question": "Observers stationed at two sections XX and YY, 152 m apart on a highway, record the arrival times of four vehicles as shown in the accompanying table. If the total time of observation at XX was 15 sec, determine the space mean speed.<image 1>",
+    "candidates": [
+      "41.67mi/hr",
+      "45.67mi/hr",
+      "45.17mi/hr"
+    ],
+    "answer": "45.67mi/hr",
+    "category": "MMMU-dev"
+  },
+  {
+    "id": "dev_Art_1",
+    "image_path": [
+      "s3://gamedata/eval_sglang/06d798cb8827_dev_Art_1_1.jpg"
+    ],
+    "question": "<image 1> by Mark Gertler can be found in the Touchstones Rochdale museum. Which artist belonging to the Bloomsbury group was Gertler in a relationship with?",
+    "candidates": [
+      "Vanessa Bell",
+      "Eileen Agar",
+      "Dora Carrington",
+      "Leonora Carrington"
+    ],
+    "answer": "Dora Carrington",
+    "category": "MMMU-dev"
+  },
+  {
+    "id": "dev_Art_2",
+    "image_path": [
+      "s3://gamedata/eval_sglang/95869d04d52a_dev_Art_2_1.jpg"
+    ],
+    "question": "Which image was generated by AI on <image 1>?",
+    "candidates": [
+      "The left one.",
+      "The right one.",
+      "Both images",
+      "Neither image"
+    ],
+    "answer": "The right one.",
+    "category": "MMMU-dev"
+  },
+  {
+    "id": "dev_Art_3",
+    "image_path": [
+      "s3://gamedata/eval_sglang/84f6ab756101_dev_Art_3_1.jpg"
+    ],
+    "question": "<image 1> was coined?",
+    "candidates": [
+      "Agnew Clinic",
+      "I and the Village",
+      "Five Bathing Women at a Lake",
+      "Skull with Burning Cigarette"
+    ],
+    "answer": "Agnew Clinic",
+    "category": "MMMU-dev"
+  },
+  {
+    "id": "dev_Art_4",
+    "image_path": [
+      "s3://gamedata/eval_sglang/70c2f38fb28b_dev_Art_4_1.jpg"
+    ],
+    "question": "This William Lamb bronze sculpture of <image 1> is of Angus poet Violet Jacob. Which of her poems was set to music by Jim Reid and performed and recorded by various other musicians, including Battlefield Band, Malinky, and Frightened Rabbit with Lau and Jim Malcolm?",
+    "candidates": [
+      "Glory",
+      "The Wild Geese",
+      "The Field by the Lirk o' the Hill",
+      "The Rowan"
+    ],
+    "answer": "The Wild Geese",
+    "category": "MMMU-dev"
+  },
+  {
+    "id": "dev_Art_5",
+    "image_path": [
+      "s3://gamedata/eval_sglang/ff68b47c4e6c_dev_Art_5_1.jpg"
+    ],
+    "question": "Who created <image 1>?",
+    "candidates": [
+      "MICHELANGELO BUONARROTI",
+      "TITIAN",
+      "LUCAS VAN LEYDEN",
+      "LEONARDO DA VINCI"
+    ],
+    "answer": "LUCAS VAN LEYDEN",
+    "category": "MMMU-dev"
+  },
+  {
+    "id": "dev_Art_Theory_1",
+    "image_path": [
+      "s3://gamedata/eval_sglang/5ec7b74f3637_dev_Art_Theory_1_1.jpg"
+    ],
+    "question": "The painting on the right focuses on the <image 1>",
+    "candidates": [
+      "contribution of Native Americans to landscape preservation",
+      "implementation of the Homestead Act",
+      "impact of the gold rush on landscape development",
+      "idea of Manifest Destiny"
+    ],
+    "answer": "idea of Manifest Destiny",
+    "category": "MMMU-dev"
+  },
+  {
+    "id": "dev_Art_Theory_2",
+    "image_path": [
+      "s3://gamedata/eval_sglang/7430a281fc1e_dev_Art_Theory_2_1.jpg"
+    ],
+    "question": "The central enthroned figure of Christ recalls earlier depictions of a what? <image 1>",
+    "candidates": [
+      "Roman emperor",
+      "Greek philosopher",
+      "Carolingian king",
+      "Romanesque abbot"
+    ],
+    "answer": "Roman emperor",
+    "category": "MMMU-dev"
+  },
+  {
+    "id": "dev_Art_Theory_3",
+    "image_path": [
+      "s3://gamedata/eval_sglang/7a69cb1b98f8_dev_Art_Theory_3_1.jpg",
+      "s3://gamedata/eval_sglang/b02d4f45fd7c_dev_Art_Theory_3_2.jpg"
+    ],
+    "question": "Church interiors from this time period typically were covered with <image 1> <image 2>",
+    "candidates": [
+      "timber roofs",
+      "quadripartite vaults",
+      "pendentive domes",
+      "masonry barrel vaults"
+    ],
+    "answer": "timber roofs",
+    "category": "MMMU-dev"
+  },
+  {
+    "id": "dev_Art_Theory_4",
+    "image_path": [
+      "s3://gamedata/eval_sglang/199a283cf0c9_dev_Art_Theory_4_1.jpg"
+    ],
+    "question": "What does the work <image 1> reflects an interest in?",
+    "candidates": [
+      "accurately copying figures and subject matter from nature",
+      "aligning the Old Testament and the New Testament through typology",
+      "emphasizing the role of the saints in the church",
+      "asserting imperial authority over the church"
+    ],
+    "answer": "aligning the Old Testament and the New Testament through typology",
+    "category": "MMMU-dev"
+  },
+  {
+    "id": "dev_Art_Theory_5",
+    "image_path": [
+      "s3://gamedata/eval_sglang/358b784c10dc_dev_Art_Theory_5_1.jpg"
+    ],
+    "question": "The figural groups within the work are arranged in what? <image 1>",
+    "candidates": [
+      "friezes",
+      "pediments",
+      "registers",
+      "polyptychs"
+    ],
+    "answer": "registers",
+    "category": "MMMU-dev"
+  },
+  {
+    "id": "dev_Basic_Medical_Science_1",
+    "image_path": [
+      "s3://gamedata/eval_sglang/13e28ad676e5_dev_Basic_Medical_Science_1_1.jpg"
+    ],
+    "question": "What kind of tissue does this image depict? <image 1> ",
+    "candidates": [
+      "Skeletal muscle",
+      "Cartilage",
+      "Blood"
+    ],
+    "answer": "Blood",
+    "category": "MMMU-dev"
+  },
+  {
+    "id": "dev_Basic_Medical_Science_2",
+    "image_path": [
+      "s3://gamedata/eval_sglang/8f2a6825cd87_dev_Basic_Medical_Science_2_1.jpg"
+    ],
+    "question": "This region is characterized by <image 1> ",
+    "candidates": [
+      "Absence of bipolar cells.",
+      "Lack of blood vessels.",
+      "Absence of ganglion cells.",
+      "All of the above."
+    ],
+    "answer": "All of the above.",
+    "category": "MMMU-dev"
+  },
+  {
+    "id": "dev_Basic_Medical_Science_3",
+    "image_path": [
+      "s3://gamedata/eval_sglang/025e0c4e9e91_dev_Basic_Medical_Science_3_1.jpg"
+    ],
+    "question": "<image 1>Which of the following correctly describes the reception stage of this signal transduction pathway?",
+    "candidates": [
+      "epinephrine binds to a g-protein coupled receptor protein present in the cell membrane",
+      "the g protein changes shape, is activated, activates adenyl cyclase, which activates cAMP, which activates protein kinases",
+      "protein kinases phosphoylate molecules",
+      "glycogen synthesis is inhibited and glycogen breakdown is promoted"
+    ],
+    "answer": "epinephrine binds to a g-protein coupled receptor protein present in the cell membrane",
+    "category": "MMMU-dev"
+  },
+  {
+    "id": "dev_Basic_Medical_Science_4",
+    "image_path": [
+      "s3://gamedata/eval_sglang/b1733a519ad6_dev_Basic_Medical_Science_4_1.jpg"
+    ],
+    "question": "What type of change is present in these neurons from the hypoglossal nucleus? <image 1>",
+    "candidates": [
+      "Acute necrosis",
+      "Atrophy",
+      "Chromatolysis",
+      "Ferruginization",
+      "Lipofuscin"
+    ],
+    "answer": "Chromatolysis",
+    "category": "MMMU-dev"
+  },
+  {
+    "id": "dev_Basic_Medical_Science_5",
+    "image_path": [
+      "s3://gamedata/eval_sglang/6c2659436a73_dev_Basic_Medical_Science_5_1.jpg"
+    ],
+    "question": "<image 1>The diagram below shows the movement of material from the inside of a cell to the outside of the cell through a protein channel. What type of cellular transport is occurring?",
+    "candidates": [
+      "Active transport because molecules are moving away from equilibrium",
+      "Active transport because molecules are moving toward equilibrium",
+      "Passive transport because molecules are moving away from equilibrium",
+      "Passive transport because molecules are moving toward equilibrium"
+    ],
+    "answer": "Passive transport because molecules are moving toward equilibrium",
+    "category": "MMMU-dev"
+  },
+  {
+    "id": "dev_Biology_1",
+    "image_path": [
+      "s3://gamedata/eval_sglang/d12958df8990_dev_Biology_1_1.jpg"
+    ],
+    "question": "The hotizontal lines in the phylogenetic tree in <image 1> represent",
+    "candidates": [
+      "speciation events",
+      "separation events",
+      "relative length of time in existence",
+      "a common ancestor"
+    ],
+    "answer": "relative length of time in existence",
+    "category": "MMMU-dev"
+  },
+  {
+    "id": "dev_Biology_2",
+    "image_path": [
+      "s3://gamedata/eval_sglang/f9263a1072ee_dev_Biology_2_1.jpg"
+    ],
+    "question": "In <image 1>, if the nuclei were contained within the stalks of Acetabularia, what types of caps would you expect from graft A?",
+    "candidates": [
+      "A. crenulata",
+      "A. mediterranea",
+      "None of above"
+    ],
+    "answer": "A. mediterranea",
+    "category": "MMMU-dev"
+  },
+  {
+    "id": "dev_Biology_3",
+    "image_path": [
+      "s3://gamedata/eval_sglang/f71fbf049542_dev_Biology_3_1.jpg"
+    ],
+    "question": "<image 1> What kind of sugar is this, aldose or ketose?",
+    "candidates": [
+      "aldose",
+      "ketose"
+    ],
+    "answer": "aldose",
+    "category": "MMMU-dev"
+  },
+  {
+    "id": "dev_Biology_4",
+    "image_path": [
+      "s3://gamedata/eval_sglang/84ca5fae1479_dev_Biology_4_1.jpg"
+    ],
+    "question": "For your independent research, you transferred lymphocyte populations between syngeneic mice. You irradiated recipients first to ablate (get rid of) existing lymphocytes, then transferred defined cell populations from donors of same genetic background. The result is shown in <image 1>. What does this experiment tell us?",
+    "candidates": [
+      "Both B cells and T cells can produce antibodies.",
+      "Both B cells and T cells have memory functions.",
+      "Both B cells and T cells are required for an antibody response.",
+      "B cells are required for an antibody response in the absence of T cells.",
+      "B cells and T cells are co-localized and produce synergetic effects in bone marrow and thymus."
+    ],
+    "answer": "Both B cells and T cells are required for an antibody response.",
+    "category": "MMMU-dev"
+  },
+  {
+    "id": "dev_Biology_5",
+    "image_path": [
+      "s3://gamedata/eval_sglang/94bb84968fd3_dev_Biology_5_1.jpg"
+    ],
+    "question": "In the Section of male pelvis, identify the 92 structure. <image 1>",
+    "candidates": [
+      "Obturator internus",
+      "Levatorani",
+      "Prostatic venous plexus",
+      "Obturator membrane"
+    ],
+    "answer": "Obturator internus",
+    "category": "MMMU-dev"
+  },
+  {
+    "id": "dev_Chemistry_1",
+    "image_path": [
+      "s3://gamedata/eval_sglang/32d483163341_dev_Chemistry_1_1.jpg"
+    ],
+    "question": "<image 1> Which point corresponds to the critical point?",
+    "candidates": [
+      "1",
+      "2",
+      "5",
+      "7",
+      "9"
+    ],
+    "answer": "5",
+    "category": "MMMU-dev"
+  },
+  {
+    "id": "dev_Chemistry_2",
+    "image_path": [
+      "s3://gamedata/eval_sglang/e2e2578d7f33_dev_Chemistry_2_1.jpg"
+    ],
+    "question": "Consider the following heating curve of a hypothetical substance: <image 1> What is the boiling point of the substance?",
+    "candidates": [
+      "0°C",
+      "-50°C",
+      "12°C",
+      "75°C"
+    ],
+    "answer": "75°C",
+    "category": "MMMU-dev"
+  },
+  {
+    "id": "dev_Chemistry_3",
+    "image_path": [
+      "s3://gamedata/eval_sglang/e842a3a295c6_dev_Chemistry_3_1.jpg"
+    ],
+    "question": "How many molecules of the sweetener saccharin can be prepared from 30 $C$ atoms, 25 $H$ atoms, 12 $O$ atoms, 8 $S$ atoms, and 14 $N$ atoms? <image 1>",
+    "candidates": [
+      "3",
+      "4",
+      "5",
+      "6"
+    ],
+    "answer": "4",
+    "category": "MMMU-dev"
+  },
+  {
+    "id": "dev_Chemistry_4",
+    "image_path": [
+      "s3://gamedata/eval_sglang/ac30df3f52de_dev_Chemistry_4_1.jpg"
+    ],
+    "question": "The diagram below shows the titration of a weak monoprotic acid by a strong base. In the diagram, there are five points labeled as (A) to (E) respectively. <image 1> At which point the solution is buffered?",
+    "candidates": [
+      "(A)",
+      "(B)",
+      "(C)",
+      "(D)",
+      "(E)"
+    ],
+    "answer": "(B)",
+    "category": "MMMU-dev"
+  },
+  {
+    "id": "dev_Chemistry_5",
+    "image_path": [
+      "s3://gamedata/eval_sglang/5237aa70ad72_dev_Chemistry_5_1.jpg"
+    ],
+    "question": "<image 1> Which of the following orders of rotation barrier about the C = C bond, as indicated, is correct ?",
+    "candidates": [
+      "I > II > III",
+      "III > II > I",
+      "III > I > II",
+      "II > I > III"
+    ],
+    "answer": "I > II > III",
+    "category": "MMMU-dev"
+  },
+  {
+    "id": "dev_Clinical_Medicine_1",
+    "image_path": [
+      "s3://gamedata/eval_sglang/24f2507e49c2_dev_Clinical_Medicine_1_1.jpg"
+    ],
+    "question": "Identify the following rhythm: <image 1>",
+    "candidates": [
+      "Sinus Rhythm with PAC's",
+      "Junctional Rhythm",
+      "2nd Degree AV Block, Type I",
+      "3rd Degree AV Block",
+      "Normal Sinus Rhythm with PVC's",
+      "Idioventricular Rhythm"
+    ],
+    "answer": "Normal Sinus Rhythm with PVC's",
+    "category": "MMMU-dev"
+  },
+  {
+    "id": "dev_Clinical_Medicine_2",
+    "image_path": [
+      "s3://gamedata/eval_sglang/d07db6715d02_dev_Clinical_Medicine_2_1.jpg"
+    ],
+    "question": "A 56-year-old woman is undergoing chemotherapy for treatment of breast carcinoma. The gross appearance of her skin shown here is most typical for which of the following conditions? <image 1> ",
+    "candidates": [
+      "Thrombocytopenia",
+      "Gangrene",
+      "Congestive heart failure",
+      "Metastatic breast carcinoma"
+    ],
+    "answer": "Thrombocytopenia",
+    "category": "MMMU-dev"
+  },
+  {
+    "id": "dev_Clinical_Medicine_3",
+    "image_path": [
+      "s3://gamedata/eval_sglang/620d3c613bf9_dev_Clinical_Medicine_3_1.jpg"
+    ],
+    "question": "Based on <image 1>, what's the most likely diagnosis?",
+    "candidates": [
+      "first degree atrioventricular block",
+      "third degree atrioventricular block",
+      "Second degree type II atrioventricular block",
+      "atrial flutter"
+    ],
+    "answer": "first degree atrioventricular block",
+    "category": "MMMU-dev"
+  },
+  {
+    "id": "dev_Clinical_Medicine_4",
+    "image_path": [
+      "s3://gamedata/eval_sglang/2adc00b2f12b_dev_Clinical_Medicine_4_1.jpg"
+    ],
+    "question": "What person's name is associated with the fracture shown below? <image 1> ",
+    "candidates": [
+      "Monteggia",
+      "Bennett",
+      "Jones",
+      "Smith"
+    ],
+    "answer": "Smith",
+    "category": "MMMU-dev"
+  },
+  {
+    "id": "dev_Clinical_Medicine_5",
+    "image_path": [
+      "s3://gamedata/eval_sglang/58282e030e6d_dev_Clinical_Medicine_5_1.jpg"
+    ],
+    "question": "The best diagnosis for the appendix is: <image 1> ",
+    "candidates": [
+      "simple appendicitis",
+      "appendix abscess",
+      "normal appendix",
+      "cellulite appendicitis"
+    ],
+    "answer": "cellulite appendicitis",
+    "category": "MMMU-dev"
+  },
+  {
+    "id": "dev_Computer_Science_1",
+    "image_path": [
+      "s3://gamedata/eval_sglang/a430ee775198_dev_Computer_Science_1_1.jpg"
+    ],
+    "question": "What is the key attribute for the CUSTOMER entity in the entity-relationship (ER) diagram in <image 1>?",
+    "candidates": [
+      "Phone",
+      "Ssn",
+      "Name",
+      "Addr",
+      "None of the other answers"
+    ],
+    "answer": "Ssn",
+    "category": "MMMU-dev"
+  },
+  {
+    "id": "dev_Computer_Science_2",
+    "image_path": [
+      "s3://gamedata/eval_sglang/4aad629bec04_dev_Computer_Science_2_1.jpg"
+    ],
+    "question": "The <image 1> shows the truth table and calculation circuit diagram for the addition of 1-digit integers. What is the simple circuit that the diagram represents usually called?",
+    "candidates": [
+      "half adder",
+      "full adder"
+    ],
+    "answer": "half adder",
+    "category": "MMMU-dev"
+  },
+  {
+    "id": "dev_Computer_Science_3",
+    "image_path": [
+      "s3://gamedata/eval_sglang/c27b33f74d60_dev_Computer_Science_3_1.jpg"
+    ],
+    "question": "How many context switches are required in the last row of <image 1>?",
+    "candidates": [
+      "0",
+      "1",
+      "2",
+      "None of the other answers"
+    ],
+    "answer": "None of the other answers",
+    "category": "MMMU-dev"
+  },
+  {
+    "id": "dev_Computer_Science_4",
+    "image_path": [
+      "s3://gamedata/eval_sglang/f8d4bc72a7cc_dev_Computer_Science_4_1.jpg"
+    ],
+    "question": "The <image 1> is Typical details of the upstream and downstream channels in North America. .Are downstream channels and upstream channels managed in the same way?",
+    "candidates": [
+      "same",
+      "not the same"
+    ],
+    "answer": "same",
+    "category": "MMMU-dev"
+  },
+  {
+    "id": "dev_Computer_Science_5",
+    "image_path": [
+      "s3://gamedata/eval_sglang/b504d10fc137_dev_Computer_Science_5_1.jpg"
+    ],
+    "question": "What tables do you have to reference to connect a BOOK instance to a BORROWER instance in the relational database schema for <image 1>?",
+    "candidates": [
+      "BOOK_AUTHORS",
+      "PUBLISHER",
+      "BOOK_LOANS",
+      "LIBRARY_BRANCH"
+    ],
+    "answer": "BOOK_LOANS",
+    "category": "MMMU-dev"
+  },
+  {
+    "id": "dev_Design_1",
+    "image_path": [
+      "s3://gamedata/eval_sglang/5f608b2dc2c5_dev_Design_1_1.jpg"
+    ],
+    "question": "What innovation seen in Rodin's 'The Burghers of Calais' signaled his departure from established traditions of sculpture?(<image 1>)",
+    "candidates": [
+      "the figure grouping is placed at eye-level",
+      "the figures show emotional anguish and despair",
+      "Rodin suggests their pain through physical discomfort",
+      "all of the above"
+    ],
+    "answer": "the figure grouping is placed at eye-level",
+    "category": "MMMU-dev"
+  },
+  {
+    "id": "dev_Design_2",
+    "image_path": [
+      "s3://gamedata/eval_sglang/5e1b7addf5c8_dev_Design_2_1.jpg"
+    ],
+    "question": "Both works (<image 1>) come from which art-historical period?",
+    "candidates": [
+      "Baroque",
+      "Renaissance",
+      "Rococo",
+      "Classical"
+    ],
+    "answer": "Renaissance",
+    "category": "MMMU-dev"
+  },
+  {
+    "id": "dev_Design_3",
+    "image_path": [
+      "s3://gamedata/eval_sglang/9c54b73a4774_dev_Design_3_1.jpg"
+    ],
+    "question": "To keep rhythm exciting and active, _____ is essential.<image 1>",
+    "candidates": [
+      "Repetition",
+      "Unity",
+      "Variety",
+      "Balance"
+    ],
+    "answer": "Variety",
+    "category": "MMMU-dev"
+  },
+  {
+    "id": "dev_Design_4",
+    "image_path": [
+      "s3://gamedata/eval_sglang/f10860fa8136_dev_Design_4_1.jpg"
+    ],
+    "question": "Provide at least 15\" of landing area on the handle side of a _____<image 1>",
+    "candidates": [
+      "Stove",
+      "Refrigerator",
+      "Dishwasher",
+      "Sink"
+    ],
+    "answer": "Refrigerator",
+    "category": "MMMU-dev"
+  },
+  {
+    "id": "dev_Design_5",
+    "image_path": [
+      "s3://gamedata/eval_sglang/65c67b5d8cc6_dev_Design_5_1.jpg"
+    ],
+    "question": "Does <image 1> represent a monochromatic color scheme or analogous color scheme?",
+    "candidates": [
+      "Monochromatic color scheme",
+      "Analogous color scheme"
+    ],
+    "answer": "Monochromatic color scheme",
+    "category": "MMMU-dev"
+  },
+  {
+    "id": "dev_Diagnostics_and_Laboratory_Medicine_1",
+    "image_path": [
+      "s3://gamedata/eval_sglang/0b108633aeb6_dev_Diagnostics_and_Laboratory_Medicine_1_1.jpg"
+    ],
+    "question": "The lesion depicted here <image 1>",
+    "candidates": [
+      "characteristically contains rosenthal fibers",
+      "MRI shows commonly a cystic lesion with enhancing mural nodule",
+      "usually has complex glomeruloid vessels",
+      "a and b are correct",
+      "a, b and C are correct"
+    ],
+    "answer": "a, b and C are correct",
+    "category": "MMMU-dev"
+  },
+  {
+    "id": "dev_Diagnostics_and_Laboratory_Medicine_2",
+    "image_path": [
+      "s3://gamedata/eval_sglang/c4f8699be77e_dev_Diagnostics_and_Laboratory_Medicine_2_1.jpg"
+    ],
+    "question": "Which statement about the figure is correct? <image 1>",
+    "candidates": [
+      "This patient has probably a long history of seizures",
+      "A reticulin stain will probably show a dense intercellular network",
+      "This is a high grade glioma",
+      "A and B are correct",
+      "A,B and C are correct"
+    ],
+    "answer": "A and B are correct",
+    "category": "MMMU-dev"
+  },
+  {
+    "id": "dev_Diagnostics_and_Laboratory_Medicine_3",
+    "image_path": [
+      "s3://gamedata/eval_sglang/55c5248778e7_dev_Diagnostics_and_Laboratory_Medicine_3_1.jpg"
+    ],
+    "question": "Appropriate statementsregarding the CTPA (computed tomography pulmonary artery) image of the chest, shown below <image 1>, include:",
+    "candidates": [
+      "The structure labelled A isthe left subclavian vein.",
+      "The structure labelled B isthe trachea",
+      "The structure labelled C is the hemiazygos vein",
+      "The structure labelled D isthe apex of the left lung"
+    ],
+    "answer": "The structure labelled D isthe apex of the left lung",
+    "category": "MMMU-dev"
+  },
+  {
+    "id": "dev_Diagnostics_and_Laboratory_Medicine_4",
+    "image_path": [
+      "s3://gamedata/eval_sglang/54458bc76332_dev_Diagnostics_and_Laboratory_Medicine_4_1.jpg"
+    ],
+    "question": "This tumor is usually positive for: <image 1>",
+    "candidates": [
+      "S-100",
+      "EMA",
+      "CD-34",
+      "CD-20",
+      "CD-45"
+    ],
+    "answer": "CD-34",
+    "category": "MMMU-dev"
+  },
+  {
+    "id": "dev_Diagnostics_and_Laboratory_Medicine_5",
+    "image_path": [
+      "s3://gamedata/eval_sglang/20682c2862a9_dev_Diagnostics_and_Laboratory_Medicine_5_1.jpg"
+    ],
+    "question": "This anti-dystrophin immunoreacted section is consistent with: <image 1>",
+    "candidates": [
+      "Becker s Muscular Dystrophy",
+      "Duchene Muscular Dystroph",
+      "A female carrier of a dystrophinopathy",
+      "Normal"
+    ],
+    "answer": "A female carrier of a dystrophinopathy",
+    "category": "MMMU-dev"
+  },
+  {
+    "id": "dev_Economics_1",
+    "image_path": [
+      "s3://gamedata/eval_sglang/6bfb6b36bdc7_dev_Economics_1_1.jpg"
+    ],
+    "question": "The graph below shows the AD-AS diagram for Spain. All numbers are in billions. <image 1> What is the price level in the short-run equilibrium?",
+    "candidates": [
+      "500",
+      "450",
+      "400",
+      "600"
+    ],
+    "answer": "600",
+    "category": "MMMU-dev"
+  },
+  {
+    "id": "dev_Economics_2",
+    "image_path": [
+      "s3://gamedata/eval_sglang/bfabf4d573a9_dev_Economics_2_1.jpg"
+    ],
+    "question": "The table below describes production possibilities for Mexico and Nigeria. Each number in the table shows the number of workers needed to produce one unit of the product. <image 1> Suppose that both countries have 90 workers. What is the opportunity cost of producing Glasses in Mexico?",
+    "candidates": [
+      "1.20 Shoes",
+      "1.00 Shoes",
+      "0.83 Shoes",
+      "0.75 Shoes"
+    ],
+    "answer": "1.20 Shoes",
+    "category": "MMMU-dev"
+  },
+  {
+    "id": "dev_Economics_3",
+    "image_path": [
+      "s3://gamedata/eval_sglang/f194febff080_dev_Economics_3_1.jpg"
+    ],
+    "question": "The table below describes production possibilities for Mexico and Nigeria. Each number in the table shows the number of workers needed to produce one unit of the product. <image 1> Suppose that both countries have 90 workers. Which country should be specializing in the production of Shoes?",
+    "candidates": [
+      "Nigeria",
+      "Neither country",
+      "Mexico"
+    ],
+    "answer": "Mexico",
+    "category": "MMMU-dev"
+  },
+  {
+    "id": "dev_Economics_4",
+    "image_path": [
+      "s3://gamedata/eval_sglang/4ad49b5b7eb8_dev_Economics_4_1.jpg"
+    ],
+    "question": "The graph below shows the supply and demand curves and the world price for bagels. <image 1> What is the equilibrium quantity if this country does not trade?",
+    "candidates": [
+      "2",
+      "4",
+      "6",
+      "8"
+    ],
+    "answer": "4",
+    "category": "MMMU-dev"
+  },
+  {
+    "id": "dev_Economics_5",
+    "image_path": [
+      "s3://gamedata/eval_sglang/4baa253dad6a_dev_Economics_5_1.jpg"
+    ],
+    "question": "A recent study found that the demand and supply schedules for Frisbees are as follows:<image 1> What are the equilibrium quantity of Frisbees?",
+    "candidates": [
+      "6 million",
+      "7 million",
+      "8 million",
+      "9 million"
+    ],
+    "answer": "6 million",
+    "category": "MMMU-dev"
+  },
+  {
+    "id": "dev_Electronics_3",
+    "image_path": [
+      "s3://gamedata/eval_sglang/820959dfe328_dev_Electronics_3_1.jpg"
+    ],
+    "question": " In <image 1>. $v_c = sin 2 \\pi T$. Find an expression for i and calculate i at the instants t = 1/2s.",
+    "candidates": [
+      "$3 \\pi x 10^-5 A$",
+      "$0 \\pi x 10^-5 A$",
+      "$1 \\pi x 10^-5 A$",
+      "$-2 \\pi x 10^-5 A$"
+    ],
+    "answer": "$-2 \\pi x 10^-5 A$",
+    "category": "MMMU-dev"
+  },
+  {
+    "id": "dev_Electronics_5",
+    "image_path": [
+      "s3://gamedata/eval_sglang/67ab28d4d40a_dev_Electronics_5_1.jpg"
+    ],
+    "question": "Using superposition and Laplace transform techniques, calculate the voltage $v_2(t)$ in <image 1>.",
+    "candidates": [
+      "$[2 - 2.4e^{-(1 / 2)t} - (1 / \\sqrt{5}) cos (t - 63.44^{\\circ})] u(t)$",
+      "$[2 - 2.4e^{-(1 / 2)t} - (1 / \\sqrt{3}) sin (t - 63.44^{\\circ})] u(t)$",
+      "$[2 - 2.1e^{-(1 / 2)t} - (1 / \\sqrt{5}) sin (t - 63.44^{\\circ})] u(t)$",
+      "$[2 - 2.4e^{-(1 / 2)t} - (1 / \\sqrt{5}) sin (t - 63.44^{\\circ})] u(t)$"
+    ],
+    "answer": "$[2 - 2.4e^{-(1 / 2)t} - (1 / \\sqrt{5}) sin (t - 63.44^{\\circ})] u(t)$",
+    "category": "MMMU-dev"
+  },
+  {
+    "id": "dev_Energy_and_Power_1",
+    "image_path": [
+      "s3://gamedata/eval_sglang/e3c5d7721ea4_dev_Energy_and_Power_1_1.jpg"
+    ],
+    "question": "An ideal gas taken round the cycle ABCA as shown in PV diagram<image 1>.The work done during the cycle",
+    "candidates": [
+      "PV",
+      "PV/2",
+      "2PV",
+      "PV/3"
+    ],
+    "answer": "PV/2",
+    "category": "MMMU-dev"
+  },
+  {
+    "id": "dev_Energy_and_Power_2",
+    "image_path": [
+      "s3://gamedata/eval_sglang/f860eca41cd0_dev_Energy_and_Power_2_1.jpg"
+    ],
+    "question": "The long pipe in Fig. 3.133 is filled with water at 20°C. When valve A is closed, p1 - p2 = 75 kPa. When the valve is open and water flows at 500 m^3/h, p_1 - p_2=160 kPa. What is the friction head loss between 1 and 2, in m, for the flowing condition? <image 1>",
+    "candidates": [
+      "7.6 m",
+      "9.2 m",
+      "8.7 m"
+    ],
+    "answer": "8.7 m",
+    "category": "MMMU-dev"
+  },
+  {
+    "id": "dev_Energy_and_Power_3",
+    "image_path": [
+      "s3://gamedata/eval_sglang/cbb65105c0b1_dev_Energy_and_Power_3_1.jpg"
+    ],
+    "question": "The 3-arm lawn sprinkler of Fig. P3.114 receives 20°C water through the center at 2.7 m^3/hr. If collar friction is neglected, what is the steady rotation rate in rev/min for $\\theta $ = 40°? <image 1>",
+    "candidates": [
+      "317 rev/min",
+      "414 rev/min",
+      "400 rev/min"
+    ],
+    "answer": "317 rev/min",
+    "category": "MMMU-dev"
+  },
+  {
+    "id": "dev_Energy_and_Power_4",
+    "image_path": [
+      "s3://gamedata/eval_sglang/b92538d8eef9_dev_Energy_and_Power_4_1.jpg"
+    ],
+    "question": "The tank of liquid in the figure P2.139 accelerates to the right with the fluid in rigid-body motion. Compute a_x in m/s^2. <image 1>",
+    "candidates": [
+      "1.00 m/s2",
+      "1.50 m/s2",
+      "1.28 m/s^2"
+    ],
+    "answer": "1.28 m/s^2",
+    "category": "MMMU-dev"
+  },
+  {
+    "id": "dev_Energy_and_Power_5",
+    "image_path": [
+      "s3://gamedata/eval_sglang/144ebe5d251f_dev_Energy_and_Power_5_1.jpg"
+    ],
+    "question": "An insulated piston-cylinder device contains 5 L of saturated liquid water at a constant pressure of 175 kPa. Water is stirred by a paddle wheel while a current of 8 A flows for 45 min through a resistor placed in the water. If one-half of the liquid is evaporated during this constant-pressure process and the paddle-wheel work amounts to 400 kJ, determine the voltage of the source. Also, show the process on a P-v diagram with respect to saturation lines. <image 1>",
+    "candidates": [
+      "204 V",
+      "224 V",
+      "244 V"
+    ],
+    "answer": "224 V",
+    "category": "MMMU-dev"
+  },
+  {
+    "id": "dev_Finance_3",
+    "image_path": [
+      "s3://gamedata/eval_sglang/9a4a5c71fb4b_dev_Finance_3_1.jpg"
+    ],
+    "question": "Clare Jaccard has $5,000 to invest. Because she is only 25 years old, she is not concerned about the length of the investment's life. What she is sensitive to is the rate of return she will earn on the investment. With the help of her financial advisor, Clare has isolated four equally risky investments, each providing a single amount at the end of its life, as shown in the following table. All the investments require an initial $5,000 payment. <image 1> Calculate, to the nearest 1%, the rate of return on investment D available to Clare.",
+    "candidates": [
+      "11%",
+      "8%",
+      "10%",
+      "9%"
+    ],
+    "answer": "10%",
+    "category": "MMMU-dev"
+  },
+  {
+    "id": "dev_Finance_4",
+    "image_path": [
+      "s3://gamedata/eval_sglang/8e788f76a1b8_dev_Finance_4_1.jpg"
+    ],
+    "question": "For case E in the following table: <image 1>. Calculate the present value of the annuity, assuming that it is an ordinary annuity",
+    "candidates": [
+      "$2,822",
+      "$374,598",
+      "$85,293",
+      "$31,492",
+      "$810,092"
+    ],
+    "answer": "$85,293",
+    "category": "MMMU-dev"
+  },
+  {
+    "id": "dev_Geography_1",
+    "image_path": [
+      "s3://gamedata/eval_sglang/c4dcbb47ea2c_dev_Geography_1_1.jpg"
+    ],
+    "question": "What do satellite 1, 2, 3 separately monitor in <image 1>?",
+    "candidates": [
+      "Earth's energy balance, Earth's water cycle, Earth's surface",
+      "Earth's water cycle, Earth's energy balance, Earth's surface",
+      "Earth's surface, Earth's water cycle, Earth's energy balance",
+      "Earth's surface, Earth's energy balance, Earth's water cycle"
+    ],
+    "answer": "Earth's energy balance, Earth's water cycle, Earth's surface",
+    "category": "MMMU-dev"
+  },
+  {
+    "id": "dev_Geography_2",
+    "image_path": [
+      "s3://gamedata/eval_sglang/77f47fc502b2_dev_Geography_2_1.jpg"
+    ],
+    "question": "The moisture content of a non self weight collapsible loess sample is w=15.6%, and the relative density (specific gravity) of soil particles is dr=2.70,Mass density $\\rou$= 1.60g/cm3, liquid limit wL=30.0%, plastic limit wP=17.9%, pile foundation design needs to be based on Check the design parameters for the liquid index under saturation state, and the liquid index of the sample is closest when its saturation reaches 85%Which of the following options? ()<image 1>",
+    "candidates": [
+      "0.85",
+      " 0.92",
+      "0.99",
+      "1.06"
+    ],
+    "answer": "0.99",
+    "category": "MMMU-dev"
+  },
+  {
+    "id": "dev_Geography_3",
+    "image_path": [
+      "s3://gamedata/eval_sglang/fac414cdf0e0_dev_Geography_3_1.jpg"
+    ],
+    "question": "The settlement calculation method considering stress history requires the indicators provided by the survey, in addition to the pre consolidation pressure In addition to force, compression index, and porosity ratio, the other indicators that should be provided are ()<image 1>",
+    "candidates": [
+      "Effective self weight pressure",
+      " Rebound index",
+      "Average additional pressure",
+      "Groundwater level"
+    ],
+    "answer": " Rebound index",
+    "category": "MMMU-dev"
+  },
+  {
+    "id": "dev_Geography_4",
+    "image_path": [
+      "s3://gamedata/eval_sglang/73cf0274e85c_dev_Geography_4_1.jpg"
+    ],
+    "question": "There is a device with a current actual value of P=8000 yuan and an estimated residual value of LN=800 yuan. The first year's The operating cost of the equipment is Q=600 yuan, and the annual deterioration increment of the equipment is equal. The annual deterioration value $\\lambda $= four hundred Yuan, then the economic life of the equipment is () years.<image 1>",
+    "candidates": [
+      " 7.5",
+      " 7.5",
+      "8",
+      " 6"
+    ],
+    "answer": " 6",
+    "category": "MMMU-dev"
+  },
+  {
+    "id": "dev_Geography_5",
+    "image_path": [
+      "s3://gamedata/eval_sglang/e1ba43eee107_dev_Geography_5_1.jpg"
+    ],
+    "question": "In the illustrated circuit, the consumption power of load RL is 72W. If the transformer voltage ratio k=5, the effective value of the transformer is U1 ()<image 1>",
+    "candidates": [
+      "equal to 120V",
+      "equals to 4.8V",
+      "and equals to 0.6V",
+      "cannot be calculated"
+    ],
+    "answer": "and equals to 0.6V",
+    "category": "MMMU-dev"
+  },
+  {
+    "id": "dev_History_1",
+    "image_path": [
+      "s3://gamedata/eval_sglang/8b029623e3ac_dev_History_1_1.jpg"
+    ],
+    "question": "Which of the following was an important continuity underlying the trade interactions illustrated by <image 1>?",
+    "candidates": [
+      "The resilience of the Chinese economy, despite the dynastic change from Ming to Qing",
+      "The industrial and commercial supremacy of Great Britain in western Europe",
+      "The widespread acceptance of the principles of free trade by most European and Asian governments",
+      "The ongoing expansion of Muslim empires, such as the Ottoman and the Safavid"
+    ],
+    "answer": "The resilience of the Chinese economy, despite the dynastic change from Ming to Qing",
+    "category": "MMMU-dev"
+  },
+  {
+    "id": "dev_History_2",
+    "image_path": [
+      "s3://gamedata/eval_sglang/8b0035e92f10_dev_History_2_1.jpg"
+    ],
+    "question": "<image 1> In which of the following ways did the Estates General transform into the National Assembly?",
+    "candidates": [
+      "The king granted the title of National Assembly to the First Estate after it advocated for greater royal control of church officials",
+      "The Second Estate, refusing to shoulder a greater tax burdon, announced the reformation of a completely aristocratic National Assembly",
+      "The Third Estate, whose numbers exceeded the combined numbers of the other estates, simply declared itself the National Assembly",
+      "The Fourth Estate, refusing to report on the controversies of Estates General, introduced itself as an alternative legislature called the National Assembly"
+    ],
+    "answer": "The Third Estate, whose numbers exceeded the combined numbers of the other estates, simply declared itself the National Assembly",
+    "category": "MMMU-dev"
+  },
+  {
+    "id": "dev_History_3",
+    "image_path": [
+      "s3://gamedata/eval_sglang/e249d0dd3e83_dev_History_3_1.jpg"
+    ],
+    "question": "The object in <image 1> best illustrates which of the following continuities in world history?",
+    "candidates": [
+      "The power of traditional elites was continuously challenged by the emerging power of new elites.",
+      "The power of states was based on the ability of rulers to monopolize the use of violence.",
+      "Artists depended on royal patronage for their livelihoods.",
+      "Rulers used religious imagery to legitimize their political authority."
+    ],
+    "answer": "Rulers used religious imagery to legitimize their political authority.",
+    "category": "MMMU-dev"
+  },
+  {
+    "id": "dev_History_4",
+    "image_path": [
+      "s3://gamedata/eval_sglang/2edf1d3f42cf_dev_History_4_1.jpg"
+    ],
+    "question": "<image 1> best illustrates which of the following continuities in world history?",
+    "candidates": [
+      "The need for humans to adapt to their environments",
+      "The production of cash crops on plantations",
+      "The use of slave labor for cultivation",
+      "The use of technology to project military power"
+    ],
+    "answer": "The need for humans to adapt to their environments",
+    "category": "MMMU-dev"
+  },
+  {
+    "id": "dev_History_5",
+    "image_path": [
+      "s3://gamedata/eval_sglang/8e256f40690f_dev_History_5_1.jpg"
+    ],
+    "question": "<image 1> The movements shown in the table reflect which of the following historical processes?",
+    "candidates": [
+      "The migration of former colonial subjects to cities in the former colonizing country",
+      "The development of ethnic enclaves as migrants moved to seek work opportunities",
+      "The migration patterns associated with male seasonal laborers",
+      "The population resettlement caused by redrawing former colonial boundaries"
+    ],
+    "answer": "The population resettlement caused by redrawing former colonial boundaries",
+    "category": "MMMU-dev"
+  },
+  {
+    "id": "dev_Literature_1",
+    "image_path": [
+      "s3://gamedata/eval_sglang/76d6c3bb4c0c_dev_Literature_1_1.jpg"
+    ],
+    "question": "Refer to the figure <image 1>, which term refers to when a challenge is successful and materials are removed from the curriculum or library?",
+    "candidates": [
+      "Writing-in-role",
+      "Challenge",
+      "Banning",
+      "Hot Seat"
+    ],
+    "answer": "Banning",
+    "category": "MMMU-dev"
+  },
+  {
+    "id": "dev_Literature_2",
+    "image_path": [
+      "s3://gamedata/eval_sglang/a1373cbde39f_dev_Literature_2_1.jpg",
+      "s3://gamedata/eval_sglang/85bb71226552_dev_Literature_2_2.jpg",
+      "s3://gamedata/eval_sglang/69e6502cc640_dev_Literature_2_3.jpg",
+      "s3://gamedata/eval_sglang/4124043b97ec_dev_Literature_2_4.jpg"
+    ],
+    "question": "Which book was written by Joseph Heller?",
+    "candidates": [
+      "<image 1>",
+      "<image 2>",
+      "<image 3>",
+      "<image 4>"
+    ],
+    "answer": "<image 4>",
+    "category": "MMMU-dev"
+  },
+  {
+    "id": "dev_Literature_3",
+    "image_path": [
+      "s3://gamedata/eval_sglang/668dcc3136e2_dev_Literature_3_1.jpg"
+    ],
+    "question": "Refer to the figure <image 1>, which term refers to a symbol reoccurring through a story?",
+    "candidates": [
+      "Theme",
+      "Shape",
+      "Covers",
+      "Motif"
+    ],
+    "answer": "Motif",
+    "category": "MMMU-dev"
+  },
+  {
+    "id": "dev_Literature_4",
+    "image_path": [
+      "s3://gamedata/eval_sglang/bcac06817a43_dev_Literature_4_1.jpg"
+    ],
+    "question": "Refer to the figure <image 1>, which term best describes the practice where students take on the role of television or newspaper reporters and interview characters from the book to retell an event from a range of perspectives?",
+    "candidates": [
+      "News Program",
+      "Readers Theatre",
+      "Hot Seat",
+      "News"
+    ],
+    "answer": "News Program",
+    "category": "MMMU-dev"
+  },
+  {
+    "id": "dev_Literature_5",
+    "image_path": [
+      "s3://gamedata/eval_sglang/4661091e544d_dev_Literature_5_1.jpg"
+    ],
+    "question": "Refer to the description <image 1>, which type of irony is depicted when a person says or writes one thing and means another, or uses words to convey a meaning opposite to the literal meaning?",
+    "candidates": [
+      "verbal irony",
+      "situational irony",
+      "foreshadowing",
+      "dramatic irony"
+    ],
+    "answer": "verbal irony",
+    "category": "MMMU-dev"
+  },
+  {
+    "id": "dev_Manage_1",
+    "image_path": [
+      "s3://gamedata/eval_sglang/d10065c76237_dev_Manage_1_1.jpg"
+    ],
+    "question": "Fernando Garza's firm wishes to use factor rating to help select an outsourcing provider of logistics services. With weights from 1-5 (5 highest) and ratings 1-100 (100 highest), use the following table to help Garza make his decision: <image 1> Which provider should Garza select?",
+    "candidates": [
+      "Overnight Shipping",
+      "Worldwide Delivery",
+      "United Freight"
+    ],
+    "answer": "Worldwide Delivery",
+    "category": "MMMU-dev"
+  },
+  {
+    "id": "dev_Manage_2",
+    "image_path": [
+      "s3://gamedata/eval_sglang/feb4d96c5723_dev_Manage_2_1.jpg"
+    ],
+    "question": "Graph 1 shows the number of unemployed (in thousands) over a five-month period, organized by level of education completed. <image 1> The only group that saw no rise in unemployment during this five-month period was ______.",
+    "candidates": [
+      "Workers without a high school diploma",
+      "High school graduates with no college education",
+      "Workers with some college education",
+      "Workers with a bachelor's degree or higher",
+      "All groups showed a rise."
+    ],
+    "answer": "Workers with a bachelor's degree or higher",
+    "category": "MMMU-dev"
+  },
+  {
+    "id": "dev_Manage_3",
+    "image_path": [
+      "s3://gamedata/eval_sglang/6e4434818e81_dev_Manage_3_1.jpg"
+    ],
+    "question": "<image 1> are Strategic Personnel Planning, Gerard Evers and Cornelis Verhoeven (1999) model. The yellow box is a follow-up to brainstorming (discussed earlier in this section). The concept is that at the end of a brainstorming session, participants will write down all their ideas on sticky notes; all ideas are posted on the wall Which of the following options is not among the steps to be done?",
+    "candidates": [
+      "Post-it notes with three or more ballots are placed in a large 'idea box' and painted on a board based on the dominant color.",
+      "Participants place their stickers on the corresponding sticky notes",
+      "In silence, participants read all thoughts generated during the disagreement",
+      "The group selects three or more ideas for each color to develop"
+    ],
+    "answer": "The group selects three or more ideas for each color to develop",
+    "category": "MMMU-dev"
+  },
+  {
+    "id": "dev_Manage_4",
+    "image_path": [
+      "s3://gamedata/eval_sglang/2e30e3ed5e6f_dev_Manage_4_1.jpg"
+    ],
+    "question": "The <image 1> is the Five Forces model. What is the joint function of these five forces?",
+    "candidates": [
+      "Profit structure",
+      "cost structure",
+      "Industrial structure",
+      "Company personnel structure"
+    ],
+    "answer": "Industrial structure",
+    "category": "MMMU-dev"
+  },
+  {
+    "id": "dev_Marketing_1",
+    "image_path": [
+      "s3://gamedata/eval_sglang/709d09f86ee8_dev_Marketing_1_1.jpg"
+    ],
+    "question": "The data in Table 8.2 are the result of a random survey of 39 national flags (with replacement between picks) from various countries. Let X = the number of colors on a national flag. <image 1> Using the same x_bar, sx, and level of confidence, suppose that n were 69 instead of 39. Would the error bound become larger or smaller?",
+    "candidates": [
+      "Larger.",
+      "Smaller.",
+      "Not certain."
+    ],
+    "answer": "Smaller.",
+    "category": "MMMU-dev"
+  },
+  {
+    "id": "dev_Marketing_2",
+    "image_path": [
+      "s3://gamedata/eval_sglang/a1cab84bd867_dev_Marketing_2_1.jpg"
+    ],
+    "question": "Two computer users were discussing tablet computers. A higher proportion of people ages 16 to 29 use tablets than the proportion of people age 30 and older. Table 10.17 details the number of tablet owners for each age group. Test at the 1% level of significance. <image 1>",
+    "candidates": [
+      "There is not sufficient evidence to conclude that a higher proportion of tablet owners are aged 16 to 29 years old than are 30 years old and older.",
+      "There is sufficient evidence to conclude that a higher proportion of tablet owners are aged 16 to 29 years old than are 30 years old and older.",
+      "Not certain."
+    ],
+    "answer": "There is not sufficient evidence to conclude that a higher proportion of tablet owners are aged 16 to 29 years old than are 30 years old and older.",
+    "category": "MMMU-dev"
+  },
+  {
+    "id": "dev_Marketing_3",
+    "image_path": [
+      "s3://gamedata/eval_sglang/527e90a43218_dev_Marketing_3_1.jpg"
+    ],
+    "question": "A video game developer is testing a new game on three different groups. Each group represents a different target market for the game. The developer collects scores from a random sample from each group. The results are shown in Table 12.16. <image 1> At the 10% significance level, are the scores among the different groups different?",
+    "candidates": [
+      "Yes, there is enough evidence to show that the scores among the groups are statistically significant at the 10% level.",
+      "No, there is not enough evidence to show that the scores among the groups are statistically significant at the 10% level.",
+      "Not certain."
+    ],
+    "answer": "Yes, there is enough evidence to show that the scores among the groups are statistically significant at the 10% level.",
+    "category": "MMMU-dev"
+  },
+  {
+    "id": "dev_Marketing_4",
+    "image_path": [
+      "s3://gamedata/eval_sglang/8b3615bd3cfe_dev_Marketing_4_1.jpg"
+    ],
+    "question": "<image 1> Are the mean numbers of daily visitors to a ski resort the same for the three types of snow conditions? Suppose that Table 12.38 shows the results of a study. Assume that all distributions are normal, the four population standard deviations are approximately the same, and the data were collected independently and randomly. Use a level of significance of 0.05. What can you conclude?",
+    "candidates": [
+      "There is not sufficient evidence to conclude that the mean numbers of daily visitors are different.",
+      "There is sufficient evidence to conclude that the mean numbers of daily visitors are different.",
+      "Not certain."
+    ],
+    "answer": "There is not sufficient evidence to conclude that the mean numbers of daily visitors are different.",
+    "category": "MMMU-dev"
+  },
+  {
+    "id": "dev_Marketing_5",
+    "image_path": [
+      "s3://gamedata/eval_sglang/8f045d81e8cc_dev_Marketing_5_1.jpg"
+    ],
+    "question": "Thuy Dau, Ngoc Bui, Sam Su, and Lan Voung conducted a survey as to how long customers at Lucky claimed to wait in the checkout line until their turn. Let X = time in line. Table 6.1 displays the ordered real data (in minutes): <image 1> Use the distribution in part e to calculate the probability that a person will wait fewer than 6.1 minutes.",
+    "candidates": [
+      "0.6029",
+      "0.6030",
+      "0.6031",
+      "0.6032"
+    ],
+    "answer": "0.6029",
+    "category": "MMMU-dev"
+  },
+  {
+    "id": "dev_Materials_1",
+    "image_path": [
+      "s3://gamedata/eval_sglang/9cdbfa127456_dev_Materials_1_1.jpg"
+    ],
+    "question": "Determine the resultant internal loadings in the beam at cross sections through points D and E. Point E is just to the right of the 3-kip load.<image 1>",
+    "candidates": [
+      "Hc = 0lb; Vc = 85lb;Mc = 1125 lb.ft",
+      "Hc = 0lb; Vc = 95lb;Mc = 1125 lb.ft",
+      "Hc = 0lb; Vc = 105lb;Mc = 1125 lb.ft",
+      "Hc = 0lb; Vc = 75lb;Mc = 1125 lb.ft"
+    ],
+    "answer": "Hc = 0lb; Vc = 75lb;Mc = 1125 lb.ft",
+    "category": "MMMU-dev"
+  },
+  {
+    "id": "dev_Materials_2",
+    "image_path": [
+      "s3://gamedata/eval_sglang/e3efccd94272_dev_Materials_2_1.jpg"
+    ],
+    "question": "A tension test was performed on a magnesium alloy specimen having a diameter 0.5 in. and gauge length 2 in. The resulting stress-strain diagram is shown in the figure. Determine the yield strength of the alloy using the 0.2% strain offset method. <image 1>",
+    "candidates": [
+      "29.0 ksi",
+      "20.9 ksi",
+      "25.9 ksi",
+      "15.9 ksi"
+    ],
+    "answer": "25.9 ksi",
+    "category": "MMMU-dev"
+  },
+  {
+    "id": "dev_Materials_3",
+    "image_path": [
+      "s3://gamedata/eval_sglang/14091acfef50_dev_Materials_3_1.jpg"
+    ],
+    "question": "Only one phase boundary is depicted. <image 1>",
+    "candidates": [
+      "true",
+      "false"
+    ],
+    "answer": "true",
+    "category": "MMMU-dev"
+  },
+  {
+    "id": "dev_Materials_4",
+    "image_path": [
+      "s3://gamedata/eval_sglang/07c31525f201_dev_Materials_4_1.jpg"
+    ],
+    "question": "Which of the following options is consistent with the unit cell plane depicted below? <image 1>",
+    "candidates": [
+      "SC {100}",
+      "BCC {100}",
+      "FCC {100}",
+      "SC {110}",
+      "BCC {110}",
+      "FCC {110}",
+      "SC {111}",
+      "BCC {111}",
+      "FCC {111}"
+    ],
+    "answer": "FCC {100}",
+    "category": "MMMU-dev"
+  },
+  {
+    "id": "dev_Materials_5",
+    "image_path": [
+      "s3://gamedata/eval_sglang/6af84a31f80e_dev_Materials_5_1.jpg"
+    ],
+    "question": "Below are shown, for five metals, reduction reactions and standard electrode potential values. Which of these metals is the most reactive? <image 1>",
+    "candidates": [
+      "Au",
+      "Cu",
+      "Ni",
+      "Fe",
+      "Na"
+    ],
+    "answer": "Na",
+    "category": "MMMU-dev"
+  },
+  {
+    "id": "dev_Math_2",
+    "image_path": [
+      "s3://gamedata/eval_sglang/799a47b5472c_dev_Math_2_1.jpg"
+    ],
+    "question": "For the function f(x) = 8x^3 - 2x^2 - 7x + 3, perform two iterations of the dichotomous search scheme for locating the minimum in [0, 1]. In the interval [0, 1], apply the three-point equal-interval search scheme and compare the results with the above solution. Applying the quadratic interpolation technique, find λ^ from (1) and compare the result with that of dichotomous search: λ^ = (1/2) [{g(a)(c^2 - b^2) + g(b)(a^2 - c^2) + g(c)(b^2 - a^2)} / {g(a)(c - b) + g(b)(a - c) + g(c)(b - a)}] (1) Choose ε = 0.1.\n<image 1>",
+    "candidates": [
+      "The dichotomous search yields a smaller interval containing $ x^* $ than the equal-interval search.",
+      "The value obtained from quadratic interpolation $ \\lambda' = 0.52 $ is an accurate estimate for $ \\lambda^* $.",
+      "The equal-interval search required more function evaluations than the quadratic interpolation.",
+      "$ f(x) $ has a minimum of 5 in the interval $ [-1, 1] $."
+    ],
+    "answer": "$ f(x) $ has a minimum of 5 in the interval $ [-1, 1] $.",
+    "category": "MMMU-dev"
+  },
+  {
+    "id": "dev_Math_3",
+    "image_path": [
+      "s3://gamedata/eval_sglang/fd21144151dc_dev_Math_3_1.jpg"
+    ],
+    "question": "<image 1>Let f be twice differentiable function on the interval -1 < x < 5 with f(1) = 0 and f(2) = 3.The graph of f' , the derivative of f , is shown above. The graph of f'crosses the x- axis at x=-0.5 and x =4 . Let h be the function given by $h(x)=f({\\sqrt{x+1}})$. which is the equation for the line tangent to the graph of h at x = 3",
+    "candidates": [
+      "y = 5x/12 + 7/4 ",
+      "y = 5x/12 + 5/4",
+      "y = 7x/12 + 7/4"
+    ],
+    "answer": "y = 5x/12 + 7/4 ",
+    "category": "MMMU-dev"
+  },
+  {
+    "id": "dev_Math_4",
+    "image_path": [
+      "s3://gamedata/eval_sglang/9b3def10cd1e_dev_Math_4_1.jpg"
+    ],
+    "question": "<image 1> illustrate a walk and a cycle. We can easily represent walking as?",
+    "candidates": [
+      "w = (3, {3, 2}, 2, {2, 4}, 4, {4, 1}, 1).",
+      "w = (1, 3, {3, 2}, 2, {2, 1}, 4, {4, 1}).",
+      "w = (4, {2, 4}, 3, {3, 2} , 4, {4, 1}, 1).",
+      "w = (4, {4, 1}, 2, {2, 4},3, {3, 2},, 1)."
+    ],
+    "answer": "w = (3, {3, 2}, 2, {2, 4}, 4, {4, 1}, 1).",
+    "category": "MMMU-dev"
+  },
+  {
+    "id": "dev_Math_5",
+    "image_path": [
+      "s3://gamedata/eval_sglang/f555c57002d3_dev_Math_5_1.jpg"
+    ],
+    "question": "Do the set of instant insanity cubes in <image 1> have a solution? ",
+    "candidates": [
+      "Yes",
+      "No"
+    ],
+    "answer": "No",
+    "category": "MMMU-dev"
+  },
+  {
+    "id": "dev_Mechanical_Engineering_1",
+    "image_path": [
+      "s3://gamedata/eval_sglang/e5e691f0f06a_dev_Mechanical_Engineering_1_1.jpg"
+    ],
+    "question": "Determine the critical speed of rotation for the overhanging 2-in. diameter steel shaft (E = 29 * 10^6 psi) with attached 60-lb grinding wheel shown in Figure.<image 1>",
+    "candidates": [
+      "85.5rpm",
+      "72.2rpm",
+      "95rpm",
+      "52rpm"
+    ],
+    "answer": "85.5rpm",
+    "category": "MMMU-dev"
+  },
+  {
+    "id": "dev_Mechanical_Engineering_2",
+    "image_path": [
+      "s3://gamedata/eval_sglang/b2af4342a66d_dev_Mechanical_Engineering_2_1.jpg"
+    ],
+    "question": "A flat brass bar has length L, constant thickness t, and a rectangular cross section whose width varies linearly between $b_{2}$ at the fixed support to $b_{1}$ at the free end (see <image 1>). Assume that the taper of the bar is small. The bar has modulus of elasticity E. Calculate the displacements $\\delta_{b}$ and $\\delta_{c}$ if P = 200 kN, L = 2 m, t = 20 mm, b1 = 100 mm, b2 = 115 mm, and E = 96 GPa.",
+    "candidates": [
+      "$\\delta_{B}=0.637mm,\\delta_{C}=2.946mm$",
+      "$\\delta_{B}=0.937mm,\\delta_{C}=1.946mm$",
+      "$\\delta_{B}=0.937mm,\\delta_{C}=2.946mm$"
+    ],
+    "answer": "$\\delta_{B}=0.937mm,\\delta_{C}=2.946mm$",
+    "category": "MMMU-dev"
+  },
+  {
+    "id": "dev_Mechanical_Engineering_3",
+    "image_path": [
+      "s3://gamedata/eval_sglang/2c39742c7cdb_dev_Mechanical_Engineering_3_1.jpg"
+    ],
+    "question": "Car A travels at a constant speed of 65 mi / hr. When in the position shown at time t = 0, car B has a speed of 25 mi / hr and accelerates at a constant rate of 0.1g along its path until it reaches a speed of 65 mi / hr, after which it travels at that constant speed. What is the steady-state position of car A with respect to car B? <image 1>",
+    "candidates": [
+      "$\\delta d=506.109$",
+      "$\\delta d=706.109$",
+      "$\\delta d=906.109$"
+    ],
+    "answer": "$\\delta d=706.109$",
+    "category": "MMMU-dev"
+  },
+  {
+    "id": "dev_Mechanical_Engineering_4",
+    "image_path": [
+      "s3://gamedata/eval_sglang/59865d6d500f_dev_Mechanical_Engineering_4_1.jpg"
+    ],
+    "question": "A flat 6-in. diameter disk buffer shown in P18.3 has a rotation speed of 500 rpm. The coefficient of friction between the buffer disk and a flat metal surface being polished is 0.2. The force on the disk is 15 lb. Assume that the normal pressure created by the 15 lb is uniformly distributed over the surface of the disk and that the tangential pressure force on the disk is q = fp, where f is the coefficient of friction. Determine the power transmitted to the buffing disk.<image 1>",
+    "candidates": [
+      "0.0375hp",
+      "0.0475hp",
+      "0.0572hp",
+      "0.0623hp"
+    ],
+    "answer": "0.0475hp",
+    "category": "MMMU-dev"
+  },
+  {
+    "id": "dev_Mechanical_Engineering_5",
+    "image_path": [
+      "s3://gamedata/eval_sglang/5012aa3fde07_dev_Mechanical_Engineering_5_1.jpg"
+    ],
+    "question": "In the pinewood-derby event shown, the car is released from rest at the starting position A and then rolls down the incline and on to the finish line C. If the constant acceleration down the incline is 2.75 m/s^2 and the speed from B to C is essentially constant, determine the time duration $t_{AC}$ for the race. The effects of the small transition area at B can be neglected.<image 1>",
+    "candidates": [
+      "t=1.46s",
+      "t=2.46s",
+      "t=3.46s"
+    ],
+    "answer": "t=2.46s",
+    "category": "MMMU-dev"
+  },
+  {
+    "id": "dev_Music_1",
+    "image_path": [
+      "s3://gamedata/eval_sglang/830b747e89b6_dev_Music_1_1.jpg"
+    ],
+    "question": "<image 1> Identify the chords marked * in bar 5.",
+    "candidates": [
+      "iv7d",
+      "V7a",
+      "IV7",
+      "viio7b"
+    ],
+    "answer": "viio7b",
+    "category": "MMMU-dev"
+  },
+  {
+    "id": "dev_Music_2",
+    "image_path": [
+      "s3://gamedata/eval_sglang/f613c7d899e2_dev_Music_2_1.jpg",
+      "s3://gamedata/eval_sglang/594ec52c1203_dev_Music_2_2.jpg",
+      "s3://gamedata/eval_sglang/e75b73ae2839_dev_Music_2_3.jpg",
+      "s3://gamedata/eval_sglang/eb792cd70913_dev_Music_2_4.jpg"
+    ],
+    "question": "Select the correct tuning of Violin.",
+    "candidates": [
+      "<image 1>",
+      "<image 2>",
+      "<image 3>",
+      "<image 4>"
+    ],
+    "answer": "<image 1>",
+    "category": "MMMU-dev"
+  },
+  {
+    "id": "dev_Music_3",
+    "image_path": [
+      "s3://gamedata/eval_sglang/3eee71e1c619_dev_Music_3_1.jpg"
+    ],
+    "question": "<image 1>",
+    "candidates": [
+      "box1",
+      "box2",
+      "box3",
+      "box4"
+    ],
+    "answer": "box2",
+    "category": "MMMU-dev"
+  },
+  {
+    "id": "dev_Music_4",
+    "image_path": [
+      "s3://gamedata/eval_sglang/409ce2e6879b_dev_Music_4_1.jpg"
+    ],
+    "question": "Choose the correct key of each of the melody. <image 1>",
+    "candidates": [
+      "B major",
+      "E major",
+      "A minor",
+      "E minor"
+    ],
+    "answer": "E minor",
+    "category": "MMMU-dev"
+  },
+  {
+    "id": "dev_Music_5",
+    "image_path": [
+      "s3://gamedata/eval_sglang/c9a22a15d663_dev_Music_5_1.jpg"
+    ],
+    "question": "Choose the correct time signature for each measure of the following melody fragment from the four options (A, B, C, and D) given in each question. <image 1>",
+    "candidates": [
+      "3/4 3/4 3/4 4/4 2/8 6/8",
+      "6/8 3/4 6/8 2/4 3/8 6/8",
+      "6/8 3/4 3/4 2/4 3/8 6/8",
+      "All of the first three options are incorrect."
+    ],
+    "answer": "6/8 3/4 6/8 2/4 3/8 6/8",
+    "category": "MMMU-dev"
+  },
+  {
+    "id": "dev_Pharmacy_1",
+    "image_path": [
+      "s3://gamedata/eval_sglang/4be78af80883_dev_Pharmacy_1_1.jpg"
+    ],
+    "question": "What sort of selectivity is observed in step 1 of the following synthesis <image 1>?",
+    "candidates": [
+      "Chemoselectivity",
+      "Regioselectivity",
+      "Stereospecificity",
+      "Enantioselectivity"
+    ],
+    "answer": "Regioselectivity",
+    "category": "MMMU-dev"
+  },
+  {
+    "id": "dev_Pharmacy_2",
+    "image_path": [
+      "s3://gamedata/eval_sglang/fdd0bca7ead1_dev_Pharmacy_2_1.jpg",
+      "s3://gamedata/eval_sglang/027ab3009135_dev_Pharmacy_2_2.jpg"
+    ],
+    "question": "The following compound is hydrolyzed by boiling with sodium hydroxide. What are the saponification products? <image 1>",
+    "candidates": [
+      "Glycerol",
+      "Sodium salts of presented fatty acids.",
+      "Both of them ",
+      "None of them"
+    ],
+    "answer": "Both of them ",
+    "category": "MMMU-dev"
+  },
+  {
+    "id": "dev_Pharmacy_3",
+    "image_path": [
+      "s3://gamedata/eval_sglang/ea5c8bbfcc84_dev_Pharmacy_3_1.jpg"
+    ],
+    "question": "The following results were obtained from a broth dilution test for microbial susceptibility.<image 1>,The MBC of this antibiotic is_______ .",
+    "candidates": [
+      "25 $\\mu $g/ml ",
+      "50 $\\mu $g/ml",
+      "100 $\\mu $g/ml",
+      "200 $\\mu $g/ml"
+    ],
+    "answer": "200 $\\mu $g/ml",
+    "category": "MMMU-dev"
+  },
+  {
+    "id": "dev_Pharmacy_4",
+    "image_path": [
+      "s3://gamedata/eval_sglang/63e667cc0f97_dev_Pharmacy_4_1.jpg"
+    ],
+    "question": "The graph below shows confirmed cases of enteropathogenic E. coli. Determine if the following content is correct based on the image and text:The incidence is seasonal.<image 1>",
+    "candidates": [
+      "True",
+      "False"
+    ],
+    "answer": "True",
+    "category": "MMMU-dev"
+  },
+  {
+    "id": "dev_Pharmacy_5",
+    "image_path": [
+      "s3://gamedata/eval_sglang/e927d46bd3b1_dev_Pharmacy_5_1.jpg"
+    ],
+    "question": "The following data were obtained from a disk-diffusion test.<image 1>,Which antibiotic was most effective against the bacteria being tested?",
+    "candidates": [
+      "A",
+      "D",
+      "Both of them",
+      ""
+    ],
+    "answer": "Both of them",
+    "category": "MMMU-dev"
+  },
+  {
+    "id": "dev_Physics_1",
+    "image_path": [
+      "s3://gamedata/eval_sglang/28bf9dd1f1fa_dev_Physics_1_1.jpg"
+    ],
+    "question": "<image 1>An object shown in the accompanying figure moves in uniform circular motion. Which arrow best depicts the net force acting on the object at the instant shown?",
+    "candidates": [
+      "A",
+      "B",
+      "C",
+      "D"
+    ],
+    "answer": "B",
+    "category": "MMMU-dev"
+  },
+  {
+    "id": "dev_Physics_2",
+    "image_path": [
+      "s3://gamedata/eval_sglang/d4e1248fbff8_dev_Physics_2_1.jpg"
+    ],
+    "question": "The diagram below represents a toy car starting from rest and uniformly accelerating across the floor. The time and distance traveled from the start are shown in the diagram.<image 1>What was the instantaneous velocity of the cart at 96 centimeters from the start?",
+    "candidates": [
+      "0.6 m/s",
+      "4.8 m/s",
+      "1.9 m/s",
+      "60 m/s",
+      "2.4 m/s"
+    ],
+    "answer": "4.8 m/s",
+    "category": "MMMU-dev"
+  },
+  {
+    "id": "dev_Physics_3",
+    "image_path": [
+      "s3://gamedata/eval_sglang/9e0f35c67ab1_dev_Physics_3_1.jpg"
+    ],
+    "question": "A proton traveling with speed v enters a uniform electric field of magnitude E, directed parallel to the plane of the page, as shown in the figure. There is also a magnetic force on the proton that is in the direction opposite to that of the electric force.<image 1>If e represents the magnitude of the proton charge, what minimum magnitude of the magnetic field could balance the electric force on the proton?",
+    "candidates": [
+      "E/v",
+      "eE/v",
+      "vE",
+      "eE"
+    ],
+    "answer": "E/v",
+    "category": "MMMU-dev"
+  },
+  {
+    "id": "dev_Physics_4",
+    "image_path": [
+      "s3://gamedata/eval_sglang/8ef96afcc2d2_dev_Physics_4_1.jpg"
+    ],
+    "question": "<image 1>For the solenoids shown in the diagram (which are assumed to be close to each other), the resistance of the left-hand circuit is slowly increased. In which direction does the ammeter needle (indicating the direction of conventional current) in the right-hand circuit deflect in response to this change?",
+    "candidates": [
+      "The needle deflects to the left.",
+      "The needle deflects to the right.",
+      "The needle oscillates back and forth.",
+      "The needle never moves."
+    ],
+    "answer": "The needle deflects to the left.",
+    "category": "MMMU-dev"
+  },
+  {
+    "id": "dev_Physics_5",
+    "image_path": [
+      "s3://gamedata/eval_sglang/6463b681611e_dev_Physics_5_1.jpg"
+    ],
+    "question": "<image 1>A battery, an ammeter, three resistors, and a switch are connected to form the simple circuit shown above. When the switch is closed what would happen to the potential difference across the 15 ohm resistor?",
+    "candidates": [
+      "it would equal the potential difference across the 20 ohm resistor",
+      "it would be twice the potential difference across the 30 ohm resistor",
+      "it would equal the potential difference across the 30 ohm resistor",
+      "it would be half the potential difference across the 30 ohm resistor"
+    ],
+    "answer": "it would equal the potential difference across the 30 ohm resistor",
+    "category": "MMMU-dev"
+  },
+  {
+    "id": "dev_Psychology_1",
+    "image_path": [
+      "s3://gamedata/eval_sglang/b8de1894664e_dev_Psychology_1_1.jpg"
+    ],
+    "question": "A group of psychologists wanted to develop an intelligence test that would be quicker to administer than the one they were using, which was a standardized test that required answering as many questions correctly as possible in a given time. The existing test was considered valid and reliable. In the psychologists' new test, participants had to find an image hidden in a visual display as quickly as possible. The psychologists collected data to determine the relation between the number of items the participants answered correctly on the original standardized test and the time it took them to spot the hidden image on the new test. The graph below displays the results. <image 1> Based on the graph, which of the following would most likely be used to assess the relation between the participants' scores on the two tests?",
+    "candidates": [
+      "A t test",
+      "A correlation",
+      "Analysis of variance",
+      "Descriptive statistics",
+      "Factor analysis"
+    ],
+    "answer": "A correlation",
+    "category": "MMMU-dev"
+  },
+  {
+    "id": "dev_Psychology_2",
+    "image_path": [
+      "s3://gamedata/eval_sglang/f40ddebb1ba1_dev_Psychology_2_1.jpg"
+    ],
+    "question": "Individuals diagnosed with cancer often experience significant amounts of stress. Some patients cope with stress by adopting unhealthy habits (like drinking, smoking, or withdrawing from social relationships), which can increase symptom severity and result in poor quality of life both during and after cancer treatment. Conversely, individuals who manage stress with healthy techniques can experience symptom relief and improved quality of life. A group of oncologists hope to promote healthy stress reduction and decide to focus their efforts on deep breathing. They postulate that a deep breathing exercise will induce the relaxation response, a physical state of deep rest that is the physiological opposite of a stress response (or fight or flight). They believe that when patients learn to breathe more slowly and deeply, their muscles will relax, blood pressure will decrease, and heart rates will slow down (all characteristics of the relaxation response). When testing the exercise with two patients they notice significant decreases in blood pressure, muscle tension, and heart rate. They conclude that the exercise could decrease select physical symptoms of stress. The oncologists decide to expand their testing, and develop several deep-breathing exercises to be delivered in a group format. They believe that the combined exercises will help patients cope during times of stress. The program consists of 30-minute guided group breathing classes that occur biweekly for 8 weeks. Patients are also asked to complete home deep breathing practices. To test their theory, they recruit 10 adult cancer patients to participate in their program. The patient group is homogenous in type and stage of cancer. All patients have recently received their cancer diagnosis. The patients are all between 45 and 55 years old (mean age 48.6) and there are equal numbers of men and women in the group. Each patient completes a stress symptom checklist both before and after the intervention. The stress symptoms checklist can be found in Table 1. The symptom checklist is divided into four categories, with six possible symptoms in each category. Patients are instructed to circle any and all symptoms they are currently experiencing. The results from the study can be found in Figure 1 <image 1>. Given the information in the passage and the results from Figure 1, which of the following is the least problematic aspect of the study?",
+    "candidates": [
+      "The oncologists recruited patients from a sample that was too homogenous, which makes the results of the program difficult to generalize.",
+      "The oncologists did not control for group social support, which could lead to decreases in some of the emotional and cognitive symptoms of stress on the checklist.",
+      "The oncologists used the stress checklist to measure stress, which did not provide a sensitive measurement of stress and had overlap between and within categories of symptoms.",
+      "The oncologists did not control for side effects of cancer treatment, which could lead to increases in some of the behavioral and physical symptoms of stress on the checklist."
+    ],
+    "answer": "The oncologists recruited patients from a sample that was too homogenous, which makes the results of the program difficult to generalize.",
+    "category": "MMMU-dev"
+  },
+  {
+    "id": "dev_Psychology_3",
+    "image_path": [
+      "s3://gamedata/eval_sglang/caa91e72abf0_dev_Psychology_3_1.jpg"
+    ],
+    "question": "Jeff has two cats, Whiskers and Tiger. Jeff wants to play with both of them using a laser pointer, but the cats respond very differently to playtime. Whiskers is an active cat and loves to chase the red dot, but he sometimes gets so excited by playtime that he becomes overly agitated and attacks Jeff. Tiger is very lazy - he loves to look out the window from his bed and lounge in the sun; he is almost never interested in playing with the laser pointer. Jeff wants both of his cats to be equally active and healthy, so he decides to use principles from behaviorism to teach his cats better play behavior. He has two goals - to increase Tiger's playtime, and to decrease Whisker's aggressive playtime. He uses a variety of different strategies with his cats: he tries giving each cats treats when they play nicely, taking away Tiger's bed to increase playtime, putting the cats in a carrier when they do not play nicely, and loudly yelling \"No!\" if Whiskers becomes aggressive. Jeff notices that the cats respond well to the treats, so he decides to vary when and how Whiskers and Tiger receive their treats. Table 1 outlines the different schedules of reinforcement that Jeff tries with Whiskers and Tiger. <image 1> Jeff has been successfully increasing the number of times Whiskers has to play nicely before he receives a treat, until finally he decides he can stop giving treats during playtime all together. Whiskers suddenly becomes ultra-aggressive - he bites, hisses, and scratches at an increased rate when playing with the laser pointer. Which of the following best describes Whisker's behavior?",
+    "candidates": [
+      "Whiskers only responds to continuous reinforcement.",
+      "Whisker's aggressive behavior has become generalized.",
+      "Whiskers' behavior has been shaped to be aggressive.",
+      "Whiskers is experiencing an extinction burst."
+    ],
+    "answer": "Whiskers is experiencing an extinction burst.",
+    "category": "MMMU-dev"
+  },
+  {
+    "id": "dev_Psychology_4",
+    "image_path": [
+      "s3://gamedata/eval_sglang/ba6cdccce2f8_dev_Psychology_4_1.jpg"
+    ],
+    "question": "Vampire bats (Desmodus rotundus) are social mammals, which naturally determine kinship differences, form dyadic relationships that remain consistent over time, and practice food sharing with roost-mates who were unable to feed. These dyadic relationships occur between both kin and non-kin. Vampire bats can die if unable to feed for more than 70 hours. Roost-mates may regurgitate food into the mouth of the unfed roost-mate. An experiment was conducted on 20 vampire bats (11M, 9F) over a 2-year period to determine whether this food sharing behavior was altruistic. The bats were housed in a flight cage, large enough to allow the bats to freely associate, for more than 2 years before the beginning of the study. The bats were removed, fasted for 24 hours, re-introduced into the roost, and their social interactions were recorded for two hours after reintroduction. None of the bats tested showed signs of parasite infestation. Researchers examined food sharing (licking the roost-mate's mouth for more than 5 seconds with > 5 seconds between bouts of licking) and subsequent allogrooming (licking locations other than the roost-mate's mouth). The bat's behavior was monitored to determine subsequent interactions. The coefficient of determination values for food donated, donor sex, allogrooming, and relatedness are shown in Figure 1. Sharing happened most often between females; males were not recorded sharing food with other males. Donors initiated food sharing more often than fasted bats and three donors, on average, fed each of the fasted bats. There was no relation found between recipient (age or size) and donations or allogrooming received. Some donors rejected certain begging (harassing) recipients; however, some fasted subjects rejected food sharing from certain perspective donors. Figure 1: Relative variation in food donated; 38% of the variation in the amount of food donated can be explained by this model. Food donated (p < 0.0002), donor sex (p < 0.0002), and allogrooming (p < 0.0002) received were all significant; however, relatedness was not (p = 0.16). <image 1> Which conclusion describes the correlation of allogrooming and social bonding in vampire bats?",
+    "candidates": [
+      "Some vampire bats refused food from certain perspective donors.",
+      "Allogrooming was higher on non-test days between food sharing dyads and was consistent throughout the experiment.",
+      "Allogrooming was highest between vampire bats infested with parasites and was consistent throughout the experiment.",
+      "Male-male dyads were observed performing allogrooming after sharing food."
+    ],
+    "answer": "Allogrooming was higher on non-test days between food sharing dyads and was consistent throughout the experiment.",
+    "category": "MMMU-dev"
+  },
+  {
+    "id": "dev_Psychology_5",
+    "image_path": [
+      "s3://gamedata/eval_sglang/4f6a41a32887_dev_Psychology_5_1.jpg"
+    ],
+    "question": "Elizabeth Loftus is widely known as one of the leading experts in the field of false memories, especially regarding childhood sexual abuse. However, this particular topic is deeply controversial, with many experts divided over whether these memories are truly false, or if they are instead repressed to protect the individual from reliving further trauma. Loftus is most famous for her theory of the misinformation effect, which refers to the phenomenon in which exposure to incorrect information between the encoding of a memory and its later recall causes impairment to the memory. That is to say, if you witnessed a hit-and-run car accident, and heard a radio commercial for Ford before giving your testimony to the police, you might incorrectly recall that the offending vehicle was a Ford, even if it was not. Loftus' research has been used in many cases of eyewitness testimony in high-profile court cases to demonstrate the malleability of the human memory. To test this theory, researchers in New York City set up a \"crime\" for participants to \"witness\" (unbeknownst to them). 175 local female college students were recruited to participate in a study about memory, and were directed to complete some computer tasks involving word and picture recall in a room overlooking an alley. While completing the computer tasks, participants witnessed a young woman being \"mugged\" by a young man in the alley outside the lab-both individuals were confederates of the researchers. After reporting the \"crime\" to the researchers, participants were escorted out of the lab and told that this crime would be reported to the local police, and that they might be called back in to give a testimony. For half of the participants, a research confederate acting as a custodial worker was present as they were being escorted out. For the other half, no decoys were present. Participants were randomly assigned to either the decoy or control group. Participants who did not report the \"crime\" to the researchers were excluded from the study (25 women were excluded). One week later, participants were called back to the lab to give their testimony to a police officer - another confederate. Participants were told that the police had several leads on who the mugger might be, and were asked to pick out the suspect from five different photo options. Included in the photo set were photos of the mugger, the custodial worker, and three neutral faces chosen to be similar to the two experimental faces. After recalling the event to the police officer and choosing a face, participants were debriefed (they were told that the mugging was fake) and awarded course credit for their participation. The results of this study are summarized in Table 1. <image 1> What type of memory is used in a multiple-choice test, such as this one?",
+    "candidates": [
+      "Recall",
+      "Recognition",
+      "Repressed",
+      "Deja vu"
+    ],
+    "answer": "Recognition",
+    "category": "MMMU-dev"
+  },
+  {
+    "id": "dev_Public_Health_1",
+    "image_path": [
+      "s3://gamedata/eval_sglang/c71b420192a8_dev_Public_Health_1_1.jpg"
+    ],
+    "question": "A cohort study obtained the following rates.<image 1>The AR was",
+    "candidates": [
+      "0.36‰",
+      "0.87‰",
+      "0.29‰",
+      "1.23‰"
+    ],
+    "answer": "1.23‰",
+    "category": "MMMU-dev"
+  },
+  {
+    "id": "dev_Public_Health_2",
+    "image_path": [
+      "s3://gamedata/eval_sglang/14e8f2064384_dev_Public_Health_2_1.jpg"
+    ],
+    "question": "A maternal and child health facility wanted to evaluate the effectiveness of two methods of screening for cervical intraepithelial neoplasia (CIN I-III), electronic colposcopy and cervical liquid-based cytology (TCT). 600 gynaecological outpatient cases were examined by both methods, and all cases were confirmed with cervical histopathology (the gold standard) at the same time. The results of all examinations were summarised in the table.<image 1> The false positive rate of the parallel test was",
+    "candidates": [
+      "0.93",
+      "0.51",
+      "0.75",
+      "0.49"
+    ],
+    "answer": "0.51",
+    "category": "MMMU-dev"
+  },
+  {
+    "id": "dev_Public_Health_3",
+    "image_path": [
+      "s3://gamedata/eval_sglang/3c58b905b163_dev_Public_Health_3_1.jpg"
+    ],
+    "question": "A combined urine glucose and blood glucose test was used to screen for diabetes mellitus with the following results.<image 1>The specificity of the serial test was",
+    "candidates": [
+      "99.73%",
+      "99.87%",
+      "99.91%",
+      "99.76%"
+    ],
+    "answer": "99.91%",
+    "category": "MMMU-dev"
+  },
+  {
+    "id": "dev_Public_Health_4",
+    "image_path": [
+      "s3://gamedata/eval_sglang/05cc7890b7bd_dev_Public_Health_4_1.jpg"
+    ],
+    "question": "Does the patient have a UTI on 9/22? <image 1> ",
+    "candidates": [
+      "Yes, SUTI 1a",
+      "Yes, SUTI 1b",
+      "No",
+      "Yes,ABUTI"
+    ],
+    "answer": "Yes, SUTI 1b",
+    "category": "MMMU-dev"
+  },
+  {
+    "id": "dev_Public_Health_5",
+    "image_path": [
+      "s3://gamedata/eval_sglang/a7bc18336579_dev_Public_Health_5_1.jpg"
+    ],
+    "question": "According to the China Health and Family Planning Statistical Yearbook 2015, China's top 10 legally reported infectious diseases of categories A and B in 2014 included viral hepatitis, tuberculosis, syphilis, bacterial and amoebic dysentery, gonorrhoea, brucellosis, scarlet fever, measles, dengue fever, and AIDS, and the top 10 deaths included AIDS, tuberculosis, rabies, viral hepatitis, H7N9 avian influenza, epidemic haemorrhagic fever, syphilis, epidemic B encephalitis, measles, and malaria, as shown in the table below. The total population in mid-2014 was 1367820000 people.<image 1> The mortality rate of AIDS was",
+    "candidates": [
+      "0.88/100000",
+      "0.16/100000",
+      "0.06/100000",
+      "0.04/100000"
+    ],
+    "answer": "0.88/100000",
+    "category": "MMMU-dev"
+  },
+  {
+    "id": "dev_Sociology_1",
+    "image_path": [
+      "s3://gamedata/eval_sglang/3da265b99c63_dev_Sociology_1_1.jpg"
+    ],
+    "question": "According to <image 1>, in Asch's study on conformity, what contributed to the ability of subjects to resist conforming?",
+    "candidates": [
+      "A very small group of witnesses",
+      "The presence of an ally",
+      "The ability to keep one's answer private",
+      "All of the above"
+    ],
+    "answer": "All of the above",
+    "category": "MMMU-dev"
+  },
+  {
+    "id": "dev_Sociology_2",
+    "image_path": [
+      "s3://gamedata/eval_sglang/329bb6b77de9_dev_Sociology_2_1.jpg"
+    ],
+    "question": "The two types of objective knowledge that <image 1> believed could be obtained by social scientists employing the scientiMc method were:",
+    "candidates": [
+      "Historical preconditions and laws of society",
+      "Historical preconditions and subjective perspectives",
+      "Historical preconditions and social facts",
+      "Historical preconditions and class consciousness"
+    ],
+    "answer": "Historical preconditions and subjective perspectives",
+    "category": "MMMU-dev"
+  },
+  {
+    "id": "dev_Sociology_3",
+    "image_path": [
+      "s3://gamedata/eval_sglang/afb3f2ba6b62_dev_Sociology_3_1.jpg"
+    ],
+    "question": "Societies practise the concept of  <image 1> to maintain ________.",
+    "candidates": [
+      "Formal sanctions",
+      "Social order",
+      "Cultural deviance",
+      "Sanction labelling"
+    ],
+    "answer": "Social order",
+    "category": "MMMU-dev"
+  },
+  {
+    "id": "dev_Sociology_4",
+    "image_path": [
+      "s3://gamedata/eval_sglang/19456ad53fb0_dev_Sociology_4_1.jpg"
+    ],
+    "question": "What is <image 1>?",
+    "candidates": [
+      "Refers to the process of self development through which we formulate a unique sense of ourselves and our relationship to the world around us",
+      "Identity is regarded as the result of modeling oneself in response to the expectations of others, not as a product of the unconscious",
+      "Socially deLned expectations that a person in a given social position will follow",
+      "Involves instilling culture within the individual, enabling the person to survive effectively in his or her social world"
+    ],
+    "answer": "Refers to the process of self development through which we formulate a unique sense of ourselves and our relationship to the world around us",
+    "category": "MMMU-dev"
+  },
+  {
+    "id": "dev_Sociology_5",
+    "image_path": [
+      "s3://gamedata/eval_sglang/bd60645613f8_dev_Sociology_5_1.jpg"
+    ],
+    "question": "<image 1> deals with the study of political conduct within a ____ frame of reference.",
+    "candidates": [
+      "Political",
+      "Pyschological",
+      "Sociological",
+      "Individual"
+    ],
+    "answer": "Sociological",
+    "category": "MMMU-dev"
+  }
+]

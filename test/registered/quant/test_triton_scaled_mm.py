@@ -98,6 +98,30 @@ class TestScaledMM(CustomTestCase):
 
                 torch.testing.assert_close(triton_out, ref_out, rtol=rtol, atol=atol)
 
+    @unittest.skipUnless(torch.cuda.is_available(), "Requires CUDA FP8 quantization")
+    def test_online_fp8_unaligned_vision_tp_shards(self):
+        from sglang.srt.layers.quantization.fp8_utils import (
+            apply_fp8_linear,
+            per_token_group_quant_fp8,
+            sglang_per_token_quant_fp8,
+        )
+
+        # BeeBee vision intermediate_size=4304 splits into 2152 at TP2.
+        # Both FC1's N and FC2's K can force the CUTLASS -> Triton fallback.
+        for k, n in [(1152, 2152), (2152, 1152)]:
+            with self.subTest(k=k, n=n):
+                torch.manual_seed(42)
+                x = torch.randn(7, k, dtype=torch.bfloat16, device=self._device)
+                w = torch.randn(n, k, dtype=torch.bfloat16, device=self._device)
+                qw, sw = per_token_group_quant_fp8(w, k)
+                sw = sw.t().contiguous()  # Actual online-quantized [1, N] layout.
+                qx, sx = sglang_per_token_quant_fp8(x)
+                expected = (qx.float() @ qw.float().t()) * sx * sw
+                actual = apply_fp8_linear(x, qw.t(), sw, cutlass_fp8_supported=True)
+                torch.testing.assert_close(
+                    actual.float(), expected, rtol=0.02, atol=0.05
+                )
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

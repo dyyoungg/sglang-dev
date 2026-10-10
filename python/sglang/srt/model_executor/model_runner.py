@@ -805,6 +805,46 @@ class ModelRunner(ModelRunnerKVCacheMixin):
         # Initialize piecewise CUDA graph
         self.init_piecewise_cuda_graphs()
 
+        # Register after kernel warmup and CUDA graph capture; API requests are
+        # separately armed by control.json, so HTTP warmup cannot fill the quota.
+        # Capture only eager prefill, never CUDA graph replay.
+        activation_dump_dir = os.getenv("SGLANG_FP8_ACTIVATION_DUMP_DIR")
+        if activation_dump_dir:
+            from sglang.srt.debug_utils.fp8_activation_capture import (
+                configure_fp8_activation_capture,
+                register_fp8_linear_activation_hooks,
+            )
+
+            if self.tp_size != 1 or self.pp_size != 1:
+                raise ValueError("FP8 matched activation capture requires TP=PP=1")
+            configure_fp8_activation_capture(
+                activation_dump_dir,
+                tp_rank=self.tp_rank,
+                pp_rank=self.pp_rank,
+            )
+            logger.info(
+                "[FP8 diagnostics] Runtime activation capture enabled: "
+                "dir=%s, max_rows_per_request_module=%s",
+                activation_dump_dir,
+                os.getenv("SGLANG_FP8_ACTIVATION_MAX_TOKENS", "1024"),
+            )
+            linear_hook_count = register_fp8_linear_activation_hooks(self.model)
+            logger.info(
+                "[FP8 diagnostics] Runtime Linear activation hooks registered: %s",
+                linear_hook_count,
+            )
+
+        if output_logits_dir := os.getenv("SGLANG_OUTPUT_LOGITS_DIR"):
+            from sglang.srt.debug_utils.output_logits_capture import (
+                install_output_logits_capture,
+            )
+
+            install_output_logits_capture(self, output_logits_dir)
+            logger.info(
+                "[Logits diagnostics] Full-vocabulary capture enabled: %s",
+                output_logits_dir,
+            )
+
         self.prealloc_symmetric_memory_pool()
 
     def adjust_hybrid_swa_layers_for_pp(self):

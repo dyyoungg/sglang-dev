@@ -1,6 +1,7 @@
 
 import logging
 import re
+from collections import Counter
 from typing import Iterable, List, Optional, Tuple
 
 import torch
@@ -31,7 +32,7 @@ from sglang.srt.configs.beebeeomni_moe_config import BeeBeeMoEOmniConfig
 from sglang.srt.models.utils import WeightsMapper
 from sglang.srt.multimodal.mm_utils import run_dp_sharded_beebee_vision_model, run_dp_sharded_audio_model
 from sglang.srt.server_args import get_global_server_args, set_global_server_args_for_scheduler, ServerArgs
-from sglang.srt.utils import add_prefix, is_cuda, is_npu
+from sglang.srt.utils import add_prefix, is_cuda, is_npu, log_info_on_rank0
 
 _is_cuda = is_cuda()
 _is_npu = is_npu()
@@ -161,6 +162,47 @@ class BeeBeeMoEOmniForConditionalGeneration(nn.Module):
 
         # For EAGLE3 support
         self.capture_aux_hidden_states = False
+
+        if quant_config is not None:
+            self._log_quantization_summary(quant_config)
+
+    def _log_quantization_summary(self, quant_config: QuantizationConfig) -> None:
+        server_args = get_global_server_args()
+        log_info_on_rank0(
+            logger,
+            f"[FP8 diagnostics] BeeBee quantization={quant_config.get_name()}, "
+            f"config_class={type(quant_config).__name__}, "
+            f"effective_config={vars(quant_config)}, "
+            f"fp8_gemm_backend_requested={server_args.fp8_gemm_runner_backend}, "
+            f"moe_runner_backend={server_args.moe_runner_backend}, "
+            f"kv_cache_dtype_requested={server_args.kv_cache_dtype}. "
+            "FP8 GEMM backend controls block/MXFP8 Linear dispatch; MoE and KV "
+            "cache are configured separately. KV cache 'auto' follows model dtype.",
+        )
+        # Count installed methods, including explicitly unquantized gates and
+        # native torch Linear layers in the encoders. No tensor data is read.
+        for component_name in ("model", "image_encoder", "audio_encoder", "lm_head"):
+            component = getattr(self, component_name, None)
+            if component is None:
+                continue
+            counts = Counter()
+            examples = {}
+            for name, module in component.named_modules():
+                method = getattr(module, "quant_method", None)
+                if method is not None:
+                    method_name = type(method).__name__
+                elif isinstance(module, nn.Linear):
+                    method_name = "torch.nn.Linear (unquantized)"
+                else:
+                    continue
+                counts[method_name] += 1
+                examples.setdefault(method_name, f"{component_name}.{name}".rstrip("."))
+            log_info_on_rank0(
+                logger,
+                f"[FP8 diagnostics] BeeBee component={component_name}, "
+                f"module_class={type(component).__name__}, "
+                f"quant_methods={dict(counts)}, examples={examples}",
+            )
 
     def pad_input_ids(self, input_ids: List[int], mm_inputs: MultimodalInputs):
         pattern = MultiModalityDataPaddingPatternMultimodalTokens()

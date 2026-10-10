@@ -1,0 +1,97 @@
+{
+  "prefix": "s3://gamedata/eval_sglang",
+  "uploaded": 33146,
+  "reused": 0,
+  "datasets": [
+    {
+      "name": "librispeech_test_clean",
+      "source": "/mnt/afs/yangdeyu/GameMLLM/LLaVA_hub/data/audio/evaluation_dataset/librispeech_test_clean_new.json",
+      "output": "/mnt/afs/yangdeyu/GameMLLM/VeOmni-Dev/exp_data/aoss_datasets/librispeech_test_clean_new.aoss.json",
+      "local_refs": 2620
+    },
+    {
+      "name": "librispeech_test_other",
+      "source": "/mnt/afs/yangdeyu/GameMLLM/LLaVA_hub/data/audio/evaluation_dataset/librispeech_test_other_new.json",
+      "output": "/mnt/afs/yangdeyu/GameMLLM/VeOmni-Dev/exp_data/aoss_datasets/librispeech_test_other_new.aoss.json",
+      "local_refs": 2939
+    },
+    {
+      "name": "librispeech_dev_clean",
+      "source": "/mnt/afs/yangdeyu/GameMLLM/LLaVA_hub/data/audio/evaluation_dataset/librispeech_dev_clean_new.json",
+      "output": "/mnt/afs/yangdeyu/GameMLLM/VeOmni-Dev/exp_data/aoss_datasets/librispeech_dev_clean_new.aoss.json",
+      "local_refs": 2703
+    },
+    {
+      "name": "librispeech_dev_other",
+      "source": "/mnt/afs/yangdeyu/GameMLLM/LLaVA_hub/data/audio/evaluation_dataset/librispeech_dev_other_new.json",
+      "output": "/mnt/afs/yangdeyu/GameMLLM/VeOmni-Dev/exp_data/aoss_datasets/librispeech_dev_other_new.aoss.json",
+      "local_refs": 2864
+    },
+    {
+      "name": "wenet",
+      "source": "/mnt/afs/yangdeyu/GameMLLM/LLaVA_hub/data/audio/evaluation_dataset/wenet_test.json",
+      "output": "/mnt/afs/yangdeyu/GameMLLM/VeOmni-Dev/exp_data/aoss_datasets/wenet_test.aoss.json",
+      "local_refs": 1734
+    },
+    {
+      "name": "aishell",
+      "source": "/mnt/afs/yangdeyu/GameMLLM/LLaVA_hub/data/audio/evaluation_dataset/aishell_test.json",
+      "output": "/mnt/afs/yangdeyu/GameMLLM/VeOmni-Dev/exp_data/aoss_datasets/aishell_test.aoss.json",
+      "local_refs": 7176
+    },
+    {
+      "name": "commonvoice15_zh",
+      "source": "/mnt/afs/yangdeyu/GameMLLM/LLaVA_hub/data/audio/evaluation_dataset/commonvoice15_test.json",
+      "output": "/mnt/afs/yangdeyu/GameMLLM/VeOmni-Dev/exp_data/aoss_datasets/commonvoice15_test.aoss.json",
+      "local_refs": 10625
+    },
+    {
+      "name": "online_badaudio",
+      "source": "/mnt/afs/yangdeyu/GameMLLM/VeOmni-Dev/exp_data/online_badaudio.json",
+      "output": "/mnt/afs/yangdeyu/GameMLLM/VeOmni-Dev/exp_data/aoss_datasets/online_badaudio.aoss.json",
+      "local_refs": 66
+    },
+    {
+      "name": "mmstar",
+      "source": "/mnt/afs/yangdeyu/GameMLLM/LLaVA_hub/data/VLM_Benchmark/MMStar/mmstar_test.json",
+      "output": "/mnt/afs/yangdeyu/GameMLLM/VeOmni-Dev/exp_data/aoss_datasets/mmstar_test.aoss.json",
+      "local_refs": 1137
+    },
+    {
+      "name": "mmmu-dev",
+      "source": "/mnt/afs/yangdeyu/GameMLLM/LLaVA_hub/data/VLM_Benchmark/MMMU/mmmu-dev.json",
+      "output": "/mnt/afs/yangdeyu/GameMLLM/VeOmni-Dev/exp_data/aoss_datasets/mmmu-dev.aoss.json",
+      "local_refs": 149
+    },
+    {
+      "name": "RealWorldQA",
+      "source": "/mnt/afs/yangdeyu/GameMLLM/LLaVA_hub/data/VLM_Benchmark/RealWorldQA/RealWorldQA_test.json",
+      "output": "/mnt/afs/yangdeyu/GameMLLM/VeOmni-Dev/exp_data/aoss_datasets/RealWorldQA_test.aoss.json",
+      "local_refs": 426
+    },
+    {
+      "name": "CRPE",
+      "source": "/mnt/afs/yangdeyu/GameMLLM/LLaVA_hub/data/VLM_Benchmark/CRPE/crpe_test.json",
+      "output": "/mnt/afs/yangdeyu/GameMLLM/VeOmni-Dev/exp_data/aoss_datasets/crpe_test.aoss.json",
+      "local_refs": 250
+    },
+    {
+      "name": "MMhalBench",
+      "source": "/mnt/afs/yangdeyu/GameMLLM/LLaVA_hub/data/DPO_data/MMhal_Bench/mmhal-bench_without_image.jsonl",
+      "output": "/mnt/afs/yangdeyu/GameMLLM/VeOmni-Dev/exp_data/aoss_datasets/mmhal-bench_without_image.aoss.jsonl",
+      "local_refs": 96
+    },
+    {
+      "name": "RefoMB",
+      "source": "/mnt/afs/yangdeyu/GameMLLM/LLaVA_hub/data/DPO_data/RefoMB/train.jsonl",
+      "output": "/mnt/afs/yangdeyu/GameMLLM/VeOmni-Dev/exp_data/aoss_datasets/train.aoss.jsonl",
+      "local_refs": 99
+    },
+    {
+      "name": "chartqa",
+      "source": "/mnt/afs/yangdeyu/GameMLLM/LLaVA_hub/data/VLM_Benchmark/ChartQA/chartqa_test_final.json",
+      "output": "/mnt/afs/yangdeyu/GameMLLM/VeOmni-Dev/exp_data/aoss_datasets/chartqa_test_final.aoss.json",
+      "local_refs": 288
+    }
+  ]
+}

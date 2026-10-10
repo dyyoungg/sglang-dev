@@ -6,6 +6,11 @@
 3. Stage 2 (Interactive) 模拟动态多模态输入（文本/音频按分布出现）。
 4. Token 预算精确滑窗机制：图像超标按间隔丢弃，文本超标按轮次剔除。
 5. 修复：彻底解决随机文本生成导致的 <image> 占位符不对齐问题。
+
+复现随机采样：两次运行使用相同参数和 --seed 42（默认）。
+每用户的行为、输入文本、模拟回复、媒体使用独立随机流；媒体在线程提交前分配种子。
+仍为闭环压测：响应耗时决定下一轮开始时间，实际输出长度影响历史上下文，
+--active-time 内完成的轮数可能不同。固定种子不等同于固定请求轨迹回放。
 """
 import argparse
 import asyncio
@@ -26,14 +31,53 @@ import concurrent.futures
 
 REQUEST_LATENCY: List[Tuple[str, int, int, float, float]] = []
 
+
+def log_request_token_budget(
+    req_type, prompt, images, audios, text_tokens, args, recent_images_count=0
+):
+    """Validate and print the client-side token budget immediately before sending."""
+    image_tokens = [int(img["tokens"]) for img in images]
+    audio_tokens = [int(audio["tokens"]) for audio in audios]
+    image_sum = sum(image_tokens)
+    audio_sum = sum(audio_tokens)
+    total_tokens = int(text_tokens) + image_sum + audio_sum
+    recent_images_count = min(max(0, int(recent_images_count)), len(images))
+    retained_history_images = len(images) - recent_images_count
+    if image_sum > args.image_token_bucket:
+        raise AssertionError(
+            f"{req_type} image budget exceeded before send: "
+            f"{image_sum}>{args.image_token_bucket} ({len(images)} images)"
+        )
+    if prompt.count("<image>") != len(images):
+        raise AssertionError(
+            f"{req_type} image tag/asset mismatch before send: "
+            f"tags={prompt.count('<image>')} assets={len(images)}"
+        )
+    if prompt.count("<audio>") != len(audios):
+        raise AssertionError(
+            f"{req_type} audio tag/asset mismatch before send: "
+            f"tags={prompt.count('<audio>')} assets={len(audios)}"
+        )
+    print(
+        f"[CLIENT TOKEN COUNT] type={req_type} "
+        f"images={len(images)}  (sum={image_sum}), "
+        f"audios={len(audios)}  (sum={audio_sum}), "
+        f"text_tokens={int(text_tokens)}, total_input_tokens={total_tokens}, "
+        f"recent_images={recent_images_count}, history_images={retained_history_images}, "
+        f"downsample_ratio={args.downsample_ratio}, "
+        f"image_bucket={args.image_token_bucket}",
+        flush=True,
+    )
+
 def get_tokenizer(tokenizer_name: str, *args, **kwargs):
     kwargs["use_fast"] = True
     return AutoTokenizer.from_pretrained(tokenizer_name, *args, **kwargs)
 
-def gen_random_input_text(target_token_len: int, tokenizer) -> str:
+def gen_random_input_text(target_token_len: int, tokenizer, rng=None) -> str:
     """生成随机文本，并实施严格的特殊占位符清洗"""
     if target_token_len <= 0: return ""
-    random_ids = [random.randint(512, 8192) for _ in range(target_token_len)]
+    rng = rng or random
+    random_ids = [rng.randint(512, 8192) for _ in range(target_token_len)]
     text = tokenizer.decode(random_ids)
     
     # 核心修复 1：严格防止随机生成的文本恰好碰撞出系统的关键控制标签
@@ -87,38 +131,73 @@ def apply_eviction_policies(
 ) -> Tuple[str, List[Dict], List[Dict]]:
     
     # --- 1. 图像预算淘汰
+    # This is a hard request/history budget. Images are paired, and the newest
+    # turn is protected while the oldest historical pairs are evicted first.
+    image_count = history_text.count("<image>")
+    if image_count != len(history_images):
+        raise ValueError(
+            "image tag/asset mismatch before eviction: "
+            f"tags={image_count}, assets={len(history_images)}"
+        )
+    if len(history_images) % 2:
+        raise ValueError(
+            f"image assets must stay paired, got odd count={len(history_images)}"
+        )
+
+    budget = max(0, args.image_token_bucket)
+    keep = [True] * len(history_images)
     total_img_tokens = sum(img["tokens"] for img in history_images)
-    
-    if total_img_tokens > args.image_token_bucket:
-        older_count = len(history_images) - recent_images_count
-        if older_count > 0:
-            drop_indices = set()
-            for i in range(0, older_count, 2):
-                if (i // 2) % 2 == 1: 
-                    drop_indices.add(i)
-                    if i + 1 < older_count:
-                        drop_indices.add(i + 1)
-                        
-            new_history_images = []
-            text_parts = history_text.split("<image>")
-            new_text_parts = [text_parts[0]]
-            
-            # 防御性切片，防止未知原因导致的 tag 越界，避免遗失文本尾部
-            safe_limit = min(len(history_images), len(text_parts) - 1)
-            
-            for i in range(safe_limit):
-                if i < older_count and i in drop_indices:
-                    new_text_parts[-1] += text_parts[i+1]
-                else:
-                    new_history_images.append(history_images[i])
-                    new_text_parts.append(text_parts[i+1])
-                    
-         
-            if len(text_parts) > safe_limit + 1:
-                new_text_parts[-1] += "".join(["<image>" + p for p in text_parts[safe_limit+1:]])
-                    
-            history_images = new_history_images
-            history_text = "<image>".join(new_text_parts)
+    recent_images_count = max(0, int(recent_images_count))
+    recent_images_count -= recent_images_count % 2
+    recent_start = max(0, len(history_images) - recent_images_count)
+
+    # Keep the current turn whenever it fits. Evict the oldest historical
+    # pairs first, so new images always replace old images in the sliding
+    # window rather than being discarded by the budget pass.
+    recent_tokens = sum(img["tokens"] for img in history_images[recent_start:])
+    if recent_tokens <= budget:
+        drop_order = list(range(0, recent_start, 2))
+    else:
+        # If the current turn alone exceeds the bucket, trimming it is the
+        # only possible fallback; normally this branch is not expected.
+        print(
+            f"[WARN] current image turn exceeds image bucket: "
+            f"{recent_tokens}>{budget}; trimming current-turn images",
+            flush=True,
+        )
+        drop_order = list(range(0, recent_start, 2)) + list(
+            range(recent_start, len(history_images), 2)
+        )
+    for i in drop_order:
+        if total_img_tokens <= budget:
+            break
+        # Each processor grid corresponds to two consecutive image assets.
+        pair_tokens = history_images[i]["tokens"] + history_images[i + 1]["tokens"]
+        keep[i] = keep[i + 1] = False
+        total_img_tokens -= pair_tokens
+
+    if recent_tokens <= budget and not all(keep[recent_start:]):
+        raise AssertionError("current-turn images cannot be evicted")
+
+    if not all(keep):
+        parts = history_text.split("<image>")
+        new_parts = [parts[0]]
+        new_images = []
+        for i, image in enumerate(history_images):
+            if keep[i]:
+                new_images.append(image)
+                new_parts.append("<image>" + parts[i + 1])
+            else:
+                new_parts.append(parts[i + 1])
+        history_images = new_images
+        history_text = "".join(new_parts)
+
+    # Verify the hard bound and multimodal alignment after pruning.
+    final_img_tokens = sum(img["tokens"] for img in history_images)
+    if final_img_tokens > budget:
+        raise AssertionError(
+            f"image token budget enforcement failed: {final_img_tokens}>{budget}"
+        )
 
     # --- 2. 文本预算淘汰 (基于 im_start 安全拆分) ---
     # 排除 system prompt 的 token 数，只统计对话轮次的文本预算
@@ -156,8 +235,9 @@ class DynamicDataPool:
         self.downsample_ratio = downsample_ratio
         self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=max_workers)
 
-    def _gen_image_sync(self, width: int, height: int) -> dict:
-        color = (random.randint(0, 255), random.randint(0, 255), random.randint(0, 255))
+    def _gen_image_sync(self, width: int, height: int, seed: int) -> dict:
+        rng = random.Random(seed)
+        color = (rng.randint(0, 255), rng.randint(0, 255), rng.randint(0, 255))
         img = Image.new("RGB", (width, height), color=color)
         buffered = io.BytesIO()
         img.save(buffered, format="JPEG")
@@ -165,15 +245,18 @@ class DynamicDataPool:
         tok_count = get_image_token_count(width, height, self.patch_size, self.downsample_ratio)
         return {"b64": b64_str, "tokens": tok_count}
 
-    def _gen_audio_sync(self, duration: float) -> dict:
-        audio_data = np.random.uniform(-1, 1, int(16000 * duration)).astype(np.float32)
+    def _gen_audio_sync(self, duration: float, seed: int) -> dict:
+        rng = np.random.default_rng(seed)
+        audio_data = rng.uniform(-1, 1, int(16000 * duration)).astype(np.float32)
         buffer = io.BytesIO()
         sf.write(buffer, audio_data, 16000, format='WAV')
         b64_str = base64.b64encode(buffer.getvalue()).decode("utf-8")
         tok_count = get_audio_token_count(duration)
         return {"b64": b64_str, "tokens": tok_count, "duration": duration}
 
-    async def get_random_images_data(self, n: int, small_ratio: float, small_res: tuple, large_res: tuple) -> List[dict]:
+    async def get_random_images_data(
+        self, n: int, small_ratio: float, small_res: tuple, large_res: tuple, rng=None
+    ) -> List[dict]:
         """按照 6:2 的周期规律排列生成图像序列 (6小 -> 2大 -> 6小...)"""
         n = (n // 2) * 2
         if n <= 0: 
@@ -181,24 +264,48 @@ class DynamicDataPool:
             
         loop = asyncio.get_running_loop()
         tasks = []
+        rng = rng or random
         
         for i in range(n):
             if i % 8 < 6:
-                tasks.append(loop.run_in_executor(self.executor, self._gen_image_sync, *small_res))
+                tasks.append(
+                    loop.run_in_executor(
+                        self.executor, self._gen_image_sync, *small_res, rng.getrandbits(64)
+                    )
+                )
             else:
-                tasks.append(loop.run_in_executor(self.executor, self._gen_image_sync, *large_res))
+                tasks.append(
+                    loop.run_in_executor(
+                        self.executor, self._gen_image_sync, *large_res, rng.getrandbits(64)
+                    )
+                )
             
         results = await asyncio.gather(*tasks)
         return results
 
-    async def get_audios_matching_duration(self, target_duration: float, n: int) -> List[dict]:
+    async def get_audios_matching_duration(self, target_duration: float, n: int, rng=None) -> List[dict]:
         if n <= 0: 
             return []
         loop = asyncio.get_running_loop()
-        tasks = [loop.run_in_executor(self.executor, self._gen_audio_sync, target_duration) for _ in range(n)]
+        rng = rng or random
+        tasks = [
+            loop.run_in_executor(
+                self.executor, self._gen_audio_sync, target_duration, rng.getrandbits(64)
+            )
+            for _ in range(n)
+        ]
         return await asyncio.gather(*tasks)
 
-async def send_request_sglang(req_type, api_url, prompt, prompt_len, images_b64_list, audios_b64_list, max_output_token) -> int:
+async def send_request_sglang(
+    req_type,
+    api_url,
+    prompt,
+    prompt_len,
+    images_b64_list,
+    audios_b64_list,
+    max_output_token,
+    image_downsample_ratio,
+) -> int:
     # --- 新增：发送前的严格一致性预检 (Pre-flight Check) ---
     img_tag_count = prompt.count("<image>")
     audio_tag_count = prompt.count("<audio>")
@@ -223,7 +330,11 @@ async def send_request_sglang(req_type, api_url, prompt, prompt_len, images_b64_
     
     if images_b64_list: 
         pload["image_data"] = images_b64_list
-    if audios_b64_list: 
+        # BeeBee groups images in pairs and expects one ratio per pair.
+        pload["image_downsample_ratios"] = [
+            image_downsample_ratio
+        ] * ((len(images_b64_list) + 1) // 2)
+    if audios_b64_list:
         pload["audio_data"] = audios_b64_list
 
     request_start_time = time.time()
@@ -254,25 +365,44 @@ async def send_request_sglang(req_type, api_url, prompt, prompt_len, images_b64_
     return output_token_len
 
 
-async def simulated_user_session(user_id: int, api_url: str, tokenizer, data_pool: DynamicDataPool, args: argparse.Namespace):
+async def simulated_user_session(
+    user_id: int,
+    api_url: str,
+    tokenizer,
+    data_pool: DynamicDataPool,
+    args: argparse.Namespace,
+    user_rng: random.Random,
+    user_np_rng: np.random.Generator,
+):
     session_start_time = time.time()
+    # Separate streams keep generated output length and thread scheduling from
+    # changing subsequent behavior samples or new input media/text.
+    text_rng = random.Random(f"{args.seed}:{user_id}:text")
+    reply_rng = random.Random(f"{args.seed}:{user_id}:reply")
+    media_rng = random.Random(f"{args.seed}:{user_id}:media")
     
     system_prompt_body = "You are a helpful assistant.\n"
     if args.system_prompt_tokens > 0:
-        system_prompt_body += gen_random_input_text(args.system_prompt_tokens, tokenizer)
+        system_prompt_body += gen_random_input_text(
+            args.system_prompt_tokens, tokenizer, text_rng
+        )
     history_text = f"<|im_start|>system\n{system_prompt_body}<|im_end|>\n"
     history_images = [] 
     history_audios = [] 
     
-    user_type_rand = random.random()
-    user_silence_scale = 5.0 if user_type_rand < 0.2 else (60.0 if user_type_rand > 0.8 else 15.0) # 60% 15s, 20% 5s, 20%60s
-    
+    user_type_rand = user_rng.random()
+    # user_silence_scale = 5.0 if user_type_rand < 0.2 else (60.0 if user_type_rand > 0.8 else 15.0) # 60% 15s, 20% 5s, 20%60s
+    user_silence_scale = 8.0
+    print(
+        f"[USER {user_id}] seed={args.seed + user_id}, "
+        f"silence_scale={user_silence_scale}s", flush=True
+    )
     small_res = (args.small_image_width, args.small_image_height)
     large_res = (args.large_image_width, args.large_image_height)
     
     while time.time() - session_start_time < args.active_time:
-        user_silence_time = np.random.exponential(scale=user_silence_scale)
-        system_patience_time = max(2.0, np.random.normal(loc=12.0, scale=3.0))  # 12 +- 3s
+        user_silence_time = user_np_rng.exponential(scale=user_silence_scale)
+        system_patience_time = max(2.0, user_np_rng.normal(loc=12.0, scale=3.0))  # 12 +- 3s
         
         if system_patience_time < user_silence_time:
             # --- 系统主动 ---
@@ -285,7 +415,7 @@ async def simulated_user_session(user_id: int, api_url: str, tokenizer, data_poo
                 proactive_image_count = (args.proactive_image_count // 2) * 2
                 t1 = time.perf_counter()
                 turn_images = await data_pool.get_random_images_data(
-                    proactive_image_count, args.small_image_ratio, small_res, large_res
+                    proactive_image_count, args.small_image_ratio, small_res, large_res, rng=media_rng
                 )
                 # print(f"get {len(turn_images)} random image time:", time.perf_counter() - t1)
 
@@ -294,18 +424,41 @@ async def simulated_user_session(user_id: int, api_url: str, tokenizer, data_poo
 
             current_images = history_images + turn_images
             current_audios = history_audios
+            current_prompt, current_images, current_audios = apply_eviction_policies(
+                current_prompt,
+                current_images,
+                current_audios,
+                recent_images_count=proactive_image_count,
+                tokenizer=tokenizer,
+                args=args,
+            )
             
             text_tokens = len(tokenizer([current_prompt.replace("<image>", "").replace("<audio>", "")]).input_ids[0])
             total_tokens = text_tokens + sum(img["tokens"] for img in current_images) + sum(a["tokens"] for a in current_audios)
             
-            max_out = min(args.max_output_token, max(8, int(np.random.gamma(shape=args.gamma_shape, scale=args.gamma_scale))))
+            max_out = min(
+                args.max_output_token,
+                max(8, int(user_np_rng.gamma(shape=args.gamma_shape, scale=args.gamma_scale))),
+            )
+            log_request_token_budget(
+                "proactive",
+                current_prompt,
+                current_images,
+                current_audios,
+                text_tokens,
+                args,
+                recent_images_count=proactive_image_count,
+            )
             
             actual_out_len = await send_request_sglang(
                 "proactive", api_url, current_prompt, total_tokens, 
-                [img["b64"] for img in current_images], [a["b64"] for a in current_audios], max_output_token=max_out
+                [img["b64"] for img in current_images],
+                [a["b64"] for a in current_audios],
+                max_output_token=max_out,
+                image_downsample_ratio=args.downsample_ratio,
             )
             
-            assistant_reply = gen_random_input_text(actual_out_len, tokenizer)
+            assistant_reply = gen_random_input_text(actual_out_len, tokenizer, reply_rng)
             history_text = current_prompt + assistant_reply + "<|im_end|>\n"
             history_images = current_images
             
@@ -326,23 +479,46 @@ async def simulated_user_session(user_id: int, api_url: str, tokenizer, data_poo
                 warmup_images_count = (args.warmup_images // 2) * 2
                 t1 = time.perf_counter()
                 turn_warmup_images = await data_pool.get_random_images_data(
-                    warmup_images_count, args.small_image_ratio, small_res, large_res
+                    warmup_images_count, args.small_image_ratio, small_res, large_res, rng=media_rng
                 )
                 # print(f"get {len(turn_warmup_images)} random image time:", time.perf_counter() - t1)
 
             stage_1_text = history_text + f"<|im_start|>user\n" + ("<image>" * warmup_images_count) + "\n"
             stage_1_images = history_images + turn_warmup_images
-
+            stage_1_text, stage_1_images, stage_1_audios = apply_eviction_policies(
+                stage_1_text,
+                stage_1_images,
+                history_audios,
+                recent_images_count=warmup_images_count,
+                tokenizer=tokenizer,
+                args=args,
+            )
             text_tokens_s1 = len(tokenizer([stage_1_text.replace("<image>", "").replace("<audio>", "")]).input_ids[0])
-            total_tokens_s1 = text_tokens_s1 + sum(img["tokens"] for img in stage_1_images) + sum(a["tokens"] for a in history_audios)
+            total_tokens_s1 = text_tokens_s1 + sum(img["tokens"] for img in stage_1_images) + sum(a["tokens"] for a in stage_1_audios)
+
+            log_request_token_budget(
+                "warmup",
+                stage_1_text,
+                stage_1_images,
+                stage_1_audios,
+                text_tokens_s1,
+                args,
+                recent_images_count=warmup_images_count,
+            )
 
             await send_request_sglang(
                 "warmup", api_url, stage_1_text, total_tokens_s1,
-                [img["b64"] for img in stage_1_images], [a["b64"] for a in history_audios], max_output_token=1
+                [img["b64"] for img in stage_1_images],
+                [a["b64"] for a in stage_1_audios],
+                max_output_token=1,
+                image_downsample_ratio=args.downsample_ratio,
             )
 
             # [Stage 2: 采样]
-            speak_duration = min(max(2.0, np.random.lognormal(mean=args.speak_mean, sigma=args.speak_sigma)), 30.0)
+            speak_duration = min(
+                max(2.0, user_np_rng.lognormal(mean=args.speak_mean, sigma=args.speak_sigma)),
+                30.0,
+            )
             await asyncio.sleep(speak_duration)
 
             if args.request_mode == "text-only":
@@ -350,19 +526,19 @@ async def simulated_user_session(user_id: int, api_url: str, tokenizer, data_poo
                 turn_active_images = []
                 turn_num_audios = 0
                 user_spoken_text = ""
-                target_text_len = random.randint(args.prompt_len_min, args.prompt_len_max)
-                user_spoken_text = gen_random_input_text(target_text_len, tokenizer)
+                target_text_len = user_rng.randint(args.prompt_len_min, args.prompt_len_max)
+                user_spoken_text = gen_random_input_text(target_text_len, tokenizer, text_rng)
             else:
                 active_image_count = min(args.max_active_images, max(2, int(speak_duration * args.image_sample_rate)))
                 active_image_count = (active_image_count // 2) * 2
 
                 t1 = time.perf_counter()
                 turn_active_images = await data_pool.get_random_images_data(
-                    active_image_count, args.small_image_ratio, small_res, large_res
+                    active_image_count, args.small_image_ratio, small_res, large_res, rng=media_rng
                 )
                 # print(f"get {len(turn_active_images)} random image time:", time.perf_counter() - t1)
 
-                modality_rand = random.random()
+                modality_rand = user_rng.random()
                 turn_num_audios = 0
                 user_spoken_text = ""
 
@@ -370,12 +546,14 @@ async def simulated_user_session(user_id: int, api_url: str, tokenizer, data_poo
                     # multimodal-only 模式下强制带音频，不发纯文本
                     turn_num_audios = args.num_audios
                 elif modality_rand < 0.3:
-                    target_text_len = random.randint(args.prompt_len_min, args.prompt_len_max)
-                    user_spoken_text = gen_random_input_text(target_text_len, tokenizer)
+                    target_text_len = user_rng.randint(args.prompt_len_min, args.prompt_len_max)
+                    user_spoken_text = gen_random_input_text(target_text_len, tokenizer, text_rng)
                 else:
                     turn_num_audios = args.num_audios
 
-            turn_active_audios = await data_pool.get_audios_matching_duration(speak_duration, turn_num_audios)
+            turn_active_audios = await data_pool.get_audios_matching_duration(
+                speak_duration, turn_num_audios, rng=media_rng
+            )
 
             stage_2_append_tags = ("<image>" * active_image_count) + ("<audio>" * turn_num_audios)
 
@@ -386,18 +564,41 @@ async def simulated_user_session(user_id: int, api_url: str, tokenizer, data_poo
 
             # print("stage2 text", stage_2_text[:500])
             stage_2_images = stage_1_images + turn_active_images
-            stage_2_audios = history_audios + turn_active_audios
-
+            stage_2_audios = stage_1_audios + turn_active_audios
+            stage_2_text, stage_2_images, stage_2_audios = apply_eviction_policies(
+                stage_2_text,
+                stage_2_images,
+                stage_2_audios,
+                recent_images_count=active_image_count + warmup_images_count,
+                tokenizer=tokenizer,
+                args=args,
+            )
             text_tokens_s2 = len(tokenizer([stage_2_text.replace("<image>", "").replace("<audio>", "")]).input_ids[0])
             total_tokens_s2 = text_tokens_s2 + sum(img["tokens"] for img in stage_2_images) + sum(a["tokens"] for a in stage_2_audios)
 
-            max_out = min(args.max_output_token, max(10, int(np.random.gamma(shape=args.gamma_shape, scale=args.gamma_scale))))
-            actual_out_len = await send_request_sglang(
-                "interactive", api_url, stage_2_text, total_tokens_s2,
-                [img["b64"] for img in stage_2_images], [a["b64"] for a in stage_2_audios], max_output_token=max_out
+            log_request_token_budget(
+                "interactive",
+                stage_2_text,
+                stage_2_images,
+                stage_2_audios,
+                text_tokens_s2,
+                args,
+                recent_images_count=warmup_images_count + active_image_count,
             )
 
-            assistant_reply = gen_random_input_text(actual_out_len, tokenizer)
+            max_out = min(
+                args.max_output_token,
+                max(10, int(user_np_rng.gamma(shape=args.gamma_shape, scale=args.gamma_scale))),
+            )
+            actual_out_len = await send_request_sglang(
+                "interactive", api_url, stage_2_text, total_tokens_s2,
+                [img["b64"] for img in stage_2_images],
+                [a["b64"] for a in stage_2_audios],
+                max_output_token=max_out,
+                image_downsample_ratio=args.downsample_ratio,
+            )
+
+            assistant_reply = gen_random_input_text(actual_out_len, tokenizer, reply_rng)
             history_text = stage_2_text + assistant_reply + "<|im_end|>\n"
             history_images = stage_2_images
             history_audios = stage_2_audios
@@ -410,6 +611,10 @@ async def simulated_user_session(user_id: int, api_url: str, tokenizer, data_poo
             
 
 async def run_benchmark(args):
+    REQUEST_LATENCY.clear()
+    # Local RNGs avoid cross-user scheduling dependence. Real arrival times
+    # still depend on response latency in this closed-loop benchmark.
+    startup_rng = np.random.default_rng(args.seed)
     api_url = f"http://{args.host}:{args.port}/generate_stream"
     tokenizer = get_tokenizer(args.tokenizer, "fast")
 
@@ -425,6 +630,7 @@ async def run_benchmark(args):
     print(f"Backend: SGLang")
     print(f"Request Mode: {args.request_mode}")
     print(f"Concurrent Users: {args.num_users}")
+    print(f"Random Seed: {args.seed} (closed-loop; arrival times are response-dependent)")
     print(f"Test Duration: {args.active_time} seconds")
     print(f"Max Context Limit: {args.max_context_len} tokens")
     print(f"Patch Size: {args.patch_size}, Downsample Ratio: {args.downsample_ratio}")
@@ -436,11 +642,15 @@ async def run_benchmark(args):
     
     tasks = []
     for i in range(args.num_users):
+        user_rng = random.Random(args.seed + i)
+        user_np_rng = np.random.default_rng(args.seed + i)
         task = asyncio.create_task(
-            simulated_user_session(i, api_url, tokenizer, data_pool, args)
+            simulated_user_session(
+                i, api_url, tokenizer, data_pool, args, user_rng, user_np_rng
+            )
         )
         tasks.append(task)
-        await asyncio.sleep(np.random.exponential(1.0))
+        await asyncio.sleep(startup_rng.exponential(1.0))
         
     await asyncio.gather(*tasks)
     
@@ -477,6 +687,12 @@ def main():
     
     # Session 宏观参数
     parser.add_argument("--num-users", type=int, default=2)
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=42,
+        help="非负随机种子；固定每用户的随机采样，不固定实际请求到达时间",
+    )
     parser.add_argument("--active-time", type=float, default=360)
     parser.add_argument("--max-context-len", type=int, default=8192)
     
@@ -521,6 +737,8 @@ def main():
                         help="控制请求类型: all=混合(默认), text-only=纯文本无图无音频, multimodal-only=每轮都带图/音频")
     
     args = parser.parse_args()
+    if args.seed < 0:
+        parser.error("--seed must be non-negative")
     asyncio.run(run_benchmark(args))
 
 if __name__ == "__main__":

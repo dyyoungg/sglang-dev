@@ -1,0 +1,530 @@
+[
+  {
+    "audio": "s3://gamedata/eval_sglang/8c67068d905f_1783322138916.wav",
+    "text": "不是我说我的我的屏幕现在有大概有多少帧数，你知道吧？",
+    "language": "zh",
+    "category": "online_badaudio",
+    "metric": 0.125,
+    "prediction": "不是我说我的我的屏幕线有大概多少帧数你知道吧"
+  },
+  {
+    "audio": "s3://gamedata/eval_sglang/2e8d970584c3_1783268762340.wav",
+    "text": "我说我想做公务舱",
+    "language": "zh",
+    "category": "online_badaudio",
+    "metric": 0.375,
+    "prediction": "我听说我想做公文包"
+  },
+  {
+    "audio": "s3://gamedata/eval_sglang/745846516550_1783268707760.wav",
+    "text": "哔哔，我说我想做公务舱",
+    "language": "zh",
+    "category": "online_badaudio",
+    "metric": 0.3,
+    "prediction": "AB：我说我想做公务员"
+  },
+  {
+    "audio": "s3://gamedata/eval_sglang/e909730e8bb2_1783321082980.wav",
+    "text": "我说的是大巴扎，你懂不懂？",
+    "language": "zh",
+    "category": "online_badaudio",
+    "metric": 0.18181818181818182,
+    "prediction": "我说的是大吧渣你懂不懂"
+  },
+  {
+    "audio": "s3://gamedata/eval_sglang/6bd851e2d1f0_1783320954706.wav",
+    "text": "你可以给我出谋划策吗？",
+    "language": "zh",
+    "category": "online_badaudio",
+    "metric": 0.0,
+    "prediction": "你可以给我出谋划策吗"
+  },
+  {
+    "audio": "s3://gamedata/eval_sglang/37622a3cd8fd_1783321085542.wav",
+    "text": "我说我中路玩伊泽瑞尔。",
+    "language": "zh",
+    "category": "online_badaudio",
+    "metric": 0.4,
+    "prediction": "我这我登录完伊泽瑞尔"
+  },
+  {
+    "audio": "s3://gamedata/eval_sglang/982fdc102519_1783318619494.wav",
+    "text": "你会玩英雄联盟么？",
+    "language": "zh",
+    "category": "online_badaudio",
+    "metric": 0.625,
+    "prediction": "你问玩玩一石联盟吗"
+  },
+  {
+    "audio": "s3://gamedata/eval_sglang/43d06e66e1b0_1783318408578.wav",
+    "text": "三角洲最新的地图核电站，你熟悉吗？",
+    "language": "zh",
+    "category": "online_badaudio",
+    "metric": 0.3333333333333333,
+    "prediction": "当鸟洲最新的地图搏合战你熟悉吗"
+  },
+  {
+    "audio": "s3://gamedata/eval_sglang/3cffb320cf8c_1783320678541.wav",
+    "text": "真拿你没办法",
+    "language": "zh",
+    "category": "online_badaudio",
+    "metric": 0.6666666666666666,
+    "prediction": "是哪里没算法"
+  },
+  {
+    "audio": "s3://gamedata/eval_sglang/2850bb173211_1783319372072.wav",
+    "text": "要怎么称呼你呢",
+    "language": "zh",
+    "category": "online_badaudio",
+    "metric": 0.2857142857142857,
+    "prediction": "要是我称呼你呢"
+  },
+  {
+    "audio": "s3://gamedata/eval_sglang/701c5ed292c1_1783317791092.wav",
+    "text": "热血传奇你都不知道么？",
+    "language": "zh",
+    "category": "online_badaudio",
+    "metric": 0.2,
+    "prediction": "赤血传奇，你都不知道吗"
+  },
+  {
+    "audio": "s3://gamedata/eval_sglang/508920463e7d_1783320023146.wav",
+    "text": "不是幼女连环杀人事件，是幼稚园杀手。",
+    "language": "zh",
+    "category": "online_badaudio",
+    "metric": 0.0625,
+    "prediction": "不是幼女连环杀人事件是幼智园杀手"
+  },
+  {
+    "audio": "s3://gamedata/eval_sglang/46c97b8c258e_1783313892579.wav",
+    "text": "不怎么样，你叫我周周吧。",
+    "language": "zh",
+    "category": "online_badaudio",
+    "metric": 0.0,
+    "prediction": "不怎么样，你叫我周周吧"
+  },
+  {
+    "audio": "s3://gamedata/eval_sglang/a442c3a9fa9f_1783317628383.wav",
+    "text": "我先带你认一下啊，首先就是这个零杠零六杠二零。",
+    "language": "zh",
+    "category": "online_badaudio",
+    "metric": 0.23809523809523808,
+    "prediction": "我先带你认一下啊，首先就是这个0杠06杠20"
+  },
+  {
+    "audio": "s3://gamedata/eval_sglang/58cad8705fdf_1783311749206.wav",
+    "text": "绝地求生，你会么",
+    "language": "zh",
+    "category": "online_badaudio",
+    "metric": 0.14285714285714285,
+    "prediction": "绝地求生你会吗"
+  },
+  {
+    "audio": "s3://gamedata/eval_sglang/e543b2f5358d_1783313129794.wav",
+    "text": "那你觉得我现在的装备属性怎么样？",
+    "language": "zh",
+    "category": "online_badaudio",
+    "metric": 0.26666666666666666,
+    "prediction": "那你觉得我现在装备比较怎么呀"
+  },
+  {
+    "audio": "s3://gamedata/eval_sglang/5662b9bb7929_1783317027754.wav",
+    "text": "只能选择老莫了",
+    "language": "zh",
+    "category": "online_badaudio",
+    "metric": 0.2857142857142857,
+    "prediction": "能选择老伴了"
+  },
+  {
+    "audio": "s3://gamedata/eval_sglang/76a54450567f_1783319184014.wav",
+    "text": "这首歌怎么样",
+    "language": "zh",
+    "category": "online_badaudio",
+    "metric": 0.6666666666666666,
+    "prediction": "您好，怎么了？"
+  },
+  {
+    "audio": "s3://gamedata/eval_sglang/c0f2fafc6d78_1783317393933.wav",
+    "text": "你讲个冷笑话",
+    "language": "zh",
+    "category": "online_badaudio",
+    "metric": 0.6666666666666666,
+    "prediction": "你点个老赵啊"
+  },
+  {
+    "audio": "s3://gamedata/eval_sglang/4b97a74730b2_1783310486720.wav",
+    "text": "你有本地记忆储存么？",
+    "language": "zh",
+    "category": "online_badaudio",
+    "metric": 0.7777777777777778,
+    "prediction": "有本事你成吗"
+  },
+  {
+    "audio": "s3://gamedata/eval_sglang/a45ab15d35bd_1783317377561.wav",
+    "text": "你你脑子才进水了呢，我去。",
+    "language": "zh",
+    "category": "online_badaudio",
+    "metric": 0.2727272727272727,
+    "prediction": "你你老才进水了我去"
+  },
+  {
+    "audio": "s3://gamedata/eval_sglang/14d0687c4540_1783317527985.wav",
+    "text": "你熟在哪啊",
+    "language": "zh",
+    "category": "online_badaudio",
+    "metric": 0.4,
+    "prediction": "你书在哪呀"
+  },
+  {
+    "audio": "s3://gamedata/eval_sglang/4e49f8cd3dcc_1783317543508.wav",
+    "text": "你的幻觉挺多啊",
+    "language": "zh",
+    "category": "online_badaudio",
+    "metric": 0.14285714285714285,
+    "prediction": "你的感觉挺多啊"
+  },
+  {
+    "audio": "s3://gamedata/eval_sglang/3a42d4b7a210_1783315492281.wav",
+    "text": "还是先出飞龙之眠吧，飞龙之眠晚出就不厉害。",
+    "language": "zh",
+    "category": "online_badaudio",
+    "metric": 0.10526315789473684,
+    "prediction": "还是先出废龙之眠吧，废龙之眠晚出就不厉害"
+  },
+  {
+    "audio": "s3://gamedata/eval_sglang/5f99718d4096_1783315513037.wav",
+    "text": "下个版本虚空灵魂能不能加进来呀？",
+    "language": "zh",
+    "category": "online_badaudio",
+    "metric": 0.13333333333333333,
+    "prediction": "下个版本虚空魂能不能加进来"
+  },
+  {
+    "audio": "s3://gamedata/eval_sglang/55d3d09ad1b7_1783315671155.wav",
+    "text": "他要有英雄的话，那我G了。",
+    "language": "zh",
+    "category": "online_badaudio",
+    "metric": 0.09090909090909091,
+    "prediction": "他要有英雄的话，那我算了。"
+  },
+  {
+    "audio": "s3://gamedata/eval_sglang/a745552d0164_1783315920229.wav",
+    "text": "感谢老板的荧光棒。",
+    "language": "zh",
+    "category": "online_badaudio",
+    "metric": 0.875,
+    "prediction": "感谢您拨通我的电话。"
+  },
+  {
+    "audio": "s3://gamedata/eval_sglang/b6b546198361_1783317631022.wav",
+    "text": "吼爹圣顿风怒。",
+    "language": "zh",
+    "category": "online_badaudio",
+    "metric": 0.3333333333333333,
+    "prediction": "好爹上顿风怒"
+  },
+  {
+    "audio": "s3://gamedata/eval_sglang/e690a4d2ddd4_1783318397876.wav",
+    "text": "梵妮莎太权威了。",
+    "language": "zh",
+    "category": "online_badaudio",
+    "metric": 0.5714285714285714,
+    "prediction": "反尼莎太卷了"
+  },
+  {
+    "audio": "s3://gamedata/eval_sglang/dbe70de18ef5_1783319387850.wav",
+    "text": "我操两个吗？呵呵。",
+    "language": "zh",
+    "category": "online_badaudio",
+    "metric": 0.42857142857142855,
+    "prediction": "我差两个吗"
+  },
+  {
+    "audio": "s3://gamedata/eval_sglang/a49d3b86b6df_1783315670093.wav",
+    "text": "哎，我没让你撤呀。",
+    "language": "zh",
+    "category": "online_badaudio",
+    "metric": 0.5714285714285714,
+    "prediction": "我问你错呀"
+  },
+  {
+    "audio": "s3://gamedata/eval_sglang/d04cd231a52f_1783316245976.wav",
+    "text": "我说这是我的庇护所。",
+    "language": "zh",
+    "category": "online_badaudio",
+    "metric": 0.3333333333333333,
+    "prediction": "我说这是我的必胜券"
+  },
+  {
+    "audio": "s3://gamedata/eval_sglang/415c5462e798_1783316962970.wav",
+    "text": "我们现在的资源铁和木头呀失衡。",
+    "language": "zh",
+    "category": "online_badaudio",
+    "metric": 0.21428571428571427,
+    "prediction": "我们现在的资源铁和木头啊是红"
+  },
+  {
+    "audio": "s3://gamedata/eval_sglang/c2290f22c1d8_1783319793645.wav",
+    "text": "BB告诉我那个回响术士怎么加点？",
+    "language": "zh",
+    "category": "online_badaudio",
+    "metric": 0.35714285714285715,
+    "prediction": "我弟弟告诉我那个回响树是怎么加点"
+  },
+  {
+    "audio": "s3://gamedata/eval_sglang/4c687f66139c_1783316155844.wav",
+    "text": "我靠，我刚咳血了。",
+    "language": "zh",
+    "category": "online_badaudio",
+    "metric": 0.7142857142857143,
+    "prediction": "我考完试了"
+  },
+  {
+    "audio": "s3://gamedata/eval_sglang/73ccf26738a7_1783318205457.wav",
+    "text": "今天不打逆战未来，打守望先锋。",
+    "language": "zh",
+    "category": "online_badaudio",
+    "metric": 0.46153846153846156,
+    "prediction": "今天不打，你滚回来打，手望肩攻"
+  },
+  {
+    "audio": "s3://gamedata/eval_sglang/9f31882800f9_1783314244869.wav",
+    "text": "你喜欢吗？",
+    "language": "zh",
+    "category": "online_badaudio",
+    "metric": 0.75,
+    "prediction": "七环吗"
+  },
+  {
+    "audio": "s3://gamedata/eval_sglang/4579e2e366e6_1783315128909.wav",
+    "text": "真的假的",
+    "language": "zh",
+    "category": "online_badaudio",
+    "metric": 0.25,
+    "prediction": "真的假呢"
+  },
+  {
+    "audio": "s3://gamedata/eval_sglang/a03a31c8b13b_1783315145274.wav",
+    "text": "我猜你绝对是个靓女。",
+    "language": "zh",
+    "category": "online_badaudio",
+    "metric": 0.2222222222222222,
+    "prediction": "我猜你绝对是个两米"
+  },
+  {
+    "audio": "s3://gamedata/eval_sglang/4c23bbc80d62_1783315462722.wav",
+    "text": "他的",
+    "language": "zh",
+    "category": "online_badaudio",
+    "metric": 0.5,
+    "prediction": "哈的"
+  },
+  {
+    "audio": "s3://gamedata/eval_sglang/462a60d0e0e0_1783315766528.wav",
+    "text": "不要去引战",
+    "language": "zh",
+    "category": "online_badaudio",
+    "metric": 0.6,
+    "prediction": "非要去做眼战"
+  },
+  {
+    "audio": "s3://gamedata/eval_sglang/a0439a23aadf_1783314553838.wav",
+    "text": "怎么匹配不上了？",
+    "language": "zh",
+    "category": "online_badaudio",
+    "metric": 0.7142857142857143,
+    "prediction": "你得起不上的"
+  },
+  {
+    "audio": "s3://gamedata/eval_sglang/a71afc236f79_1783313425118.wav",
+    "text": "哎哟，你笨死了，这个是早雾。",
+    "language": "zh",
+    "category": "online_badaudio",
+    "metric": 0.5454545454545454,
+    "prediction": "你有本事了这个是早物"
+  },
+  {
+    "audio": "s3://gamedata/eval_sglang/b15fa5210964_1783323507360.wav",
+    "text": "完了，怎么是不知火舞啊！",
+    "language": "zh",
+    "category": "online_badaudio",
+    "metric": 0.3,
+    "prediction": "完了怎么是不识好歹啊"
+  },
+  {
+    "audio": "s3://gamedata/eval_sglang/a72ecf804d69_1783314035526.wav",
+    "text": "终于补齐了。",
+    "language": "zh",
+    "category": "online_badaudio",
+    "metric": 0.4,
+    "prediction": "“终于不气了。”"
+  },
+  {
+    "audio": "s3://gamedata/eval_sglang/3222f8a7472e_1783315855463.wav",
+    "text": "来个五，啊，五，也行。",
+    "language": "zh",
+    "category": "online_badaudio",
+    "metric": 0.8571428571428571,
+    "prediction": "零五二五十九点"
+  },
+  {
+    "audio": "s3://gamedata/eval_sglang/58be977d4499_1783317795075.wav",
+    "text": "不是，又卡。",
+    "language": "zh",
+    "category": "online_badaudio",
+    "metric": 0.25,
+    "prediction": "不是尤卡"
+  },
+  {
+    "audio": "s3://gamedata/eval_sglang/54aea0208801_1783319618536.wav",
+    "text": "那你创吧，你创建吧。",
+    "language": "zh",
+    "category": "online_badaudio",
+    "metric": 0.5,
+    "prediction": "那你烫吧你剪的"
+  },
+  {
+    "audio": "s3://gamedata/eval_sglang/b4d14ea5fa00_1783314440565.wav",
+    "text": "他怎么还看到恐龙了呢？",
+    "language": "zh",
+    "category": "online_badaudio",
+    "metric": 0.1,
+    "prediction": "他怎么还看恐龙了呢"
+  },
+  {
+    "audio": "s3://gamedata/eval_sglang/1101c6df9914_1783318601402.wav",
+    "text": "这是飞龙骑脸，你自己看看清楚。",
+    "language": "zh",
+    "category": "online_badaudio",
+    "metric": 0.3076923076923077,
+    "prediction": "这是非同寻常，你自己看看清楚"
+  },
+  {
+    "audio": "s3://gamedata/eval_sglang/43c17df17143_1783320972410.wav",
+    "text": "把它放下来了啦。",
+    "language": "zh",
+    "category": "online_badaudio",
+    "metric": 0.14285714285714285,
+    "prediction": "把它放下来了"
+  },
+  {
+    "audio": "s3://gamedata/eval_sglang/f97996672d62_1783314827071.wav",
+    "text": "找砖，是带砖杀人那个任务是吧？",
+    "language": "zh",
+    "category": "online_badaudio",
+    "metric": 0.0,
+    "prediction": "找砖是带砖杀人那个任务是吧"
+  },
+  {
+    "audio": "s3://gamedata/eval_sglang/982b32570356_1783323421580.wav",
+    "text": "他没有放弃吧，他没有变成盒子吧。",
+    "language": "zh",
+    "category": "online_badaudio",
+    "metric": 0.07142857142857142,
+    "prediction": "他没有放弃吧，他没有变成核子吧"
+  },
+  {
+    "audio": "s3://gamedata/eval_sglang/bcf7bfec9b00_1783323976468.wav",
+    "text": "是的哦",
+    "language": "zh",
+    "category": "online_badaudio",
+    "metric": 0.3333333333333333,
+    "prediction": "是的"
+  },
+  {
+    "audio": "s3://gamedata/eval_sglang/37536c7640c3_1783313551653.wav",
+    "text": "是不是，是不是，是不是麦克风没开？",
+    "language": "zh",
+    "category": "online_badaudio",
+    "metric": 0.9285714285714286,
+    "prediction": "小小小小小小哥哦开开"
+  },
+  {
+    "audio": "s3://gamedata/eval_sglang/a80c67a548e6_1783313649679.wav",
+    "text": "这是顾左右而言他了是吧？",
+    "language": "zh",
+    "category": "online_badaudio",
+    "metric": 0.45454545454545453,
+    "prediction": "他是故作老而然他了是吧"
+  },
+  {
+    "audio": "s3://gamedata/eval_sglang/b7060b15353c_1783314144162.wav",
+    "text": "但是问题就来了，为什么翅膀这么丑呢？是吧，这翅膀怎么能做到这么丑呢？我也不知道为什么。",
+    "language": "zh",
+    "category": "online_badaudio",
+    "metric": 0.13157894736842105,
+    "prediction": "但是问题就来了，为什么翅膀这么吵呢？是吧？这翅膀怎么能做到这么吵呢？我也不知道你"
+  },
+  {
+    "audio": "s3://gamedata/eval_sglang/6da104058292_1783314173124.wav",
+    "text": "他们什么录的音怎么会这么难听？",
+    "language": "zh",
+    "category": "online_badaudio",
+    "metric": 0.7857142857142857,
+    "prediction": "我告诉他们，我想录的歌，最终都会难听"
+  },
+  {
+    "audio": "s3://gamedata/eval_sglang/3e7470de7771_1783314213888.wav",
+    "text": "对啊，邪恶大鼠标，喜欢，喜欢不喜欢邪恶大鼠标。",
+    "language": "zh",
+    "category": "online_badaudio",
+    "metric": 0.631578947368421,
+    "prediction": "你喜不喜欢邪恶大拇指"
+  },
+  {
+    "audio": "s3://gamedata/eval_sglang/56a6b472a2ad_1783314224788.wav",
+    "text": "我们还看看南半球吗？",
+    "language": "zh",
+    "category": "online_badaudio",
+    "metric": 0.5555555555555556,
+    "prediction": "我们看看这顿餐吧"
+  },
+  {
+    "audio": "s3://gamedata/eval_sglang/fd4a4c879771_1783315054840.wav",
+    "text": "那除了那个导航，还有个地方也很好。",
+    "language": "zh",
+    "category": "online_badaudio",
+    "metric": 0.3333333333333333,
+    "prediction": "除了道家，还有个地方也很好"
+  },
+  {
+    "audio": "s3://gamedata/eval_sglang/411c8dde4a8f_1783315515472.wav",
+    "text": "这个是剑星，你没看到我鼠标吗？",
+    "language": "zh",
+    "category": "online_badaudio",
+    "metric": 0.3076923076923077,
+    "prediction": "性即是电心，你没看到我鼠标吗"
+  },
+  {
+    "audio": "s3://gamedata/eval_sglang/52e328ad6da2_1783316634423.wav",
+    "text": "我在找提灯，提灯提灯提灯在哪儿？",
+    "language": "zh",
+    "category": "online_badaudio",
+    "metric": 0.5714285714285714,
+    "prediction": "我在找奇珍奇珍奇珍奇珍在哪儿"
+  },
+  {
+    "audio": "s3://gamedata/eval_sglang/195f6f06cbf2_1783319451689.wav",
+    "text": "这哪里是冰块呢？这是大理石树。",
+    "language": "zh",
+    "category": "online_badaudio",
+    "metric": 0.23076923076923078,
+    "prediction": "这哪里是冰块呢，这是大粒的树冻"
+  },
+  {
+    "audio": "s3://gamedata/eval_sglang/9ac20fddb0bd_1783320590342.wav",
+    "text": "我说鼹鼠呢？",
+    "language": "zh",
+    "category": "online_badaudio",
+    "metric": 0.4,
+    "prediction": "我说你呢"
+  },
+  {
+    "audio": "s3://gamedata/eval_sglang/2abee08a6353_1783322273754.wav",
+    "text": "来跟我一起看小电影。",
+    "language": "zh",
+    "category": "online_badaudio",
+    "metric": 0.5555555555555556,
+    "prediction": "来跟我一起喝酒怎么样"
+  }
+]

@@ -1,0 +1,3252 @@
+[
+  {
+    "id": "crpe_1407",
+    "image_path": "s3://gamedata/eval_sglang/82d6e80d5f3f_125.jpg",
+    "question": "What is the relation between the person and the sports ball?",
+    "answer": "The person is attached to the sports ball.",
+    "candidates": [
+      "The person is attached to the sports ball.",
+      "The person is in the sports ball.",
+      "The person is riding the sports ball.",
+      "The person is standing on the sports ball."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1443",
+    "image_path": "s3://gamedata/eval_sglang/dab1eda3c986_204.jpg",
+    "question": "What is the relation between the person and the motorcycle?",
+    "answer": "The person is leaning on the motorcycle.",
+    "candidates": [
+      "The person is leaning on the motorcycle.",
+      "The person is standing on the motorcycle.",
+      "The person is walking on the motorcycle.",
+      "The person is holding the motorcycle."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1436",
+    "image_path": "s3://gamedata/eval_sglang/7b9f6ff3a354_194.jpg",
+    "question": "What is the relation between the person and the backpack?",
+    "answer": "The person is riding the backpack.",
+    "candidates": [
+      "The person is in the backpack.",
+      "The person is slicing the backpack.",
+      "The person is riding the backpack.",
+      "The person is walking on the backpack."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1719",
+    "image_path": "s3://gamedata/eval_sglang/7f2e950110e4_769.jpg",
+    "question": "What is the relation between the orange and the dining table?",
+    "answer": "The orange is attached to the dining table.",
+    "candidates": [
+      "The orange is over the dining table.",
+      "The orange is beside the dining table.",
+      "The orange is touching the dining table.",
+      "The orange is attached to the dining table."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1523",
+    "image_path": "s3://gamedata/eval_sglang/093e0eaf511c_383.jpg",
+    "question": "What is the relation between the laptop and the dining table?",
+    "answer": "The laptop is over the dining table.",
+    "candidates": [
+      "The laptop is over the dining table.",
+      "The laptop is attached to the dining table.",
+      "The laptop is beside the dining table.",
+      "The laptop is in front of the dining table."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1665",
+    "image_path": "s3://gamedata/eval_sglang/ce171d8c9d7a_676.jpg",
+    "question": "What is the relation between the bottle and the refrigerator?",
+    "answer": "The bottle is beside the refrigerator.",
+    "candidates": [
+      "The bottle is beside the refrigerator.",
+      "The bottle is attached to the refrigerator.",
+      "The bottle is in the refrigerator.",
+      "The bottle is hanging from the refrigerator."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1607",
+    "image_path": "s3://gamedata/eval_sglang/eb9545686de0_548.jpg",
+    "question": "What is the relation between the person and the bus?",
+    "answer": "The person is driving on the bus.",
+    "candidates": [
+      "The person is driving on the bus.",
+      "The person is riding the bus.",
+      "The person is walking on the bus.",
+      "The person is touching the bus."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1567",
+    "image_path": "s3://gamedata/eval_sglang/1bdf6e1ca1aa_462.jpg",
+    "question": "What is the relation between the person and the sheep?",
+    "answer": "The person is playing with the sheep.",
+    "candidates": [
+      "The person is playing with the sheep.",
+      "The person is looking at the sheep.",
+      "The person is sitting on the sheep.",
+      "The person is swinging the sheep."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1386",
+    "image_path": "s3://gamedata/eval_sglang/990ad2d4f7cc_85.jpg",
+    "question": "What is the relation between the person and the remote?",
+    "answer": "The person is carrying the remote.",
+    "candidates": [
+      "The person is attached to the remote.",
+      "The person is beside the remote.",
+      "The person is riding the remote.",
+      "The person is carrying the remote."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1512",
+    "image_path": "s3://gamedata/eval_sglang/7642a2a91ddf_359.jpg",
+    "question": "What is the relation between the person and the train?",
+    "answer": "The person is driving on the train.",
+    "candidates": [
+      "The person is driving on the train.",
+      "The person is looking at the train.",
+      "The person is swinging the train.",
+      "The person is in front of the train."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1791",
+    "image_path": "s3://gamedata/eval_sglang/ef5902f924ce_969.jpg",
+    "question": "What is the relation between the bottle and the wine glass?",
+    "answer": "The bottle is beside the wine glass.",
+    "candidates": [
+      "The bottle is over the wine glass.",
+      "The bottle is beside the wine glass.",
+      "The bottle is holding the wine glass.",
+      "The bottle is attached to the wine glass."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1752",
+    "image_path": "s3://gamedata/eval_sglang/1df2bb2f822c_870.jpg",
+    "question": "What is the relation between the cake and the bowl?",
+    "answer": "The cake is in the bowl.",
+    "candidates": [
+      "The cake is in front of the bowl.",
+      "The cake is in the bowl.",
+      "The cake is beside the bowl.",
+      "The cake is attached to the bowl."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1871",
+    "image_path": "s3://gamedata/eval_sglang/44340943369e_1167.jpg",
+    "question": "What is the relation between the apple and the banana?",
+    "answer": "The apple is enclosing the banana.",
+    "candidates": [
+      "The apple is enclosing the banana.",
+      "The apple is attached to the banana.",
+      "The apple is beside the banana.",
+      "The apple is in the banana."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1730",
+    "image_path": "s3://gamedata/eval_sglang/cb047992beae_792.jpg",
+    "question": "What is the relation between the horse and the person?",
+    "answer": "The horse is beside the person.",
+    "candidates": [
+      "The horse is in the person.",
+      "The horse is over the person.",
+      "The horse is beside the person.",
+      "The horse is attached to the person."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1805",
+    "image_path": "s3://gamedata/eval_sglang/9f130f13c543_1005.jpg",
+    "question": "What is the relation between the orange and the apple?",
+    "answer": "The orange is beside the apple.",
+    "candidates": [
+      "The orange is in front of the apple.",
+      "The orange is beside the apple.",
+      "The orange is in the apple.",
+      "The orange is attached to the apple."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1864",
+    "image_path": "s3://gamedata/eval_sglang/51a41ab7a0a4_1140.jpg",
+    "question": "What is the relation between the toothbrush and the cup?",
+    "answer": "The toothbrush is attached to the cup.",
+    "candidates": [
+      "The toothbrush is over the cup.",
+      "The toothbrush is holding the cup.",
+      "The toothbrush is beside the cup.",
+      "The toothbrush is attached to the cup."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1624",
+    "image_path": "s3://gamedata/eval_sglang/00e2165bdb81_595.jpg",
+    "question": "What is the relation between the spoon and the bowl?",
+    "answer": "The spoon is beside the bowl.",
+    "candidates": [
+      "The spoon is over the bowl.",
+      "The spoon is in the bowl.",
+      "The spoon is beside the bowl.",
+      "The spoon is attached to the bowl."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1885",
+    "image_path": "s3://gamedata/eval_sglang/938f76bc29bf_1205.jpg",
+    "question": "What is the relation between the person and the bird?",
+    "answer": "The person is in front of the bird.",
+    "candidates": [
+      "The person is in front of the bird.",
+      "The person is holding the bird.",
+      "The person is in the bird.",
+      "The person is wearing the bird."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1378",
+    "image_path": "s3://gamedata/eval_sglang/de802fe49f4d_74.jpg",
+    "question": "What is the relation between the potted plant and the vase?",
+    "answer": "The potted plant is in the vase.",
+    "candidates": [
+      "The potted plant is on the vase.",
+      "The potted plant is in the vase.",
+      "The potted plant is beside the vase.",
+      "The potted plant is in front of the vase."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1722",
+    "image_path": "s3://gamedata/eval_sglang/b7e9536dcf68_777.jpg",
+    "question": "What is the relation between the bus and the car?",
+    "answer": "The bus is driving on the car.",
+    "candidates": [
+      "The bus is attached to the car.",
+      "The bus is driving on the car.",
+      "The bus is beside the car.",
+      "The bus is over the car."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1826",
+    "image_path": "s3://gamedata/eval_sglang/704559935198_1062.jpg",
+    "question": "What is the relation between the person and the potted plant?",
+    "answer": "The person is sitting on the potted plant.",
+    "candidates": [
+      "The person is sitting on the potted plant.",
+      "The person is beside the potted plant.",
+      "The person is standing on the potted plant.",
+      "The person is in front of the potted plant."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1676",
+    "image_path": "s3://gamedata/eval_sglang/fc0295dc5a7d_693.jpg",
+    "question": "What is the relation between the person and the frisbee?",
+    "answer": "The person is touching the frisbee.",
+    "candidates": [
+      "The person is touching the frisbee.",
+      "The person is looking at the frisbee.",
+      "The person is swinging the frisbee.",
+      "The person is carrying the frisbee."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1739",
+    "image_path": "s3://gamedata/eval_sglang/8e2a7a4ac240_831.jpg",
+    "question": "What is the relation between the train and the person?",
+    "answer": "The train is in front of the person.",
+    "candidates": [
+      "The train is on the person.",
+      "The train is parked on the person.",
+      "The train is looking at the person.",
+      "The train is in front of the person."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1783",
+    "image_path": "s3://gamedata/eval_sglang/ff69d29e091b_957.jpg",
+    "question": "What is the relation between the cat and the suitcase?",
+    "answer": "The cat is sitting on the suitcase.",
+    "candidates": [
+      "The cat is sitting on the suitcase.",
+      "The cat is looking at the suitcase.",
+      "The cat is lying on the suitcase.",
+      "The cat is wearing the suitcase."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1518",
+    "image_path": "s3://gamedata/eval_sglang/5f15b5382ddf_371.jpg",
+    "question": "What is the relation between the cat and the chair?",
+    "answer": "The cat is over the chair.",
+    "candidates": [
+      "The cat is in front of the chair.",
+      "The cat is lying on the chair.",
+      "The cat is over the chair.",
+      "The cat is beside the chair."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1531",
+    "image_path": "s3://gamedata/eval_sglang/284b95d6fbd9_400.jpg",
+    "question": "What is the relation between the sandwich and the bowl?",
+    "answer": "The sandwich is in the bowl.",
+    "candidates": [
+      "The sandwich is in front of the bowl.",
+      "The sandwich is in the bowl.",
+      "The sandwich is beside the bowl.",
+      "The sandwich is attached to the bowl."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1591",
+    "image_path": "s3://gamedata/eval_sglang/7fd4dc5d5275_506.jpg",
+    "question": "What is the relation between the person and the baseball glove?",
+    "answer": "The person is sitting on the baseball glove.",
+    "candidates": [
+      "The person is sitting on the baseball glove.",
+      "The person is beside the baseball glove.",
+      "The person is standing on the baseball glove.",
+      "The person is holding the baseball glove."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1586",
+    "image_path": "s3://gamedata/eval_sglang/83e86ef69fc6_494.jpg",
+    "question": "What is the relation between the person and the elephant?",
+    "answer": "The person is attached to the elephant.",
+    "candidates": [
+      "The person is attached to the elephant.",
+      "The person is holding the elephant.",
+      "The person is beside the elephant.",
+      "The person is in front of the elephant."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1374",
+    "image_path": "s3://gamedata/eval_sglang/684c76ebbe78_70.jpg",
+    "question": "What is the relation between the person and the surfboard?",
+    "answer": "The person is in front of the surfboard.",
+    "candidates": [
+      "The person is wearing the surfboard.",
+      "The person is standing on the surfboard.",
+      "The person is in front of the surfboard.",
+      "The person is holding the surfboard."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1530",
+    "image_path": "s3://gamedata/eval_sglang/e6fb3302872b_399.jpg",
+    "question": "What is the relation between the sandwich and the bowl?",
+    "answer": "The sandwich is in the bowl.",
+    "candidates": [
+      "The sandwich is on the bowl.",
+      "The sandwich is beside the bowl.",
+      "The sandwich is in the bowl.",
+      "The sandwich is attached to the bowl."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1682",
+    "image_path": "s3://gamedata/eval_sglang/6d634ac21e04_706.jpg",
+    "question": "What is the relation between the cat and the bed?",
+    "answer": "The cat is lying on the bed.",
+    "candidates": [
+      "The cat is attached to the bed.",
+      "The cat is lying on the bed.",
+      "The cat is in front of the bed.",
+      "The cat is standing on the bed."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1527",
+    "image_path": "s3://gamedata/eval_sglang/fb4b0d4d76e9_389.jpg",
+    "question": "What is the relation between the person and the cup?",
+    "answer": "The person is holding the cup.",
+    "candidates": [
+      "The person is lying on the cup.",
+      "The person is in front of the cup.",
+      "The person is holding the cup.",
+      "The person is walking on the cup."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1489",
+    "image_path": "s3://gamedata/eval_sglang/87b14c97fac6_302.jpg",
+    "question": "What is the relation between the person and the knife?",
+    "answer": "The person is holding the knife.",
+    "candidates": [
+      "The person is attached to the knife.",
+      "The person is jumping from the knife.",
+      "The person is holding the knife.",
+      "The person is looking at the knife."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1611",
+    "image_path": "s3://gamedata/eval_sglang/7f7d89d65452_561.jpg",
+    "question": "What is the relation between the person and the kite?",
+    "answer": "The person is holding the kite.",
+    "candidates": [
+      "The person is over the kite.",
+      "The person is attached to the kite.",
+      "The person is in front of the kite.",
+      "The person is holding the kite."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1860",
+    "image_path": "s3://gamedata/eval_sglang/36b8d013aa8e_1126.jpg",
+    "question": "What is the relation between the cat and the toilet?",
+    "answer": "The cat is attached to the toilet.",
+    "candidates": [
+      "The cat is in front of the toilet.",
+      "The cat is attached to the toilet.",
+      "The cat is over the toilet.",
+      "The cat is beside the toilet."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1534",
+    "image_path": "s3://gamedata/eval_sglang/2b4c0908d45a_406.jpg",
+    "question": "What is the relation between the person and the wine glass?",
+    "answer": "The person is drinking the wine glass.",
+    "candidates": [
+      "The person is drinking the wine glass.",
+      "The person is running on the wine glass.",
+      "The person is standing on the wine glass.",
+      "The person is beside the wine glass."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1613",
+    "image_path": "s3://gamedata/eval_sglang/a5f1b4d73690_567.jpg",
+    "question": "What is the relation between the person and the refrigerator?",
+    "answer": "The person is opening the refrigerator.",
+    "candidates": [
+      "The person is opening the refrigerator.",
+      "The person is about to hit the refrigerator.",
+      "The person is beside the refrigerator.",
+      "The person is holding the refrigerator."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1695",
+    "image_path": "s3://gamedata/eval_sglang/1c4aa99b7b4d_731.jpg",
+    "question": "What is the relation between the person and the car?",
+    "answer": "The person is leaning on the car.",
+    "candidates": [
+      "The person is leaning on the car.",
+      "The person is looking at the car.",
+      "The person is about to hit the car.",
+      "The person is in the car."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1636",
+    "image_path": "s3://gamedata/eval_sglang/549ea49d59b5_617.jpg",
+    "question": "What is the relation between the person and the donut?",
+    "answer": "The person is beside the donut.",
+    "candidates": [
+      "The person is biting the donut.",
+      "The person is holding the donut.",
+      "The person is attached to the donut.",
+      "The person is beside the donut."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1892",
+    "image_path": "s3://gamedata/eval_sglang/630ab8aa5336_1219.jpg",
+    "question": "What is the relation between the backpack and the bed?",
+    "answer": "The backpack is beside the bed.",
+    "candidates": [
+      "The backpack is leaning on the bed.",
+      "The backpack is beside the bed.",
+      "The backpack is lying on the bed.",
+      "The backpack is in the bed."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1807",
+    "image_path": "s3://gamedata/eval_sglang/7595e9a4d145_1009.jpg",
+    "question": "What is the relation between the dog and the surfboard?",
+    "answer": "The dog is riding the surfboard.",
+    "candidates": [
+      "The dog is riding the surfboard.",
+      "The dog is beside the surfboard.",
+      "The dog is in front of the surfboard.",
+      "The dog is eating the surfboard."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1578",
+    "image_path": "s3://gamedata/eval_sglang/36b7df5ed314_478.jpg",
+    "question": "What is the relation between the person and the teddy bear?",
+    "answer": "The person is carrying the teddy bear.",
+    "candidates": [
+      "The person is playing the teddy bear.",
+      "The person is carrying the teddy bear.",
+      "The person is in the teddy bear.",
+      "The person is lying on the teddy bear."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1757",
+    "image_path": "s3://gamedata/eval_sglang/a98007c05c7b_882.jpg",
+    "question": "What is the relation between the dog and the couch?",
+    "answer": "The dog is touching the couch.",
+    "candidates": [
+      "The dog is touching the couch.",
+      "The dog is attached to the couch.",
+      "The dog is in the couch.",
+      "The dog is biting the couch."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1562",
+    "image_path": "s3://gamedata/eval_sglang/ddcf5ec203e6_454.jpg",
+    "question": "What is the relation between the person and the sheep?",
+    "answer": "The person is pulling the sheep.",
+    "candidates": [
+      "The person is pulling the sheep.",
+      "The person is touching the sheep.",
+      "The person is sitting on the sheep.",
+      "The person is swinging the sheep."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1726",
+    "image_path": "s3://gamedata/eval_sglang/9ecac9a94ac8_787.jpg",
+    "question": "What is the relation between the horse and the person?",
+    "answer": "The horse is beside the person.",
+    "candidates": [
+      "The horse is attached to the person.",
+      "The horse is looking at the person.",
+      "The horse is beside the person.",
+      "The horse is feeding the person."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1618",
+    "image_path": "s3://gamedata/eval_sglang/bd63b1b8b8bd_580.jpg",
+    "question": "What is the relation between the person and the couch?",
+    "answer": "The person is walking on the couch.",
+    "candidates": [
+      "The person is walking on the couch.",
+      "The person is standing on the couch.",
+      "The person is in front of the couch.",
+      "The person is holding the couch."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1814",
+    "image_path": "s3://gamedata/eval_sglang/7eb56207aee3_1030.jpg",
+    "question": "What is the relation between the teddy bear and the couch?",
+    "answer": "The teddy bear is sitting on the couch.",
+    "candidates": [
+      "The teddy bear is attached to the couch.",
+      "The teddy bear is sitting on the couch.",
+      "The teddy bear is beside the couch.",
+      "The teddy bear is over the couch."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1815",
+    "image_path": "s3://gamedata/eval_sglang/1648bb856319_1032.jpg",
+    "question": "What is the relation between the teddy bear and the couch?",
+    "answer": "The teddy bear is walking on the couch.",
+    "candidates": [
+      "The teddy bear is walking on the couch.",
+      "The teddy bear is beside the couch.",
+      "The teddy bear is attached to the couch.",
+      "The teddy bear is over the couch."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1740",
+    "image_path": "s3://gamedata/eval_sglang/ce120b23f75b_833.jpg",
+    "question": "What is the relation between the cell phone and the person?",
+    "answer": "The cell phone is beside the person.",
+    "candidates": [
+      "The cell phone is holding the person.",
+      "The cell phone is beside the person.",
+      "The cell phone is over the person.",
+      "The cell phone is attached to the person."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1536",
+    "image_path": "s3://gamedata/eval_sglang/aa276788b9db_410.jpg",
+    "question": "What is the relation between the person and the wine glass?",
+    "answer": "The person is in front of the wine glass.",
+    "candidates": [
+      "The person is in front of the wine glass.",
+      "The person is holding the wine glass.",
+      "The person is standing on the wine glass.",
+      "The person is wearing the wine glass."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1754",
+    "image_path": "s3://gamedata/eval_sglang/8a5314124660_876.jpg",
+    "question": "What is the relation between the knife and the bowl?",
+    "answer": "The knife is in the bowl.",
+    "candidates": [
+      "The knife is attached to the bowl.",
+      "The knife is beside the bowl.",
+      "The knife is in the bowl.",
+      "The knife is over the bowl."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1653",
+    "image_path": "s3://gamedata/eval_sglang/5d9f3a4de32d_647.jpg",
+    "question": "What is the relation between the person and the bed?",
+    "answer": "The person is in front of the bed.",
+    "candidates": [
+      "The person is in front of the bed.",
+      "The person is beside the bed.",
+      "The person is standing on the bed.",
+      "The person is holding the bed."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1868",
+    "image_path": "s3://gamedata/eval_sglang/1e9df1812a2c_1158.jpg",
+    "question": "What is the relation between the person and the toilet?",
+    "answer": "The person is wearing the toilet.",
+    "candidates": [
+      "The person is wearing the toilet.",
+      "The person is standing on the toilet.",
+      "The person is attached to the toilet.",
+      "The person is holding the toilet."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1535",
+    "image_path": "s3://gamedata/eval_sglang/366bfe19e9ad_409.jpg",
+    "question": "What is the relation between the person and the wine glass?",
+    "answer": "The person is sitting on the wine glass.",
+    "candidates": [
+      "The person is sitting on the wine glass.",
+      "The person is holding the wine glass.",
+      "The person is walking on the wine glass.",
+      "The person is looking at the wine glass."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1789",
+    "image_path": "s3://gamedata/eval_sglang/80a921f4caaf_967.jpg",
+    "question": "What is the relation between the orange and the bowl?",
+    "answer": "The orange is in the bowl.",
+    "candidates": [
+      "The orange is on the bowl.",
+      "The orange is in the bowl.",
+      "The orange is beside the bowl.",
+      "The orange is attached to the bowl."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1852",
+    "image_path": "s3://gamedata/eval_sglang/9f208a5845e8_1113.jpg",
+    "question": "What is the relation between the dog and the car?",
+    "answer": "The dog is in front of the car.",
+    "candidates": [
+      "The dog is sitting on the car.",
+      "The dog is lying on the car.",
+      "The dog is beside the car.",
+      "The dog is in front of the car."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1432",
+    "image_path": "s3://gamedata/eval_sglang/b53a1361470a_186.jpg",
+    "question": "What is the relation between the person and the bicycle?",
+    "answer": "The person is looking at the bicycle.",
+    "candidates": [
+      "The person is in the bicycle.",
+      "The person is holding the bicycle.",
+      "The person is looking at the bicycle.",
+      "The person is in front of the bicycle."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1736",
+    "image_path": "s3://gamedata/eval_sglang/b4ac01e89a29_819.jpg",
+    "question": "What is the relation between the fork and the sandwich?",
+    "answer": "The fork is beside the sandwich.",
+    "candidates": [
+      "The fork is attached to the sandwich.",
+      "The fork is beside the sandwich.",
+      "The fork is in the sandwich.",
+      "The fork is holding the sandwich."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1554",
+    "image_path": "s3://gamedata/eval_sglang/e803f93b1f9f_439.jpg",
+    "question": "What is the relation between the person and the oven?",
+    "answer": "The person is leaning on the oven.",
+    "candidates": [
+      "The person is leaning on the oven.",
+      "The person is sitting on the oven.",
+      "The person is wearing the oven.",
+      "The person is standing on the oven."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1716",
+    "image_path": "s3://gamedata/eval_sglang/4d7b89bc1d7c_761.jpg",
+    "question": "What is the relation between the traffic light and the train?",
+    "answer": "The traffic light is beside the train.",
+    "candidates": [
+      "The traffic light is beside the train.",
+      "The traffic light is over the train.",
+      "The traffic light is in the train.",
+      "The traffic light is in front of the train."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1728",
+    "image_path": "s3://gamedata/eval_sglang/e871a189a0ee_789.jpg",
+    "question": "What is the relation between the horse and the person?",
+    "answer": "The horse is beside the person.",
+    "candidates": [
+      "The horse is carrying the person.",
+      "The horse is beside the person.",
+      "The horse is standing on the person.",
+      "The horse is looking at the person."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1866",
+    "image_path": "s3://gamedata/eval_sglang/202dcd9a996d_1153.jpg",
+    "question": "What is the relation between the person and the toilet?",
+    "answer": "The person is attached to the toilet.",
+    "candidates": [
+      "The person is touching the toilet.",
+      "The person is attached to the toilet.",
+      "The person is holding the toilet.",
+      "The person is playing with the toilet."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1685",
+    "image_path": "s3://gamedata/eval_sglang/9e609ecb0a20_713.jpg",
+    "question": "What is the relation between the bus and the person?",
+    "answer": "The bus is in front of the person.",
+    "candidates": [
+      "The bus is in front of the person.",
+      "The bus is beside the person.",
+      "The bus is looking at the person.",
+      "The bus is over the person."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1621",
+    "image_path": "s3://gamedata/eval_sglang/28ec29b19626_592.jpg",
+    "question": "What is the relation between the knife and the fork?",
+    "answer": "The knife is on the fork.",
+    "candidates": [
+      "The knife is on the fork.",
+      "The knife is beside the fork.",
+      "The knife is attached to the fork.",
+      "The knife is holding the fork."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1477",
+    "image_path": "s3://gamedata/eval_sglang/7ba63927a259_272.jpg",
+    "question": "What is the relation between the person and the dog?",
+    "answer": "The person is beside the dog.",
+    "candidates": [
+      "The person is talking to the dog.",
+      "The person is standing on the dog.",
+      "The person is looking at the dog.",
+      "The person is beside the dog."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1600",
+    "image_path": "s3://gamedata/eval_sglang/b22b7cbb79bf_526.jpg",
+    "question": "What is the relation between the cup and the person?",
+    "answer": "The cup is over the person.",
+    "candidates": [
+      "The cup is wearing the person.",
+      "The cup is beside the person.",
+      "The cup is over the person.",
+      "The cup is in front of the person."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1492",
+    "image_path": "s3://gamedata/eval_sglang/f0f345cd35e2_315.jpg",
+    "question": "What is the relation between the person and the fork?",
+    "answer": "The person is looking at the fork.",
+    "candidates": [
+      "The person is looking at the fork.",
+      "The person is leaning on the fork.",
+      "The person is attached to the fork.",
+      "The person is running on the fork."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1823",
+    "image_path": "s3://gamedata/eval_sglang/4762582f8aac_1052.jpg",
+    "question": "What is the relation between the cup and the wine glass?",
+    "answer": "The cup is beside the wine glass.",
+    "candidates": [
+      "The cup is in front of the wine glass.",
+      "The cup is beside the wine glass.",
+      "The cup is in the wine glass.",
+      "The cup is holding the wine glass."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1605",
+    "image_path": "s3://gamedata/eval_sglang/85abe0029513_543.jpg",
+    "question": "What is the relation between the person and the bus?",
+    "answer": "The person is beside the bus.",
+    "candidates": [
+      "The person is touching the bus.",
+      "The person is beside the bus.",
+      "The person is standing on the bus.",
+      "The person is holding the bus."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1606",
+    "image_path": "s3://gamedata/eval_sglang/8bbf50ad3cac_545.jpg",
+    "question": "What is the relation between the person and the bus?",
+    "answer": "The person is hanging from the bus.",
+    "candidates": [
+      "The person is hanging from the bus.",
+      "The person is touching the bus.",
+      "The person is over the bus.",
+      "The person is in front of the bus."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1857",
+    "image_path": "s3://gamedata/eval_sglang/e3c292b63772_1120.jpg",
+    "question": "What is the relation between the cat and the toilet?",
+    "answer": "The cat is sitting on the toilet.",
+    "candidates": [
+      "The cat is attached to the toilet.",
+      "The cat is standing on the toilet.",
+      "The cat is lying on the toilet.",
+      "The cat is sitting on the toilet."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1775",
+    "image_path": "s3://gamedata/eval_sglang/2764545d99df_935.jpg",
+    "question": "What is the relation between the dog and the frisbee?",
+    "answer": "The dog is beside the frisbee.",
+    "candidates": [
+      "The dog is eating the frisbee.",
+      "The dog is walking on the frisbee.",
+      "The dog is beside the frisbee.",
+      "The dog is lying on the frisbee."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1851",
+    "image_path": "s3://gamedata/eval_sglang/9cd1ce5ed59c_1112.jpg",
+    "question": "What is the relation between the dog and the car?",
+    "answer": "The dog is standing on the car.",
+    "candidates": [
+      "The dog is in front of the car.",
+      "The dog is beside the car.",
+      "The dog is looking at the car.",
+      "The dog is standing on the car."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1841",
+    "image_path": "s3://gamedata/eval_sglang/35f360ab9ab4_1093.jpg",
+    "question": "What is the relation between the broccoli and the dining table?",
+    "answer": "The broccoli is beside the dining table.",
+    "candidates": [
+      "The broccoli is lying on the dining table.",
+      "The broccoli is touching the dining table.",
+      "The broccoli is beside the dining table.",
+      "The broccoli is over the dining table."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1688",
+    "image_path": "s3://gamedata/eval_sglang/27e919874ec4_717.jpg",
+    "question": "What is the relation between the knife and the cake?",
+    "answer": "The knife is touching the cake.",
+    "candidates": [
+      "The knife is touching the cake.",
+      "The knife is slicing the cake.",
+      "The knife is beside the cake.",
+      "The knife is looking at the cake."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1802",
+    "image_path": "s3://gamedata/eval_sglang/556b2517f4cb_1001.jpg",
+    "question": "What is the relation between the person and the carrot?",
+    "answer": "The person is slicing the carrot.",
+    "candidates": [
+      "The person is slicing the carrot.",
+      "The person is standing on the carrot.",
+      "The person is holding the carrot.",
+      "The person is walking on the carrot."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1582",
+    "image_path": "s3://gamedata/eval_sglang/d2c06a18157c_488.jpg",
+    "question": "What is the relation between the bottle and the cup?",
+    "answer": "The bottle is beside the cup.",
+    "candidates": [
+      "The bottle is in front of the cup.",
+      "The bottle is in the cup.",
+      "The bottle is holding the cup.",
+      "The bottle is beside the cup."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1810",
+    "image_path": "s3://gamedata/eval_sglang/adc24b2acd4f_1013.jpg",
+    "question": "What is the relation between the elephant and the person?",
+    "answer": "The elephant is beside the person.",
+    "candidates": [
+      "The elephant is looking at the person.",
+      "The elephant is attached to the person.",
+      "The elephant is beside the person.",
+      "The elephant is touching the person."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1812",
+    "image_path": "s3://gamedata/eval_sglang/a821e5126ce1_1023.jpg",
+    "question": "What is the relation between the bird and the bench?",
+    "answer": "The bird is beside the bench.",
+    "candidates": [
+      "The bird is sitting on the bench.",
+      "The bird is beside the bench.",
+      "The bird is flying over the bench.",
+      "The bird is standing on the bench."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1832",
+    "image_path": "s3://gamedata/eval_sglang/9af6fed4801e_1073.jpg",
+    "question": "What is the relation between the person and the keyboard?",
+    "answer": "The person is beside the keyboard.",
+    "candidates": [
+      "The person is looking at the keyboard.",
+      "The person is beside the keyboard.",
+      "The person is driving the keyboard.",
+      "The person is holding the keyboard."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1529",
+    "image_path": "s3://gamedata/eval_sglang/cf4f8aece2b1_396.jpg",
+    "question": "What is the relation between the person and the bowl?",
+    "answer": "The person is standing on the bowl.",
+    "candidates": [
+      "The person is eating the bowl.",
+      "The person is standing on the bowl.",
+      "The person is in front of the bowl.",
+      "The person is looking at the bowl."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1640",
+    "image_path": "s3://gamedata/eval_sglang/eaae628206db_621.jpg",
+    "question": "What is the relation between the person and the cow?",
+    "answer": "The person is on the cow.",
+    "candidates": [
+      "The person is on the cow.",
+      "The person is riding the cow.",
+      "The person is holding the cow.",
+      "The person is beside the cow."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1721",
+    "image_path": "s3://gamedata/eval_sglang/26077fe9ca31_776.jpg",
+    "question": "What is the relation between the bus and the car?",
+    "answer": "The bus is on the car.",
+    "candidates": [
+      "The bus is on the car.",
+      "The bus is over the car.",
+      "The bus is driving on the car.",
+      "The bus is beside the car."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1635",
+    "image_path": "s3://gamedata/eval_sglang/8b2d7c44aaea_615.jpg",
+    "question": "What is the relation between the person and the donut?",
+    "answer": "The person is wearing the donut.",
+    "candidates": [
+      "The person is wearing the donut.",
+      "The person is standing on the donut.",
+      "The person is riding the donut.",
+      "The person is beside the donut."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1720",
+    "image_path": "s3://gamedata/eval_sglang/7a86f8d28631_773.jpg",
+    "question": "What is the relation between the tv and the keyboard?",
+    "answer": "The tv is beside the keyboard.",
+    "candidates": [
+      "The tv is over the keyboard.",
+      "The tv is in front of the keyboard.",
+      "The tv is hanging from the keyboard.",
+      "The tv is beside the keyboard."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1583",
+    "image_path": "s3://gamedata/eval_sglang/80cbf3e4e0f9_490.jpg",
+    "question": "What is the relation between the bottle and the cup?",
+    "answer": "The bottle is on the cup.",
+    "candidates": [
+      "The bottle is on the cup.",
+      "The bottle is attached to the cup.",
+      "The bottle is beside the cup.",
+      "The bottle is in front of the cup."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1599",
+    "image_path": "s3://gamedata/eval_sglang/8f292e780d9a_522.jpg",
+    "question": "What is the relation between the person and the baseball bat?",
+    "answer": "The person is playing the baseball bat.",
+    "candidates": [
+      "The person is playing the baseball bat.",
+      "The person is pulling the baseball bat.",
+      "The person is in front of the baseball bat.",
+      "The person is standing on the baseball bat."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1687",
+    "image_path": "s3://gamedata/eval_sglang/a563f30944b0_715.jpg",
+    "question": "What is the relation between the knife and the cake?",
+    "answer": "The knife is slicing the cake.",
+    "candidates": [
+      "The knife is attached to the cake.",
+      "The knife is beside the cake.",
+      "The knife is slicing the cake.",
+      "The knife is over the cake."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1463",
+    "image_path": "s3://gamedata/eval_sglang/31cf20d2ffd4_243.jpg",
+    "question": "What is the relation between the person and the suitcase?",
+    "answer": "The person is beside the suitcase.",
+    "candidates": [
+      "The person is picking the suitcase.",
+      "The person is standing on the suitcase.",
+      "The person is beside the suitcase.",
+      "The person is sitting on the suitcase."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1516",
+    "image_path": "s3://gamedata/eval_sglang/529e27f3af5e_368.jpg",
+    "question": "What is the relation between the cat and the chair?",
+    "answer": "The cat is sitting on the chair.",
+    "candidates": [
+      "The cat is leaning on the chair.",
+      "The cat is beside the chair.",
+      "The cat is in front of the chair.",
+      "The cat is sitting on the chair."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1767",
+    "image_path": "s3://gamedata/eval_sglang/40d109a01dd8_911.jpg",
+    "question": "What is the relation between the person and the hot dog?",
+    "answer": "The person is sitting on the hot dog.",
+    "candidates": [
+      "The person is attached to the hot dog.",
+      "The person is riding the hot dog.",
+      "The person is in the hot dog.",
+      "The person is sitting on the hot dog."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1708",
+    "image_path": "s3://gamedata/eval_sglang/3c18c83ed527_749.jpg",
+    "question": "What is the relation between the book and the dining table?",
+    "answer": "The book is over the dining table.",
+    "candidates": [
+      "The book is over the dining table.",
+      "The book is looking at the dining table.",
+      "The book is attached to the dining table.",
+      "The book is beside the dining table."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1777",
+    "image_path": "s3://gamedata/eval_sglang/b3f3db71ab58_939.jpg",
+    "question": "What is the relation between the dog and the frisbee?",
+    "answer": "The dog is biting the frisbee.",
+    "candidates": [
+      "The dog is over the frisbee.",
+      "The dog is biting the frisbee.",
+      "The dog is holding the frisbee.",
+      "The dog is sitting on the frisbee."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1435",
+    "image_path": "s3://gamedata/eval_sglang/1421a12c185f_191.jpg",
+    "question": "What is the relation between the person and the backpack?",
+    "answer": "The person is riding the backpack.",
+    "candidates": [
+      "The person is looking at the backpack.",
+      "The person is riding the backpack.",
+      "The person is standing on the backpack.",
+      "The person is going down the backpack."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1798",
+    "image_path": "s3://gamedata/eval_sglang/65f7610757fc_995.jpg",
+    "question": "What is the relation between the cat and the couch?",
+    "answer": "The cat is lying on the couch.",
+    "candidates": [
+      "The cat is sitting on the couch.",
+      "The cat is beside the couch.",
+      "The cat is lying on the couch.",
+      "The cat is looking at the couch."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1888",
+    "image_path": "s3://gamedata/eval_sglang/37359e9f6704_1208.jpg",
+    "question": "What is the relation between the cat and the bench?",
+    "answer": "The cat is sitting on the bench.",
+    "candidates": [
+      "The cat is looking at the bench.",
+      "The cat is sitting on the bench.",
+      "The cat is standing on the bench.",
+      "The cat is in front of the bench."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1487",
+    "image_path": "s3://gamedata/eval_sglang/af539a064357_299.jpg",
+    "question": "What is the relation between the person and the pizza?",
+    "answer": "The person is touching the pizza.",
+    "candidates": [
+      "The person is touching the pizza.",
+      "The person is playing the pizza.",
+      "The person is holding the pizza.",
+      "The person is walking on the pizza."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1745",
+    "image_path": "s3://gamedata/eval_sglang/ba7f519bc7c6_840.jpg",
+    "question": "What is the relation between the mouse and the laptop?",
+    "answer": "The mouse is attached to the laptop.",
+    "candidates": [
+      "The mouse is attached to the laptop.",
+      "The mouse is looking at the laptop.",
+      "The mouse is beside the laptop.",
+      "The mouse is in front of the laptop."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1595",
+    "image_path": "s3://gamedata/eval_sglang/3a5764e94b1a_514.jpg",
+    "question": "What is the relation between the person and the baseball glove?",
+    "answer": "The person is holding the baseball glove.",
+    "candidates": [
+      "The person is catching the baseball glove.",
+      "The person is looking at the baseball glove.",
+      "The person is beside the baseball glove.",
+      "The person is holding the baseball glove."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1508",
+    "image_path": "s3://gamedata/eval_sglang/fc7501b54f5f_346.jpg",
+    "question": "What is the relation between the person and the truck?",
+    "answer": "The person is in front of the truck.",
+    "candidates": [
+      "The person is holding the truck.",
+      "The person is in front of the truck.",
+      "The person is pushing the truck.",
+      "The person is walking on the truck."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1505",
+    "image_path": "s3://gamedata/eval_sglang/048eeb9ed860_342.jpg",
+    "question": "What is the relation between the person and the truck?",
+    "answer": "The person is pulling the truck.",
+    "candidates": [
+      "The person is pulling the truck.",
+      "The person is walking on the truck.",
+      "The person is attached to the truck.",
+      "The person is holding the truck."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1759",
+    "image_path": "s3://gamedata/eval_sglang/90a21cdbc4b4_886.jpg",
+    "question": "What is the relation between the dog and the couch?",
+    "answer": "The dog is lying on the couch.",
+    "candidates": [
+      "The dog is in front of the couch.",
+      "The dog is attached to the couch.",
+      "The dog is walking on the couch.",
+      "The dog is lying on the couch."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1711",
+    "image_path": "s3://gamedata/eval_sglang/3e0aaa1698d7_753.jpg",
+    "question": "What is the relation between the person and the clock?",
+    "answer": "The person is beside the clock.",
+    "candidates": [
+      "The person is beside the clock.",
+      "The person is riding the clock.",
+      "The person is looking at the clock.",
+      "The person is holding the clock."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1822",
+    "image_path": "s3://gamedata/eval_sglang/2e87ef56fbeb_1051.jpg",
+    "question": "What is the relation between the cup and the wine glass?",
+    "answer": "The cup is beside the wine glass.",
+    "candidates": [
+      "The cup is attached to the wine glass.",
+      "The cup is beside the wine glass.",
+      "The cup is in front of the wine glass.",
+      "The cup is holding the wine glass."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1608",
+    "image_path": "s3://gamedata/eval_sglang/2a7ae86a5230_555.jpg",
+    "question": "What is the relation between the person and the kite?",
+    "answer": "The person is looking at the kite.",
+    "candidates": [
+      "The person is on the kite.",
+      "The person is looking at the kite.",
+      "The person is touching the kite.",
+      "The person is standing on the kite."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1637",
+    "image_path": "s3://gamedata/eval_sglang/35525c057b03_618.jpg",
+    "question": "What is the relation between the person and the cow?",
+    "answer": "The person is in front of the cow.",
+    "candidates": [
+      "The person is in front of the cow.",
+      "The person is eating the cow.",
+      "The person is standing on the cow.",
+      "The person is carrying the cow."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1615",
+    "image_path": "s3://gamedata/eval_sglang/332334aa1ede_572.jpg",
+    "question": "What is the relation between the kite and the person?",
+    "answer": "The kite is in front of the person.",
+    "candidates": [
+      "The kite is in front of the person.",
+      "The kite is holding the person.",
+      "The kite is beside the person.",
+      "The kite is over the person."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1609",
+    "image_path": "s3://gamedata/eval_sglang/222464b3878c_559.jpg",
+    "question": "What is the relation between the person and the kite?",
+    "answer": "The person is driving the kite.",
+    "candidates": [
+      "The person is attached to the kite.",
+      "The person is driving the kite.",
+      "The person is in front of the kite.",
+      "The person is standing on the kite."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1683",
+    "image_path": "s3://gamedata/eval_sglang/68f71fed397f_707.jpg",
+    "question": "What is the relation between the cat and the bed?",
+    "answer": "The cat is over the bed.",
+    "candidates": [
+      "The cat is sitting on the bed.",
+      "The cat is lying on the bed.",
+      "The cat is over the bed.",
+      "The cat is in the bed."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1799",
+    "image_path": "s3://gamedata/eval_sglang/97476ce5dd67_996.jpg",
+    "question": "What is the relation between the cat and the couch?",
+    "answer": "The cat is lying on the couch.",
+    "candidates": [
+      "The cat is beside the couch.",
+      "The cat is over the couch.",
+      "The cat is lying on the couch.",
+      "The cat is looking at the couch."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1651",
+    "image_path": "s3://gamedata/eval_sglang/250b5ae63a25_644.jpg",
+    "question": "What is the relation between the person and the bed?",
+    "answer": "The person is in the bed.",
+    "candidates": [
+      "The person is in the bed.",
+      "The person is beside the bed.",
+      "The person is touching the bed.",
+      "The person is pulling the bed."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1558",
+    "image_path": "s3://gamedata/eval_sglang/001038ce0f21_446.jpg",
+    "question": "What is the relation between the toothbrush and the sink?",
+    "answer": "The toothbrush is beside the sink.",
+    "candidates": [
+      "The toothbrush is beside the sink.",
+      "The toothbrush is in the sink.",
+      "The toothbrush is over the sink.",
+      "The toothbrush is standing on the sink."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1509",
+    "image_path": "s3://gamedata/eval_sglang/19ebd27844e3_348.jpg",
+    "question": "What is the relation between the person and the train?",
+    "answer": "The person is beside the train.",
+    "candidates": [
+      "The person is attached to the train.",
+      "The person is walking on the train.",
+      "The person is beside the train.",
+      "The person is riding the train."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1724",
+    "image_path": "s3://gamedata/eval_sglang/e5299b3271ae_783.jpg",
+    "question": "What is the relation between the chair and the bed?",
+    "answer": "The chair is on the bed.",
+    "candidates": [
+      "The chair is on the bed.",
+      "The chair is sitting on the bed.",
+      "The chair is beside the bed.",
+      "The chair is in front of the bed."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1456",
+    "image_path": "s3://gamedata/eval_sglang/1054a4a313cb_234.jpg",
+    "question": "What is the relation between the person and the suitcase?",
+    "answer": "The person is holding the suitcase.",
+    "candidates": [
+      "The person is attached to the suitcase.",
+      "The person is wearing the suitcase.",
+      "The person is beside the suitcase.",
+      "The person is holding the suitcase."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1828",
+    "image_path": "s3://gamedata/eval_sglang/00fc0258b8f7_1065.jpg",
+    "question": "What is the relation between the person and the giraffe?",
+    "answer": "The person is touching the giraffe.",
+    "candidates": [
+      "The person is touching the giraffe.",
+      "The person is in the giraffe.",
+      "The person is over the giraffe.",
+      "The person is sitting on the giraffe."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1612",
+    "image_path": "s3://gamedata/eval_sglang/a182b2f4a386_562.jpg",
+    "question": "What is the relation between the person and the kite?",
+    "answer": "The person is riding the kite.",
+    "candidates": [
+      "The person is wearing the kite.",
+      "The person is standing on the kite.",
+      "The person is beside the kite.",
+      "The person is riding the kite."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1537",
+    "image_path": "s3://gamedata/eval_sglang/e0beee5fa16f_412.jpg",
+    "question": "What is the relation between the person and the wine glass?",
+    "answer": "The person is touching the wine glass.",
+    "candidates": [
+      "The person is touching the wine glass.",
+      "The person is beside the wine glass.",
+      "The person is looking at the wine glass.",
+      "The person is driving the wine glass."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1700",
+    "image_path": "s3://gamedata/eval_sglang/459c19aa4724_740.jpg",
+    "question": "What is the relation between the mouse and the keyboard?",
+    "answer": "The mouse is attached to the keyboard.",
+    "candidates": [
+      "The mouse is in front of the keyboard.",
+      "The mouse is beside the keyboard.",
+      "The mouse is attached to the keyboard.",
+      "The mouse is touching the keyboard."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1669",
+    "image_path": "s3://gamedata/eval_sglang/3757a41c10d3_684.jpg",
+    "question": "What is the relation between the dog and the bed?",
+    "answer": "The dog is beside the bed.",
+    "candidates": [
+      "The dog is beside the bed.",
+      "The dog is walking on the bed.",
+      "The dog is biting the bed.",
+      "The dog is catching the bed."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1388",
+    "image_path": "s3://gamedata/eval_sglang/17393b7cc0cf_92.jpg",
+    "question": "What is the relation between the person and the chair?",
+    "answer": "The person is touching the chair.",
+    "candidates": [
+      "The person is touching the chair.",
+      "The person is sitting on the chair.",
+      "The person is playing with the chair.",
+      "The person is walking on the chair."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1751",
+    "image_path": "s3://gamedata/eval_sglang/739b3068912c_869.jpg",
+    "question": "What is the relation between the cake and the bowl?",
+    "answer": "The cake is in the bowl.",
+    "candidates": [
+      "The cake is on the bowl.",
+      "The cake is beside the bowl.",
+      "The cake is attached to the bowl.",
+      "The cake is in the bowl."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1770",
+    "image_path": "s3://gamedata/eval_sglang/d12a5ba5de9a_923.jpg",
+    "question": "What is the relation between the suitcase and the person?",
+    "answer": "The suitcase is beside the person.",
+    "candidates": [
+      "The suitcase is on the person.",
+      "The suitcase is beside the person.",
+      "The suitcase is attached to the person.",
+      "The suitcase is over the person."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1524",
+    "image_path": "s3://gamedata/eval_sglang/a0989cc38805_384.jpg",
+    "question": "What is the relation between the laptop and the dining table?",
+    "answer": "The laptop is over the dining table.",
+    "candidates": [
+      "The laptop is in front of the dining table.",
+      "The laptop is beside the dining table.",
+      "The laptop is attached to the dining table.",
+      "The laptop is over the dining table."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1811",
+    "image_path": "s3://gamedata/eval_sglang/f9738a22fb2a_1014.jpg",
+    "question": "What is the relation between the elephant and the person?",
+    "answer": "The elephant is beside the person.",
+    "candidates": [
+      "The elephant is carrying the person.",
+      "The elephant is beside the person.",
+      "The elephant is over the person.",
+      "The elephant is attached to the person."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1354",
+    "image_path": "s3://gamedata/eval_sglang/7cea7eebe2b9_10.jpg",
+    "question": "What is the relation between the person and the umbrella?",
+    "answer": "The person is standing on the umbrella.",
+    "candidates": [
+      "The person is standing on the umbrella.",
+      "The person is touching the umbrella.",
+      "The person is holding the umbrella.",
+      "The person is attached to the umbrella."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1803",
+    "image_path": "s3://gamedata/eval_sglang/e5d32debc3ed_1002.jpg",
+    "question": "What is the relation between the person and the carrot?",
+    "answer": "The person is eating the carrot.",
+    "candidates": [
+      "The person is eating the carrot.",
+      "The person is standing on the carrot.",
+      "The person is sitting on the carrot.",
+      "The person is in front of the carrot."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1447",
+    "image_path": "s3://gamedata/eval_sglang/8aa95ab31695_209.jpg",
+    "question": "What is the relation between the person and the motorcycle?",
+    "answer": "The person is looking at the motorcycle.",
+    "candidates": [
+      "The person is holding the motorcycle.",
+      "The person is riding the motorcycle.",
+      "The person is looking at the motorcycle.",
+      "The person is about to hit the motorcycle."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1731",
+    "image_path": "s3://gamedata/eval_sglang/e00822f1bf76_793.jpg",
+    "question": "What is the relation between the couch and the dining table?",
+    "answer": "The couch is beside the dining table.",
+    "candidates": [
+      "The couch is attached to the dining table.",
+      "The couch is lying on the dining table.",
+      "The couch is beside the dining table.",
+      "The couch is in front of the dining table."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1404",
+    "image_path": "s3://gamedata/eval_sglang/9128f244315f_120.jpg",
+    "question": "What is the relation between the person and the book?",
+    "answer": "The person is beside the book.",
+    "candidates": [
+      "The person is beside the book.",
+      "The person is sitting on the book.",
+      "The person is exiting the book.",
+      "The person is standing on the book."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1380",
+    "image_path": "s3://gamedata/eval_sglang/b37af67d1f6f_76.jpg",
+    "question": "What is the relation between the person and the tv?",
+    "answer": "The person is beside the tv.",
+    "candidates": [
+      "The person is beside the tv.",
+      "The person is standing on the tv.",
+      "The person is holding the tv.",
+      "The person is wearing the tv."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1644",
+    "image_path": "s3://gamedata/eval_sglang/b9e95cd03c91_625.jpg",
+    "question": "What is the relation between the person and the cow?",
+    "answer": "The person is sitting on the cow.",
+    "candidates": [
+      "The person is sitting on the cow.",
+      "The person is standing on the cow.",
+      "The person is wearing the cow.",
+      "The person is walking on the cow."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1684",
+    "image_path": "s3://gamedata/eval_sglang/bf43bde06d90_709.jpg",
+    "question": "What is the relation between the cat and the bed?",
+    "answer": "The cat is sitting on the bed.",
+    "candidates": [
+      "The cat is in the bed.",
+      "The cat is beside the bed.",
+      "The cat is sitting on the bed.",
+      "The cat is lying on the bed."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1375",
+    "image_path": "s3://gamedata/eval_sglang/d052a310422d_71.jpg",
+    "question": "What is the relation between the person and the surfboard?",
+    "answer": "The person is attached to the surfboard.",
+    "candidates": [
+      "The person is walking on the surfboard.",
+      "The person is running on the surfboard.",
+      "The person is attached to the surfboard.",
+      "The person is looking at the surfboard."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1861",
+    "image_path": "s3://gamedata/eval_sglang/9c4060d6f7ba_1128.jpg",
+    "question": "What is the relation between the teddy bear and the person?",
+    "answer": "The teddy bear is beside the person.",
+    "candidates": [
+      "The teddy bear is in front of the person.",
+      "The teddy bear is beside the person.",
+      "The teddy bear is over the person.",
+      "The teddy bear is looking at the person."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1652",
+    "image_path": "s3://gamedata/eval_sglang/b67b8c1068a0_646.jpg",
+    "question": "What is the relation between the person and the bed?",
+    "answer": "The person is standing on the bed.",
+    "candidates": [
+      "The person is over the bed.",
+      "The person is standing on the bed.",
+      "The person is holding the bed.",
+      "The person is attached to the bed."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1466",
+    "image_path": "s3://gamedata/eval_sglang/b4e59e756340_249.jpg",
+    "question": "What is the relation between the person and the boat?",
+    "answer": "The person is standing on the boat.",
+    "candidates": [
+      "The person is in front of the boat.",
+      "The person is attached to the boat.",
+      "The person is standing on the boat.",
+      "The person is looking at the boat."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1699",
+    "image_path": "s3://gamedata/eval_sglang/d6d88349fd6e_737.jpg",
+    "question": "What is the relation between the book and the bed?",
+    "answer": "The book is beside the bed.",
+    "candidates": [
+      "The book is over the bed.",
+      "The book is attached to the bed.",
+      "The book is beside the bed.",
+      "The book is in front of the bed."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1764",
+    "image_path": "s3://gamedata/eval_sglang/c71c6adf357e_905.jpg",
+    "question": "What is the relation between the sink and the toilet?",
+    "answer": "The sink is over the toilet.",
+    "candidates": [
+      "The sink is on the toilet.",
+      "The sink is attached to the toilet.",
+      "The sink is over the toilet.",
+      "The sink is beside the toilet."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1836",
+    "image_path": "s3://gamedata/eval_sglang/97d1202edc99_1081.jpg",
+    "question": "What is the relation between the fork and the pizza?",
+    "answer": "The fork is touching the pizza.",
+    "candidates": [
+      "The fork is leaning on the pizza.",
+      "The fork is touching the pizza.",
+      "The fork is attached to the pizza.",
+      "The fork is beside the pizza."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1617",
+    "image_path": "s3://gamedata/eval_sglang/55dfbc06307d_579.jpg",
+    "question": "What is the relation between the person and the couch?",
+    "answer": "The person is in the couch.",
+    "candidates": [
+      "The person is in the couch.",
+      "The person is holding the couch.",
+      "The person is sitting on the couch.",
+      "The person is playing the couch."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1419",
+    "image_path": "s3://gamedata/eval_sglang/cf71bcac6da2_150.jpg",
+    "question": "What is the relation between the person and the cake?",
+    "answer": "The person is touching the cake.",
+    "candidates": [
+      "The person is touching the cake.",
+      "The person is standing on the cake.",
+      "The person is walking on the cake.",
+      "The person is playing the cake."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1486",
+    "image_path": "s3://gamedata/eval_sglang/dfb4bf5cb81e_297.jpg",
+    "question": "What is the relation between the person and the pizza?",
+    "answer": "The person is biting the pizza.",
+    "candidates": [
+      "The person is biting the pizza.",
+      "The person is standing on the pizza.",
+      "The person is wearing the pizza.",
+      "The person is beside the pizza."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1475",
+    "image_path": "s3://gamedata/eval_sglang/62f231f62091_269.jpg",
+    "question": "What is the relation between the person and the dog?",
+    "answer": "The person is in front of the dog.",
+    "candidates": [
+      "The person is in front of the dog.",
+      "The person is holding the dog.",
+      "The person is about to hit the dog.",
+      "The person is standing on the dog."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1457",
+    "image_path": "s3://gamedata/eval_sglang/341e5ec2f59b_235.jpg",
+    "question": "What is the relation between the person and the suitcase?",
+    "answer": "The person is in the suitcase.",
+    "candidates": [
+      "The person is in the suitcase.",
+      "The person is touching the suitcase.",
+      "The person is holding the suitcase.",
+      "The person is standing on the suitcase."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1763",
+    "image_path": "s3://gamedata/eval_sglang/d8954538f661_904.jpg",
+    "question": "What is the relation between the sink and the toilet?",
+    "answer": "The sink is over the toilet.",
+    "candidates": [
+      "The sink is over the toilet.",
+      "The sink is beside the toilet.",
+      "The sink is attached to the toilet.",
+      "The sink is in the toilet."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1566",
+    "image_path": "s3://gamedata/eval_sglang/05ef70e7f9bd_461.jpg",
+    "question": "What is the relation between the person and the sheep?",
+    "answer": "The person is riding the sheep.",
+    "candidates": [
+      "The person is riding the sheep.",
+      "The person is holding the sheep.",
+      "The person is standing on the sheep.",
+      "The person is in the sheep."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1717",
+    "image_path": "s3://gamedata/eval_sglang/ad504d49b34b_762.jpg",
+    "question": "What is the relation between the traffic light and the train?",
+    "answer": "The traffic light is in front of the train.",
+    "candidates": [
+      "The traffic light is in front of the train.",
+      "The traffic light is over the train.",
+      "The traffic light is beside the train.",
+      "The traffic light is in the train."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1738",
+    "image_path": "s3://gamedata/eval_sglang/13f71b904bb8_828.jpg",
+    "question": "What is the relation between the bowl and the oven?",
+    "answer": "The bowl is over the oven.",
+    "candidates": [
+      "The bowl is over the oven.",
+      "The bowl is in the oven.",
+      "The bowl is beside the oven.",
+      "The bowl is in front of the oven."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1366",
+    "image_path": "s3://gamedata/eval_sglang/28debbfdc388_45.jpg",
+    "question": "What is the relation between the wine glass and the dining table?",
+    "answer": "The wine glass is attached to the dining table.",
+    "candidates": [
+      "The wine glass is attached to the dining table.",
+      "The wine glass is leaning on the dining table.",
+      "The wine glass is beside the dining table.",
+      "The wine glass is in front of the dining table."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1379",
+    "image_path": "s3://gamedata/eval_sglang/b57f6aeefda4_75.jpg",
+    "question": "What is the relation between the potted plant and the vase?",
+    "answer": "The potted plant is in the vase.",
+    "candidates": [
+      "The potted plant is in front of the vase.",
+      "The potted plant is in the vase.",
+      "The potted plant is attached to the vase.",
+      "The potted plant is over the vase."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1840",
+    "image_path": "s3://gamedata/eval_sglang/f709a00455c2_1090.jpg",
+    "question": "What is the relation between the backpack and the bench?",
+    "answer": "The backpack is beside the bench.",
+    "candidates": [
+      "The backpack is beside the bench.",
+      "The backpack is attached to the bench.",
+      "The backpack is sitting on the bench.",
+      "The backpack is leaning on the bench."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1858",
+    "image_path": "s3://gamedata/eval_sglang/1be3b65fc754_1121.jpg",
+    "question": "What is the relation between the cat and the toilet?",
+    "answer": "The cat is leaning on the toilet.",
+    "candidates": [
+      "The cat is leaning on the toilet.",
+      "The cat is beside the toilet.",
+      "The cat is attached to the toilet.",
+      "The cat is sitting on the toilet."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1438",
+    "image_path": "s3://gamedata/eval_sglang/b4d64dfd710f_199.jpg",
+    "question": "What is the relation between the person and the motorcycle?",
+    "answer": "The person is lying on the motorcycle.",
+    "candidates": [
+      "The person is lying on the motorcycle.",
+      "The person is riding the motorcycle.",
+      "The person is holding the motorcycle.",
+      "The person is standing on the motorcycle."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1829",
+    "image_path": "s3://gamedata/eval_sglang/af11542f3f78_1066.jpg",
+    "question": "What is the relation between the person and the giraffe?",
+    "answer": "The person is in front of the giraffe.",
+    "candidates": [
+      "The person is in front of the giraffe.",
+      "The person is standing on the giraffe.",
+      "The person is holding the giraffe.",
+      "The person is looking at the giraffe."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1694",
+    "image_path": "s3://gamedata/eval_sglang/cfa83f2c29aa_730.jpg",
+    "question": "What is the relation between the person and the car?",
+    "answer": "The person is holding the car.",
+    "candidates": [
+      "The person is holding the car.",
+      "The person is in the car.",
+      "The person is in front of the car.",
+      "The person is sitting on the car."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1362",
+    "image_path": "s3://gamedata/eval_sglang/a297f099ae84_37.jpg",
+    "question": "What is the relation between the person and the cell phone?",
+    "answer": "The person is holding the cell phone.",
+    "candidates": [
+      "The person is eating the cell phone.",
+      "The person is beside the cell phone.",
+      "The person is riding the cell phone.",
+      "The person is holding the cell phone."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1392",
+    "image_path": "s3://gamedata/eval_sglang/20149eb9c6a9_100.jpg",
+    "question": "What is the relation between the person and the chair?",
+    "answer": "The person is beside the chair.",
+    "candidates": [
+      "The person is running on the chair.",
+      "The person is attached to the chair.",
+      "The person is beside the chair.",
+      "The person is walking on the chair."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1408",
+    "image_path": "s3://gamedata/eval_sglang/696d50beb90e_128.jpg",
+    "question": "What is the relation between the person and the sports ball?",
+    "answer": "The person is in front of the sports ball.",
+    "candidates": [
+      "The person is in front of the sports ball.",
+      "The person is looking at the sports ball.",
+      "The person is standing on the sports ball.",
+      "The person is sitting on the sports ball."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1384",
+    "image_path": "s3://gamedata/eval_sglang/0acf173cbad0_81.jpg",
+    "question": "What is the relation between the person and the tv?",
+    "answer": "The person is standing on the tv.",
+    "candidates": [
+      "The person is standing on the tv.",
+      "The person is holding the tv.",
+      "The person is walking on the tv.",
+      "The person is wearing the tv."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1737",
+    "image_path": "s3://gamedata/eval_sglang/b812d75d8bbf_826.jpg",
+    "question": "What is the relation between the sandwich and the cup?",
+    "answer": "The sandwich is over the cup.",
+    "candidates": [
+      "The sandwich is in front of the cup.",
+      "The sandwich is beside the cup.",
+      "The sandwich is holding the cup.",
+      "The sandwich is over the cup."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1370",
+    "image_path": "s3://gamedata/eval_sglang/34b8efc13599_57.jpg",
+    "question": "What is the relation between the person and the surfboard?",
+    "answer": "The person is holding the surfboard.",
+    "candidates": [
+      "The person is pushing the surfboard.",
+      "The person is wearing the surfboard.",
+      "The person is holding the surfboard.",
+      "The person is talking to the surfboard."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1723",
+    "image_path": "s3://gamedata/eval_sglang/212cbc7b8cc9_778.jpg",
+    "question": "What is the relation between the chair and the couch?",
+    "answer": "The chair is on the couch.",
+    "candidates": [
+      "The chair is on the couch.",
+      "The chair is beside the couch.",
+      "The chair is sitting on the couch.",
+      "The chair is lying on the couch."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1360",
+    "image_path": "s3://gamedata/eval_sglang/23902237e6a0_21.jpg",
+    "question": "What is the relation between the person and the tie?",
+    "answer": "The person is pulling the tie.",
+    "candidates": [
+      "The person is pulling the tie.",
+      "The person is swinging the tie.",
+      "The person is walking on the tie.",
+      "The person is holding the tie."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1541",
+    "image_path": "s3://gamedata/eval_sglang/83c1973c5377_419.jpg",
+    "question": "What is the relation between the person and the skis?",
+    "answer": "The person is playing with the skis.",
+    "candidates": [
+      "The person is in front of the skis.",
+      "The person is standing on the skis.",
+      "The person is holding the skis.",
+      "The person is playing with the skis."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1480",
+    "image_path": "s3://gamedata/eval_sglang/9471fe643e7c_280.jpg",
+    "question": "What is the relation between the fork and the dining table?",
+    "answer": "The fork is beside the dining table.",
+    "candidates": [
+      "The fork is beside the dining table.",
+      "The fork is looking at the dining table.",
+      "The fork is attached to the dining table.",
+      "The fork is touching the dining table."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1415",
+    "image_path": "s3://gamedata/eval_sglang/699eb8f8c598_144.jpg",
+    "question": "What is the relation between the person and the tennis racket?",
+    "answer": "The person is sitting on the tennis racket.",
+    "candidates": [
+      "The person is sitting on the tennis racket.",
+      "The person is walking on the tennis racket.",
+      "The person is looking at the tennis racket.",
+      "The person is running on the tennis racket."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1430",
+    "image_path": "s3://gamedata/eval_sglang/9e3e33899867_178.jpg",
+    "question": "What is the relation between the person and the bicycle?",
+    "answer": "The person is looking at the bicycle.",
+    "candidates": [
+      "The person is looking at the bicycle.",
+      "The person is standing on the bicycle.",
+      "The person is carrying the bicycle.",
+      "The person is holding the bicycle."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1444",
+    "image_path": "s3://gamedata/eval_sglang/cca4494880e6_206.jpg",
+    "question": "What is the relation between the person and the motorcycle?",
+    "answer": "The person is in the motorcycle.",
+    "candidates": [
+      "The person is in the motorcycle.",
+      "The person is in front of the motorcycle.",
+      "The person is looking at the motorcycle.",
+      "The person is walking on the motorcycle."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1753",
+    "image_path": "s3://gamedata/eval_sglang/247b3c5376c3_872.jpg",
+    "question": "What is the relation between the knife and the bowl?",
+    "answer": "The knife is in the bowl.",
+    "candidates": [
+      "The knife is in the bowl.",
+      "The knife is beside the bowl.",
+      "The knife is slicing the bowl.",
+      "The knife is attached to the bowl."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1704",
+    "image_path": "s3://gamedata/eval_sglang/90f052812563_744.jpg",
+    "question": "What is the relation between the person and the apple?",
+    "answer": "The person is holding the apple.",
+    "candidates": [
+      "The person is in front of the apple.",
+      "The person is standing on the apple.",
+      "The person is holding the apple.",
+      "The person is sitting on the apple."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1350",
+    "image_path": "s3://gamedata/eval_sglang/8178ced82782_1.jpg",
+    "question": "What is the relation between the person and the umbrella?",
+    "answer": "The person is carrying the umbrella.",
+    "candidates": [
+      "The person is carrying the umbrella.",
+      "The person is looking at the umbrella.",
+      "The person is in front of the umbrella.",
+      "The person is standing on the umbrella."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1547",
+    "image_path": "s3://gamedata/eval_sglang/a5cf3563b54e_429.jpg",
+    "question": "What is the relation between the person and the bench?",
+    "answer": "The person is touching the bench.",
+    "candidates": [
+      "The person is touching the bench.",
+      "The person is in the bench.",
+      "The person is standing on the bench.",
+      "The person is pulling the bench."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1870",
+    "image_path": "s3://gamedata/eval_sglang/d5eb85061b39_1166.jpg",
+    "question": "What is the relation between the apple and the banana?",
+    "answer": "The apple is beside the banana.",
+    "candidates": [
+      "The apple is attached to the banana.",
+      "The apple is beside the banana.",
+      "The apple is in the banana.",
+      "The apple is holding the banana."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1372",
+    "image_path": "s3://gamedata/eval_sglang/627ad3396f3c_63.jpg",
+    "question": "What is the relation between the person and the surfboard?",
+    "answer": "The person is beside the surfboard.",
+    "candidates": [
+      "The person is in front of the surfboard.",
+      "The person is beside the surfboard.",
+      "The person is carrying the surfboard.",
+      "The person is standing on the surfboard."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1476",
+    "image_path": "s3://gamedata/eval_sglang/8503610087e4_271.jpg",
+    "question": "What is the relation between the person and the dog?",
+    "answer": "The person is carrying the dog.",
+    "candidates": [
+      "The person is carrying the dog.",
+      "The person is beside the dog.",
+      "The person is standing on the dog.",
+      "The person is walking on the dog."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1427",
+    "image_path": "s3://gamedata/eval_sglang/3104b5f4034a_173.jpg",
+    "question": "What is the relation between the cat and the person?",
+    "answer": "The cat is beside the person.",
+    "candidates": [
+      "The cat is touching the person.",
+      "The cat is beside the person.",
+      "The cat is attached to the person.",
+      "The cat is in front of the person."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1368",
+    "image_path": "s3://gamedata/eval_sglang/7b24c34ede44_49.jpg",
+    "question": "What is the relation between the cup and the dining table?",
+    "answer": "The cup is beside the dining table.",
+    "candidates": [
+      "The cup is beside the dining table.",
+      "The cup is attached to the dining table.",
+      "The cup is touching the dining table.",
+      "The cup is over the dining table."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1352",
+    "image_path": "s3://gamedata/eval_sglang/c7a6bdbf5ef5_8.jpg",
+    "question": "What is the relation between the person and the umbrella?",
+    "answer": "The person is in the umbrella.",
+    "candidates": [
+      "The person is on the umbrella.",
+      "The person is standing on the umbrella.",
+      "The person is beside the umbrella.",
+      "The person is in the umbrella."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1526",
+    "image_path": "s3://gamedata/eval_sglang/672ccb1d20f0_388.jpg",
+    "question": "What is the relation between the person and the cup?",
+    "answer": "The person is beside the cup.",
+    "candidates": [
+      "The person is looking at the cup.",
+      "The person is attached to the cup.",
+      "The person is beside the cup.",
+      "The person is walking on the cup."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1784",
+    "image_path": "s3://gamedata/eval_sglang/58634d6ed787_961.jpg",
+    "question": "What is the relation between the couch and the chair?",
+    "answer": "The couch is beside the chair.",
+    "candidates": [
+      "The couch is in front of the chair.",
+      "The couch is beside the chair.",
+      "The couch is sitting on the chair.",
+      "The couch is attached to the chair."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1671",
+    "image_path": "s3://gamedata/eval_sglang/19abecf7274b_687.jpg",
+    "question": "What is the relation between the person and the frisbee?",
+    "answer": "The person is beside the frisbee.",
+    "candidates": [
+      "The person is beside the frisbee.",
+      "The person is holding the frisbee.",
+      "The person is looking at the frisbee.",
+      "The person is wearing the frisbee."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1893",
+    "image_path": "s3://gamedata/eval_sglang/f788529b6e98_1222.jpg",
+    "question": "What is the relation between the bench and the elephant?",
+    "answer": "The bench is beside the elephant.",
+    "candidates": [
+      "The bench is beside the elephant.",
+      "The bench is attached to the elephant.",
+      "The bench is riding the elephant.",
+      "The bench is over the elephant."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1496",
+    "image_path": "s3://gamedata/eval_sglang/d5aa8a16c249_322.jpg",
+    "question": "What is the relation between the person and the spoon?",
+    "answer": "The person is biting the spoon.",
+    "candidates": [
+      "The person is biting the spoon.",
+      "The person is beside the spoon.",
+      "The person is standing on the spoon.",
+      "The person is crossing the spoon."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1522",
+    "image_path": "s3://gamedata/eval_sglang/d1d9b7b51a3b_381.jpg",
+    "question": "What is the relation between the cup and the bottle?",
+    "answer": "The cup is holding the bottle.",
+    "candidates": [
+      "The cup is attached to the bottle.",
+      "The cup is beside the bottle.",
+      "The cup is holding the bottle.",
+      "The cup is in the bottle."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1778",
+    "image_path": "s3://gamedata/eval_sglang/1670f8c62555_942.jpg",
+    "question": "What is the relation between the dog and the frisbee?",
+    "answer": "The dog is biting the frisbee.",
+    "candidates": [
+      "The dog is carrying the frisbee.",
+      "The dog is beside the frisbee.",
+      "The dog is holding the frisbee.",
+      "The dog is biting the frisbee."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1365",
+    "image_path": "s3://gamedata/eval_sglang/dc0057389c70_43.jpg",
+    "question": "What is the relation between the person and the cell phone?",
+    "answer": "The person is sitting on the cell phone.",
+    "candidates": [
+      "The person is sitting on the cell phone.",
+      "The person is standing on the cell phone.",
+      "The person is walking on the cell phone.",
+      "The person is holding the cell phone."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1507",
+    "image_path": "s3://gamedata/eval_sglang/30959be3eaf8_345.jpg",
+    "question": "What is the relation between the person and the truck?",
+    "answer": "The person is climbing the truck.",
+    "candidates": [
+      "The person is climbing the truck.",
+      "The person is standing on the truck.",
+      "The person is playing the truck.",
+      "The person is sitting on the truck."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1579",
+    "image_path": "s3://gamedata/eval_sglang/115c5552ccfb_479.jpg",
+    "question": "What is the relation between the person and the teddy bear?",
+    "answer": "The person is holding the teddy bear.",
+    "candidates": [
+      "The person is in front of the teddy bear.",
+      "The person is holding the teddy bear.",
+      "The person is pulling the teddy bear.",
+      "The person is standing on the teddy bear."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1632",
+    "image_path": "s3://gamedata/eval_sglang/8acb888e7a44_606.jpg",
+    "question": "What is the relation between the carrot and the dining table?",
+    "answer": "The carrot is in the dining table.",
+    "candidates": [
+      "The carrot is in the dining table.",
+      "The carrot is beside the dining table.",
+      "The carrot is leaning on the dining table.",
+      "The carrot is attached to the dining table."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1659",
+    "image_path": "s3://gamedata/eval_sglang/6c3f8f382ad2_654.jpg",
+    "question": "What is the relation between the person and the bed?",
+    "answer": "The person is sitting on the bed.",
+    "candidates": [
+      "The person is attached to the bed.",
+      "The person is standing on the bed.",
+      "The person is in front of the bed.",
+      "The person is sitting on the bed."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1373",
+    "image_path": "s3://gamedata/eval_sglang/39036992fea5_67.jpg",
+    "question": "What is the relation between the person and the surfboard?",
+    "answer": "The person is carrying the surfboard.",
+    "candidates": [
+      "The person is in the surfboard.",
+      "The person is playing with the surfboard.",
+      "The person is carrying the surfboard.",
+      "The person is wearing the surfboard."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1485",
+    "image_path": "s3://gamedata/eval_sglang/2bd9c9a8c4da_296.jpg",
+    "question": "What is the relation between the person and the pizza?",
+    "answer": "The person is touching the pizza.",
+    "candidates": [
+      "The person is over the pizza.",
+      "The person is swinging the pizza.",
+      "The person is standing on the pizza.",
+      "The person is touching the pizza."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1555",
+    "image_path": "s3://gamedata/eval_sglang/054c710041f2_440.jpg",
+    "question": "What is the relation between the person and the oven?",
+    "answer": "The person is touching the oven.",
+    "candidates": [
+      "The person is touching the oven.",
+      "The person is wearing the oven.",
+      "The person is standing on the oven.",
+      "The person is in the oven."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1668",
+    "image_path": "s3://gamedata/eval_sglang/127feba3474c_681.jpg",
+    "question": "What is the relation between the dog and the bed?",
+    "answer": "The dog is sitting on the bed.",
+    "candidates": [
+      "The dog is sitting on the bed.",
+      "The dog is standing on the bed.",
+      "The dog is in the bed.",
+      "The dog is lying on the bed."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1428",
+    "image_path": "s3://gamedata/eval_sglang/b985a3870285_174.jpg",
+    "question": "What is the relation between the cat and the person?",
+    "answer": "The cat is standing on the person.",
+    "candidates": [
+      "The cat is standing on the person.",
+      "The cat is beside the person.",
+      "The cat is in front of the person.",
+      "The cat is sitting on the person."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1592",
+    "image_path": "s3://gamedata/eval_sglang/2e83ddc72984_507.jpg",
+    "question": "What is the relation between the person and the baseball glove?",
+    "answer": "The person is beside the baseball glove.",
+    "candidates": [
+      "The person is beside the baseball glove.",
+      "The person is standing on the baseball glove.",
+      "The person is looking at the baseball glove.",
+      "The person is leaning on the baseball glove."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1465",
+    "image_path": "s3://gamedata/eval_sglang/42f077e46848_248.jpg",
+    "question": "What is the relation between the donut and the dining table?",
+    "answer": "The donut is beside the dining table.",
+    "candidates": [
+      "The donut is beside the dining table.",
+      "The donut is over the dining table.",
+      "The donut is attached to the dining table.",
+      "The donut is sitting on the dining table."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1397",
+    "image_path": "s3://gamedata/eval_sglang/1802597afa49_108.jpg",
+    "question": "What is the relation between the person and the horse?",
+    "answer": "The person is beside the horse.",
+    "candidates": [
+      "The person is pushing the horse.",
+      "The person is standing on the horse.",
+      "The person is playing the horse.",
+      "The person is beside the horse."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1819",
+    "image_path": "s3://gamedata/eval_sglang/eb00076b25a9_1045.jpg",
+    "question": "What is the relation between the cat and the car?",
+    "answer": "The cat is looking at the car.",
+    "candidates": [
+      "The cat is looking at the car.",
+      "The cat is attached to the car.",
+      "The cat is in front of the car.",
+      "The cat is driving the car."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1511",
+    "image_path": "s3://gamedata/eval_sglang/5513d4155156_350.jpg",
+    "question": "What is the relation between the person and the train?",
+    "answer": "The person is beside the train.",
+    "candidates": [
+      "The person is crossing the train.",
+      "The person is attached to the train.",
+      "The person is eating the train.",
+      "The person is beside the train."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1402",
+    "image_path": "s3://gamedata/eval_sglang/200bc9d742dd_117.jpg",
+    "question": "What is the relation between the person and the dining table?",
+    "answer": "The person is in front of the dining table.",
+    "candidates": [
+      "The person is sitting on the dining table.",
+      "The person is standing on the dining table.",
+      "The person is in front of the dining table.",
+      "The person is walking on the dining table."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1733",
+    "image_path": "s3://gamedata/eval_sglang/ffdf0daaa61c_798.jpg",
+    "question": "What is the relation between the person and the airplane?",
+    "answer": "The person is walking on the airplane.",
+    "candidates": [
+      "The person is walking on the airplane.",
+      "The person is beside the airplane.",
+      "The person is holding the airplane.",
+      "The person is wearing the airplane."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1705",
+    "image_path": "s3://gamedata/eval_sglang/f112e86828d0_745.jpg",
+    "question": "What is the relation between the person and the apple?",
+    "answer": "The person is holding the apple.",
+    "candidates": [
+      "The person is attached to the apple.",
+      "The person is holding the apple.",
+      "The person is playing the apple.",
+      "The person is standing on the apple."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1727",
+    "image_path": "s3://gamedata/eval_sglang/8ea72fae6a78_788.jpg",
+    "question": "What is the relation between the horse and the person?",
+    "answer": "The horse is looking at the person.",
+    "candidates": [
+      "The horse is looking at the person.",
+      "The horse is over the person.",
+      "The horse is walking on the person.",
+      "The horse is pulling the person."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1787",
+    "image_path": "s3://gamedata/eval_sglang/da9b55213632_965.jpg",
+    "question": "What is the relation between the broccoli and the carrot?",
+    "answer": "The broccoli is on the carrot.",
+    "candidates": [
+      "The broccoli is on the carrot.",
+      "The broccoli is beside the carrot.",
+      "The broccoli is in the carrot.",
+      "The broccoli is attached to the carrot."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1649",
+    "image_path": "s3://gamedata/eval_sglang/7413e2bf069a_639.jpg",
+    "question": "What is the relation between the person and the toothbrush?",
+    "answer": "The person is holding the toothbrush.",
+    "candidates": [
+      "The person is looking at the toothbrush.",
+      "The person is sitting on the toothbrush.",
+      "The person is beside the toothbrush.",
+      "The person is holding the toothbrush."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1551",
+    "image_path": "s3://gamedata/eval_sglang/6719fc949f1e_436.jpg",
+    "question": "What is the relation between the person and the bench?",
+    "answer": "The person is touching the bench.",
+    "candidates": [
+      "The person is holding the bench.",
+      "The person is touching the bench.",
+      "The person is swinging the bench.",
+      "The person is sitting on the bench."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1853",
+    "image_path": "s3://gamedata/eval_sglang/f40dfa2fb826_1115.jpg",
+    "question": "What is the relation between the dog and the car?",
+    "answer": "The dog is beside the car.",
+    "candidates": [
+      "The dog is beside the car.",
+      "The dog is in the car.",
+      "The dog is standing on the car.",
+      "The dog is sitting on the car."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1873",
+    "image_path": "s3://gamedata/eval_sglang/f9ad1b046851_1176.jpg",
+    "question": "What is the relation between the cat and the tv?",
+    "answer": "The cat is standing on the tv.",
+    "candidates": [
+      "The cat is standing on the tv.",
+      "The cat is in the tv.",
+      "The cat is looking at the tv.",
+      "The cat is lying on the tv."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1517",
+    "image_path": "s3://gamedata/eval_sglang/ad7c77d79f4d_370.jpg",
+    "question": "What is the relation between the cat and the chair?",
+    "answer": "The cat is attached to the chair.",
+    "candidates": [
+      "The cat is attached to the chair.",
+      "The cat is sitting on the chair.",
+      "The cat is beside the chair.",
+      "The cat is lying on the chair."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1423",
+    "image_path": "s3://gamedata/eval_sglang/c01f88766628_155.jpg",
+    "question": "What is the relation between the person and the cake?",
+    "answer": "The person is in the cake.",
+    "candidates": [
+      "The person is in the cake.",
+      "The person is running on the cake.",
+      "The person is exiting the cake.",
+      "The person is beside the cake."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1771",
+    "image_path": "s3://gamedata/eval_sglang/21a3312ad949_924.jpg",
+    "question": "What is the relation between the fork and the cup?",
+    "answer": "The fork is in the cup.",
+    "candidates": [
+      "The fork is in the cup.",
+      "The fork is beside the cup.",
+      "The fork is holding the cup.",
+      "The fork is looking at the cup."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1482",
+    "image_path": "s3://gamedata/eval_sglang/bd14e7ef3360_285.jpg",
+    "question": "What is the relation between the knife and the dining table?",
+    "answer": "The knife is beside the dining table.",
+    "candidates": [
+      "The knife is beside the dining table.",
+      "The knife is sitting on the dining table.",
+      "The knife is attached to the dining table.",
+      "The knife is slicing the dining table."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1484",
+    "image_path": "s3://gamedata/eval_sglang/b39163c73e02_288.jpg",
+    "question": "What is the relation between the knife and the dining table?",
+    "answer": "The knife is beside the dining table.",
+    "candidates": [
+      "The knife is attached to the dining table.",
+      "The knife is beside the dining table.",
+      "The knife is over the dining table.",
+      "The knife is sitting on the dining table."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1660",
+    "image_path": "s3://gamedata/eval_sglang/5264508041c9_656.jpg",
+    "question": "What is the relation between the suitcase and the bed?",
+    "answer": "The suitcase is in front of the bed.",
+    "candidates": [
+      "The suitcase is in front of the bed.",
+      "The suitcase is sitting on the bed.",
+      "The suitcase is attached to the bed.",
+      "The suitcase is lying on the bed."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1564",
+    "image_path": "s3://gamedata/eval_sglang/64139a7977f1_458.jpg",
+    "question": "What is the relation between the person and the sheep?",
+    "answer": "The person is chasing the sheep.",
+    "candidates": [
+      "The person is chasing the sheep.",
+      "The person is standing on the sheep.",
+      "The person is holding the sheep.",
+      "The person is in the sheep."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1359",
+    "image_path": "s3://gamedata/eval_sglang/ed730216b554_20.jpg",
+    "question": "What is the relation between the person and the tie?",
+    "answer": "The person is driving the tie.",
+    "candidates": [
+      "The person is beside the tie.",
+      "The person is looking at the tie.",
+      "The person is driving the tie.",
+      "The person is in front of the tie."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1816",
+    "image_path": "s3://gamedata/eval_sglang/3c13800644b1_1036.jpg",
+    "question": "What is the relation between the tennis racket and the sports ball?",
+    "answer": "The tennis racket is beside the sports ball.",
+    "candidates": [
+      "The tennis racket is beside the sports ball.",
+      "The tennis racket is holding the sports ball.",
+      "The tennis racket is throwing the sports ball.",
+      "The tennis racket is about to hit the sports ball."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1421",
+    "image_path": "s3://gamedata/eval_sglang/3d36627885cb_152.jpg",
+    "question": "What is the relation between the person and the cake?",
+    "answer": "The person is beside the cake.",
+    "candidates": [
+      "The person is attached to the cake.",
+      "The person is sitting on the cake.",
+      "The person is beside the cake.",
+      "The person is biting the cake."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1743",
+    "image_path": "s3://gamedata/eval_sglang/b5dff15a3e58_838.jpg",
+    "question": "What is the relation between the cell phone and the person?",
+    "answer": "The cell phone is on the person.",
+    "candidates": [
+      "The cell phone is on the person.",
+      "The cell phone is over the person.",
+      "The cell phone is in front of the person.",
+      "The cell phone is beside the person."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1479",
+    "image_path": "s3://gamedata/eval_sglang/6be5ba4aeaa0_279.jpg",
+    "question": "What is the relation between the laptop and the tv?",
+    "answer": "The laptop is beside the tv.",
+    "candidates": [
+      "The laptop is attached to the tv.",
+      "The laptop is in the tv.",
+      "The laptop is looking at the tv.",
+      "The laptop is beside the tv."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1367",
+    "image_path": "s3://gamedata/eval_sglang/a9361d202bb9_46.jpg",
+    "question": "What is the relation between the cup and the knife?",
+    "answer": "The cup is beside the knife.",
+    "candidates": [
+      "The cup is holding the knife.",
+      "The cup is beside the knife.",
+      "The cup is in front of the knife.",
+      "The cup is in the knife."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1417",
+    "image_path": "s3://gamedata/eval_sglang/8326a0ca4a07_148.jpg",
+    "question": "What is the relation between the apple and the bowl?",
+    "answer": "The apple is beside the bowl.",
+    "candidates": [
+      "The apple is beside the bowl.",
+      "The apple is in the bowl.",
+      "The apple is attached to the bowl.",
+      "The apple is over the bowl."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1837",
+    "image_path": "s3://gamedata/eval_sglang/ae5b1af946d2_1083.jpg",
+    "question": "What is the relation between the fork and the pizza?",
+    "answer": "The fork is attached to the pizza.",
+    "candidates": [
+      "The fork is over the pizza.",
+      "The fork is beside the pizza.",
+      "The fork is attached to the pizza.",
+      "The fork is touching the pizza."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1437",
+    "image_path": "s3://gamedata/eval_sglang/e76898853713_197.jpg",
+    "question": "What is the relation between the person and the backpack?",
+    "answer": "The person is touching the backpack.",
+    "candidates": [
+      "The person is touching the backpack.",
+      "The person is standing on the backpack.",
+      "The person is running on the backpack.",
+      "The person is playing the backpack."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1399",
+    "image_path": "s3://gamedata/eval_sglang/98f367f3fd70_113.jpg",
+    "question": "What is the relation between the person and the dining table?",
+    "answer": "The person is beside the dining table.",
+    "candidates": [
+      "The person is looking at the dining table.",
+      "The person is walking on the dining table.",
+      "The person is beside the dining table.",
+      "The person is holding the dining table."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1817",
+    "image_path": "s3://gamedata/eval_sglang/524c32d92632_1038.jpg",
+    "question": "What is the relation between the tennis racket and the sports ball?",
+    "answer": "The tennis racket is over the sports ball.",
+    "candidates": [
+      "The tennis racket is over the sports ball.",
+      "The tennis racket is playing the sports ball.",
+      "The tennis racket is about to hit the sports ball.",
+      "The tennis racket is looking at the sports ball."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1468",
+    "image_path": "s3://gamedata/eval_sglang/e554c92813c5_252.jpg",
+    "question": "What is the relation between the person and the boat?",
+    "answer": "The person is standing on the boat.",
+    "candidates": [
+      "The person is attached to the boat.",
+      "The person is holding the boat.",
+      "The person is standing on the boat.",
+      "The person is jumping from the boat."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1610",
+    "image_path": "s3://gamedata/eval_sglang/286b4f7935c1_560.jpg",
+    "question": "What is the relation between the person and the kite?",
+    "answer": "The person is holding the kite.",
+    "candidates": [
+      "The person is guiding the kite.",
+      "The person is in front of the kite.",
+      "The person is holding the kite.",
+      "The person is standing on the kite."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1744",
+    "image_path": "s3://gamedata/eval_sglang/4c46edd0adb3_839.jpg",
+    "question": "What is the relation between the mouse and the laptop?",
+    "answer": "The mouse is on the laptop.",
+    "candidates": [
+      "The mouse is on the laptop.",
+      "The mouse is beside the laptop.",
+      "The mouse is holding the laptop.",
+      "The mouse is in front of the laptop."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1718",
+    "image_path": "s3://gamedata/eval_sglang/00327283923a_763.jpg",
+    "question": "What is the relation between the microwave and the refrigerator?",
+    "answer": "The microwave is beside the refrigerator.",
+    "candidates": [
+      "The microwave is beside the refrigerator.",
+      "The microwave is in front of the refrigerator.",
+      "The microwave is in the refrigerator.",
+      "The microwave is attached to the refrigerator."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1469",
+    "image_path": "s3://gamedata/eval_sglang/78c7df6f5b33_254.jpg",
+    "question": "What is the relation between the person and the boat?",
+    "answer": "The person is standing on the boat.",
+    "candidates": [
+      "The person is beside the boat.",
+      "The person is wearing the boat.",
+      "The person is standing on the boat.",
+      "The person is playing the boat."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1577",
+    "image_path": "s3://gamedata/eval_sglang/f492398f672f_476.jpg",
+    "question": "What is the relation between the traffic light and the car?",
+    "answer": "The traffic light is beside the car.",
+    "candidates": [
+      "The traffic light is beside the car.",
+      "The traffic light is in the car.",
+      "The traffic light is over the car.",
+      "The traffic light is driving the car."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1387",
+    "image_path": "s3://gamedata/eval_sglang/d0c68e6b258c_90.jpg",
+    "question": "What is the relation between the person and the remote?",
+    "answer": "The person is playing the remote.",
+    "candidates": [
+      "The person is in front of the remote.",
+      "The person is walking on the remote.",
+      "The person is standing on the remote.",
+      "The person is playing the remote."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1478",
+    "image_path": "s3://gamedata/eval_sglang/c089e8f2fd1e_273.jpg",
+    "question": "What is the relation between the person and the dog?",
+    "answer": "The person is chasing the dog.",
+    "candidates": [
+      "The person is chasing the dog.",
+      "The person is jumping over the dog.",
+      "The person is holding the dog.",
+      "The person is looking at the dog."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1391",
+    "image_path": "s3://gamedata/eval_sglang/9f59277074e7_97.jpg",
+    "question": "What is the relation between the person and the chair?",
+    "answer": "The person is in the chair.",
+    "candidates": [
+      "The person is wearing the chair.",
+      "The person is holding the chair.",
+      "The person is beside the chair.",
+      "The person is in the chair."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1758",
+    "image_path": "s3://gamedata/eval_sglang/ad76bd387642_885.jpg",
+    "question": "What is the relation between the dog and the couch?",
+    "answer": "The dog is beside the couch.",
+    "candidates": [
+      "The dog is beside the couch.",
+      "The dog is running on the couch.",
+      "The dog is lying on the couch.",
+      "The dog is walking on the couch."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1821",
+    "image_path": "s3://gamedata/eval_sglang/18154655b436_1050.jpg",
+    "question": "What is the relation between the surfboard and the person?",
+    "answer": "The surfboard is beside the person.",
+    "candidates": [
+      "The surfboard is pulling the person.",
+      "The surfboard is over the person.",
+      "The surfboard is beside the person.",
+      "The surfboard is attached to the person."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1741",
+    "image_path": "s3://gamedata/eval_sglang/67f8e5ed5836_834.jpg",
+    "question": "What is the relation between the cell phone and the person?",
+    "answer": "The cell phone is beside the person.",
+    "candidates": [
+      "The cell phone is touching the person.",
+      "The cell phone is wearing the person.",
+      "The cell phone is beside the person.",
+      "The cell phone is looking at the person."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1481",
+    "image_path": "s3://gamedata/eval_sglang/3af9eb4b2c46_283.jpg",
+    "question": "What is the relation between the fork and the dining table?",
+    "answer": "The fork is beside the dining table.",
+    "candidates": [
+      "The fork is attached to the dining table.",
+      "The fork is beside the dining table.",
+      "The fork is over the dining table.",
+      "The fork is looking at the dining table."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1747",
+    "image_path": "s3://gamedata/eval_sglang/451eb2b8b954_852.jpg",
+    "question": "What is the relation between the person and the hair drier?",
+    "answer": "The person is holding the hair drier.",
+    "candidates": [
+      "The person is wearing the hair drier.",
+      "The person is holding the hair drier.",
+      "The person is sitting on the hair drier.",
+      "The person is looking at the hair drier."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1827",
+    "image_path": "s3://gamedata/eval_sglang/e4126e75c403_1063.jpg",
+    "question": "What is the relation between the person and the potted plant?",
+    "answer": "The person is holding the potted plant.",
+    "candidates": [
+      "The person is holding the potted plant.",
+      "The person is sitting on the potted plant.",
+      "The person is wearing the potted plant.",
+      "The person is in front of the potted plant."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1619",
+    "image_path": "s3://gamedata/eval_sglang/ed83077468d7_589.jpg",
+    "question": "What is the relation between the fork and the knife?",
+    "answer": "The fork is beside the knife.",
+    "candidates": [
+      "The fork is on the knife.",
+      "The fork is holding the knife.",
+      "The fork is attached to the knife.",
+      "The fork is beside the knife."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1715",
+    "image_path": "s3://gamedata/eval_sglang/1ed8531b63cf_760.jpg",
+    "question": "What is the relation between the person and the clock?",
+    "answer": "The person is painted on the clock.",
+    "candidates": [
+      "The person is painted on the clock.",
+      "The person is riding the clock.",
+      "The person is wearing the clock.",
+      "The person is sitting on the clock."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1746",
+    "image_path": "s3://gamedata/eval_sglang/2832762c515b_843.jpg",
+    "question": "What is the relation between the backpack and the person?",
+    "answer": "The backpack is attached to the person.",
+    "candidates": [
+      "The backpack is in front of the person.",
+      "The backpack is attached to the person.",
+      "The backpack is beside the person.",
+      "The backpack is looking at the person."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1834",
+    "image_path": "s3://gamedata/eval_sglang/d06b4c15a9bb_1075.jpg",
+    "question": "What is the relation between the donut and the bowl?",
+    "answer": "The donut is in the bowl.",
+    "candidates": [
+      "The donut is beside the bowl.",
+      "The donut is in the bowl.",
+      "The donut is looking at the bowl.",
+      "The donut is attached to the bowl."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1546",
+    "image_path": "s3://gamedata/eval_sglang/70df3b5aded6_426.jpg",
+    "question": "What is the relation between the person and the skis?",
+    "answer": "The person is wearing the skis.",
+    "candidates": [
+      "The person is over the skis.",
+      "The person is touching the skis.",
+      "The person is wearing the skis.",
+      "The person is beside the skis."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1559",
+    "image_path": "s3://gamedata/eval_sglang/d16029c6c742_448.jpg",
+    "question": "What is the relation between the umbrella and the person?",
+    "answer": "The umbrella is over the person.",
+    "candidates": [
+      "The umbrella is attached to the person.",
+      "The umbrella is beside the person.",
+      "The umbrella is over the person.",
+      "The umbrella is looking at the person."
+    ],
+    "category": "CRPE"
+  },
+  {
+    "id": "crpe_1774",
+    "image_path": "s3://gamedata/eval_sglang/b1c9b9e186e6_931.jpg",
+    "question": "What is the relation between the dog and the frisbee?",
+    "answer": "The dog is looking at the frisbee.",
+    "candidates": [
+      "The dog is looking at the frisbee.",
+      "The dog is sitting on the frisbee.",
+      "The dog is throwing the frisbee.",
+      "The dog is standing on the frisbee."
+    ],
+    "category": "CRPE"
+  }
+]
