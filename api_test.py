@@ -253,6 +253,7 @@ class MultiModalClient:
                                     prev_len = len(full_text)
         except Exception as e:
             self._logger(f"Error during request: {e}")
+            raise
 
 
 def construct_prompt(query, image_num, audio_nums=0, system_prompt="You are a helpful AI assistant."):
@@ -341,7 +342,7 @@ def extract_frames_from_video(video_path, max_frames=8):
 
     return frames
 
-    
+
 def round_by_factor(number: int, factor: int) -> int:
     """Returns the closest integer to 'number' that is divisible by 'factor'."""
     return round(number / factor) * factor
@@ -393,23 +394,172 @@ def smart_resize(
         w_bar = ceil_by_factor(width * beta, factor)
 
     if min_side > 0:
-        
+
         if h_bar < min_side:
             beta = min_side / float(h_bar)
             h_bar = ceil_by_factor(min_side, factor)
             w_bar = ceil_by_factor(w_bar * beta, factor)
-        
+
         if w_bar < min_side:
             beta = min_side / float(w_bar)
             w_bar = ceil_by_factor(min_side, factor)
             h_bar = ceil_by_factor(h_bar * beta, factor)
-    
+
     return h_bar, w_bar
+
+
+async def run_asset_tests(mode: str) -> None:
+    """API_TEST_MODE=images|video API_TEST_CAPTURE_DIR=... python3 api_test.py.
+
+    Uses paired images for BeeBee; video is sent as chronologically ordered
+    sampled frame pairs, with sampled frame indices recorded in requests.jsonl.
+    Server: TP=1, skip-server-warmup, disable-radix-cache; run requests serially.
+    """
+    client = MultiModalClient(
+        url=os.getenv("API_TEST_URL", "http://127.0.0.1:18004/generate_stream"),
+        default_sampling_params={
+            "max_new_tokens": 256,
+            "temperature": 0.0,
+            "stop": "<|im_end|>",
+        },
+    )
+    assets = Path(os.getenv("API_TEST_ASSETS", "examples/assets"))
+    capture_dir = Path(os.environ["API_TEST_CAPTURE_DIR"]).resolve()
+    capture_dir.mkdir(parents=True, exist_ok=True)
+    control = capture_dir / "control.json"
+    requests = []
+    if mode == "video":
+        path = assets / "test_video.mp4"
+        cap = cv2.VideoCapture(str(path))
+        if not cap.isOpened():
+            raise RuntimeError(f"Cannot open video {path}")
+        total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        fps = cap.get(cv2.CAP_PROP_FPS)
+        # Container frame counts can include an undecodable trailing frame.
+        reported_total = total
+        total = 0
+        while cap.grab():
+            total += 1
+        cap.release()
+        if total < 16:
+            raise RuntimeError(f"Need at least 16 decodable frames, got {total}")
+        cap = cv2.VideoCapture(str(path))
+        # Compare full video context and two disjoint temporal segments.
+        for label, start, stop in (
+            ("full", 0, total - 1),
+            ("first", 0, total // 2 - 1),
+            ("second", total // 2, total - 1),
+        ):
+            indices = np.linspace(start, stop, 16, dtype=int).tolist()
+            frames = []
+            for idx in indices:
+                cap.set(cv2.CAP_PROP_POS_FRAMES, idx)
+                ok, frame = cap.read()
+                if not ok:
+                    raise RuntimeError(f"Failed reading video frame {idx}")
+                frames.append(Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)))
+            for task, query in (
+                ("describe", "按时间顺序描述这段视频的内容和主要变化。"),
+                ("ocr", "按时间顺序识别这些视频帧中的文字，没有文字请说明。"),
+            ):
+                requests.append(
+                    (
+                        f"video_{label}_{task}",
+                        path,
+                        frames,
+                        query,
+                        {
+                            "frame_indices": indices,
+                            "fps": fps,
+                            "task": task,
+                            "decoded_frame_count": total,
+                            "reported_frame_count": reported_total,
+                            "video_transport": "16 sampled frames as 8 BeeBee image pairs",
+                        },
+                    )
+                )
+        cap.release()
+    else:
+        for path in sorted(assets.iterdir()):
+            if path.suffix.lower() not in {".jpg", ".jpeg", ".png"}:
+                continue
+            with Image.open(path) as im:
+                im = im.convert("RGB")
+            for task, query in (
+                ("describe", "描述这张图片的内容。"),
+                ("ocr", "识别并抄录这张图片中的所有文字，没有文字请说明。"),
+            ):
+                requests.append(
+                    (
+                        f"{path.stem}_{task}",
+                        path,
+                        [im, im],
+                        query,
+                        {"task": task, "duplicated_still_for_temporal_pair": True},
+                    )
+                )
+    case_ids = [r[0] for r in requests]
+    if not case_ids or len(set(case_ids)) != len(case_ids):
+        raise ValueError("Asset cases must be nonempty and have unique names")
+    for case in case_ids:
+        if (capture_dir / mode / case).exists():
+            raise ValueError(
+                f"Capture case already exists: {case}; use a new capture directory"
+            )
+    for case, path, frames, query, extra in requests:
+        # Preserve aspect ratio and align to the vision temporal/patch grouping.
+        height, width = smart_resize(
+            frames[0].height, frames[0].width, factor=128, max_pixels=1024 * 1024
+        )
+        prompt = construct_prompt(query, len(frames))
+        meta = {
+            "case_id": case,
+            "modality": mode,
+            "asset": str(path.resolve()),
+            "enabled": True,
+            "query": query,
+            "resize": [width, height],
+            "image_downsample_ratio": 4,
+            **extra,
+        }
+        tmp = control.with_suffix(".tmp")
+        tmp.write_text(json.dumps(meta, ensure_ascii=False))
+        tmp.replace(control)
+        print(f"=== {case}: {path.name} {width}x{height} ===", flush=True)
+        chunks = []
+        try:
+            async for token in client.generate(
+                prompt,
+                images=frames,
+                target_sizes=[(width, height)] * len(frames),
+                image_downsample_ratios=[4] * (len(frames) // 2),
+            ):
+                chunks.append(token)
+                print(token, end="", flush=True)
+            if not chunks:
+                raise RuntimeError(f"Empty response for {case}")
+            files = list((capture_dir / mode / case).glob("*.pt"))
+            if not files:
+                raise RuntimeError(f"No activations captured for {case}")
+            meta["capture_files"] = len(files)
+            meta["response"] = "".join(chunks)
+            meta["status"] = "ok"
+            with (capture_dir / "requests.jsonl").open("a") as out:
+                out.write(json.dumps(meta, ensure_ascii=False) + "\n")
+        finally:
+            control.unlink(missing_ok=True)
+        print(flush=True)
+
 
 async def main():
 
+    mode = os.getenv("API_TEST_MODE", "legacy")
+    if mode in {"images", "video"}:
+        await run_asset_tests(mode)
+        return
+
     client = MultiModalClient(
-        url="http://127.0.0.1:18004/generate_stream",
+        url=os.getenv("API_TEST_URL", "http://127.0.0.1:18004/generate_stream"),
         default_sampling_params={
             "max_new_tokens": 2048,
             "temperature": 0.7,
@@ -420,7 +570,11 @@ async def main():
         },
     )
 
-    image = Image.open("/mnt/afs/yangdeyu/dependency/sglang/ScreenShot_2026-07-28_212000_993.png")
+    image_path = os.getenv(
+        "API_TEST_IMAGE",
+        "./examples/assets/test1.png",
+    )
+    image = Image.open(image_path)
     width, height = image.size
 
     # ═══════════════════════════════════════════════════════
@@ -485,7 +639,7 @@ async def main():
     # ═══════════════════════════════════════════════════════
     print("=== 测试4: 多对图不同ratio [4, 12] ===")
     images_multi = [resized_image] * 4  # 4张图 → 2对
-    prompt_multi = construct_prompt(query="描述这些图片", image_num=len(images_multi))
+    prompt_multi = construct_prompt(query="识别图中所有文字", image_num=len(images_multi))
     t1 = time.time()
     first_time = 0
     async for token in client.generate(
@@ -498,4 +652,5 @@ async def main():
     print(f"\n[ratios=[1,16]] TTFT={first_time:.3f}s\n")
 
 
-asyncio.run(main())
+if __name__ == "__main__":
+    asyncio.run(main())
