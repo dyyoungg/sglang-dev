@@ -571,9 +571,12 @@ class TokenizerManager(TokenizerControlMixin, TokenizerManagerScoreMixin):
         self.auto_create_handle_loop()
         
         prompt_text = obj.text
-        
+
         # 计算当前请求专属的 penalty_ids
-        penalty_ids = get_assistant_penalty_tokens(text=prompt_text, tokenizer=self.tokenizer)
+        if prompt_text is not None:
+            penalty_ids = get_assistant_penalty_tokens(text=prompt_text, tokenizer=self.tokenizer)
+        else:
+            penalty_ids = []
         
         # 将计算结果注入到该请求的 sampling_params 中
         # 兼容 dict 格式或 SamplingParams 对象格式
