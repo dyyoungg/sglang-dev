@@ -367,6 +367,7 @@ class BeeBeeQwen25VisionModel(nn.Module, RotaryPosMixin):
             downsample_ratio=downsample_ratio,
             quant_config=quant_config,
             prefix=add_prefix("mm_projector", prefix),
+            use_data_parallel=use_data_parallel
         )
 
         # Resource prepared for vit cuda graph
@@ -886,6 +887,7 @@ class BeeBeeQwen3MoeVisionModel(nn.Module, RotaryPosMixin):
             downsample_ratio=downsample_ratio,
             quant_config=quant_config,
             prefix=add_prefix("mm_projector", prefix),
+            use_data_parallel=use_data_parallel
         )
         self.tp_size = 1 if use_data_parallel else get_tensor_model_parallel_world_size()
         self.enable_cg = _is_cuda and envs.SGLANG_VIT_ENABLE_CUDA_GRAPH.get()
