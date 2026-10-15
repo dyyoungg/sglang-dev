@@ -38,3 +38,5 @@ sglang serve \
    --mm-attention-backend fa2 \
    --max-image-bs 32 \
    --no-mm-use-compiled-rope \
+   --mm-enable-dp-encoder \
+   --sampling-backend legacy_top_kp \

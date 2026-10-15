@@ -87,7 +87,7 @@ LLAMA4_MODEL_ARCHS = (
     "Llama4ForCausalLM",
 )
 
-SAMPLING_BACKEND_CHOICES = {"flashinfer", "pytorch", "ascend"}
+SAMPLING_BACKEND_CHOICES = {"flashinfer", "pytorch", "ascend", "legacy_top_kp"}
 
 LOAD_FORMAT_CHOICES = [
     "auto",
@@ -832,6 +832,9 @@ class ServerArgs:
         Orchestrates the handling of various server arguments, ensuring proper configuration and validation.
         """
 
+        # Validate before platform defaults or deterministic mode can replace
+        # the explicitly selected compatibility backend.
+        self._validate_legacy_sampling_backend()
         self._maybe_download_model_for_runai()
 
         # Normalize load balancing defaults early (before dummy-model short-circuit).
@@ -1218,7 +1221,8 @@ class ServerArgs:
     def _handle_hpu_backends(self):
         if self.device == "hpu":
             self.attention_backend = "torch_native"
-            self.sampling_backend = "pytorch"
+            if self.sampling_backend != "legacy_top_kp":
+                self.sampling_backend = "pytorch"
 
     def _handle_cpu_backends(self):
         if self.device == "cpu":
@@ -1226,7 +1230,8 @@ class ServerArgs:
                 self.attention_backend = (
                     "torch_native" if is_host_cpu_arm64() else "intel_amx"
                 )
-            self.sampling_backend = "pytorch"
+            if self.sampling_backend != "legacy_top_kp":
+                self.sampling_backend = "pytorch"
 
     def _handle_npu_backends(self):
         if self.device == "npu":
@@ -2497,6 +2502,17 @@ class ServerArgs:
                             f"Speculative decoding for {model_arch} is not compatible with radix cache when using --mamba-scheduler-strategy no_buffer."
                             "To use radix cache with speculative decoding, please use --mamba-scheduler-strategy extra_buffer and set SGLANG_ENABLE_SPEC_V2=1."
                         )
+
+    def _validate_legacy_sampling_backend(self):
+        if self.sampling_backend != "legacy_top_kp":
+            return
+        if self.enable_deterministic_inference or self.rl_on_policy_target is not None:
+            raise ValueError(
+                "legacy_top_kp does not support deterministic inference or "
+                "rl_on_policy_target"
+            )
+        if self.speculative_algorithm is not None:
+            raise ValueError("legacy_top_kp does not support speculative decoding")
 
     def _handle_sampling_backend(self):
         if self.sampling_backend is None:

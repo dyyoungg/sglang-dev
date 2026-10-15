@@ -86,7 +86,7 @@ from sglang.srt.observability.req_time_stats import (
     SchedulerReqTimeStats,
 )
 from sglang.srt.sampling.sampling_batch_info import SamplingBatchInfo
-from sglang.srt.sampling.sampling_params import SamplingParams
+from sglang.srt.sampling.sampling_params import TOP_K_ALL, SamplingParams
 from sglang.srt.server_args import ServerArgs, get_global_server_args
 from sglang.srt.utils import flatten_nested_list
 from sglang.srt.utils.cuda_ipc_transport_utils import CudaIpcTensorTransportProxy
@@ -2577,6 +2577,19 @@ class ScheduleBatch(ScheduleBatchDisaggregationDecodeMixin):
             extend_logprob_start_lens = self.extend_logprob_start_lens
 
         if self.sampling_info:
+            if get_global_server_args().sampling_backend == "legacy_top_kp":
+                # Standard samplers can keep conservative flags after batch
+                # filtering. LightLLM's shortcuts change the distribution, so
+                # recompute them for the current requests before each forward.
+                self.sampling_info.is_all_greedy = all(
+                    req.sampling_params.top_k <= 1 for req in self.reqs
+                )
+                self.sampling_info.need_top_k_sampling = any(
+                    req.sampling_params.top_k != TOP_K_ALL for req in self.reqs
+                )
+                self.sampling_info.need_top_p_sampling = any(
+                    req.sampling_params.top_p != 1.0 for req in self.reqs
+                )
             if self.has_grammar:
                 self.sampling_info.grammars = [req.grammar for req in self.reqs]
             else:

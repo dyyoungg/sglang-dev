@@ -13,6 +13,7 @@ from sglang.srt.layers.dp_attention import (
 from sglang.srt.layers.logits_processor import LogitsProcessorOutput
 from sglang.srt.layers.utils.hash import murmur_hash32
 from sglang.srt.layers.utils.logprob import get_token_ids_logprobs, get_top_logprobs
+from sglang.srt.sampling.legacy_sampler import sample_legacy_top_kp
 from sglang.srt.sampling.sampling_batch_info import SamplingBatchInfo
 from sglang.srt.sampling.sampling_params import TOP_K_ALL
 from sglang.srt.server_args import get_global_server_args
@@ -41,7 +42,7 @@ logger = logging.getLogger(__name__)
 SYNC_TOKEN_IDS_ACROSS_TP = get_bool_env_var("SYNC_TOKEN_IDS_ACROSS_TP")
 SGLANG_RETURN_ORIGINAL_LOGPROB = get_bool_env_var("SGLANG_RETURN_ORIGINAL_LOGPROB")
 _CUSTOM_SAMPLER_FACTORIES: Dict[str, Callable[[], "Sampler"]] = {}
-_BUILT_IN_SAMPLING_BACKENDS = {"flashinfer", "pytorch", "ascend"}
+_BUILT_IN_SAMPLING_BACKENDS = {"flashinfer", "pytorch", "ascend", "legacy_top_kp"}
 
 
 class Sampler(nn.Module):
@@ -60,6 +61,9 @@ class Sampler(nn.Module):
         # In RL on-policy mode, we use log_softmax to compute logprobs to match the trainer.
         self.use_log_softmax_logprob = self.rl_on_policy_target is not None
         self.use_ascend_backend = get_global_server_args().sampling_backend == "ascend"
+        self.use_legacy_backend = (
+            get_global_server_args().sampling_backend == "legacy_top_kp"
+        )
 
     def _preprocess_logits(
         self, logits: torch.Tensor, sampling_info: SamplingBatchInfo
@@ -108,7 +112,15 @@ class Sampler(nn.Module):
         # Preprocess logits (custom processors and NaN handling)
         logits = self._preprocess_logits(logits, sampling_info)
 
-        if sampling_info.is_all_greedy:
+        if self.use_legacy_backend:
+            if return_logprob and SGLANG_RETURN_ORIGINAL_LOGPROB:
+                original_logprobs = torch.log_softmax(logits, dim=-1)
+            batch_next_token_ids, logprobs = sample_legacy_top_kp(
+                logits,
+                sampling_info,
+                return_logprob and not SGLANG_RETURN_ORIGINAL_LOGPROB,
+            )
+        elif sampling_info.is_all_greedy:
             # Use torch.argmax if all requests use greedy sampling
             batch_next_token_ids = torch.argmax(logits, -1)
             if return_logprob:

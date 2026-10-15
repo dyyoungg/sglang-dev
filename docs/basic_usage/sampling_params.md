@@ -87,6 +87,34 @@ Please refer to our dedicated guide on [constrained decoding](../advanced_featur
 | no_stop_trim                  | `bool = False`                  | Don't trim stop words or EOS token from the generated text.                                                                                    |
 | custom_params                 | `Optional[List[Optional[Dict[str, Any]]]] = None` | Used when employing `CustomLogitProcessor`. For usage, see below.                                                                              |
 
+## Legacy top-k/top-p sampling
+
+Use `--sampling-backend legacy_top_kp` to use the legacy filtering and
+sampling behavior, compatible with LightLLM `triton_top_kp`, through PyTorch operations. This
+backend uses SGLang's existing logits penalties and grammar processing.
+
+For filtered sampling, it selects a threshold at sorted index `top_k` (zero
+based), retaining `top_k + 1` tokens when scores are distinct and `top_k` is
+smaller than the vocabulary size. It then recomputes softmax over these tokens
+and removes tokens whose cumulative probability exceeds `top_p`, always keeping
+the first token. These compatibility details intentionally differ from
+SGLang's default joint top-k/top-p filtering.
+
+Generated-token logprobs, including top and selected-token logprobs, describe
+the final renormalized distribution in the filtered branch. Greedy and
+unfiltered branches use the full temperature-scaled distribution. Setting
+`SGLANG_RETURN_ORIGINAL_LOGPROB=1` overrides this and returns logprobs before
+temperature scaling and filtering, as with other SGLang backends.
+
+The all-greedy shortcut applies only when the whole batch is greedy, matching
+the supplied implementation. In mixed batches, a request with `top_k=1` can
+retain two tokens through the compatibility filter. Batch composition can
+therefore affect sampling behavior. Matching the filtering distribution does
+not guarantee identical token sequences across runtimes or random generators.
+
+This backend does not support `min_p > 0`, per-request `sampling_seed`,
+deterministic inference, RL on-policy mode, or speculative decoding.
+
 ## Examples
 
 ### Normal

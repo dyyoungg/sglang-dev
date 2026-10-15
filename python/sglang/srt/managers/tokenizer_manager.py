@@ -1094,6 +1094,13 @@ class TokenizerManager(TokenizerControlMixin, TokenizerManagerScoreMixin):
         sampling_params = self.sampling_params_class(**sampling_kwargs)
         sampling_params.normalize(self.tokenizer)
         sampling_params.verify(self.model_config.vocab_size)
+        if self.server_args.sampling_backend == "legacy_top_kp":
+            if sampling_params.min_p > 0:
+                raise ValueError("legacy_top_kp does not support min_p > 0")
+            if sampling_params.sampling_seed is not None:
+                raise ValueError(
+                    "legacy_top_kp does not support per-request sampling_seed"
+                )
 
         # Build return object
         if isinstance(obj, GenerateReqInput):
