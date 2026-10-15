@@ -539,7 +539,7 @@ EntryClass = BeeBeeOmniForConditionalGeneration
 
 
 
-def compare_weights(orig_sd, sgl_sd):
+def compare_weights(orig_sd, sgl_sd, *, map_names=True):
   
     print("\n--- 🔍 Checking Model Weights (Tensor Values) ---")
     all_matched = True
@@ -557,16 +557,16 @@ def compare_weights(orig_sd, sgl_sd):
     
         sgl_name = orig_name
         
-        if sgl_name.startswith("image_encoder."):
+        if map_names and sgl_name.startswith("image_encoder."):
             sgl_name = sgl_name.replace("attn.qkv.", "attn.qkv_proj.")
 
      
-        if sgl_name.startswith("audio_encoder.") and not sgl_name.startswith("audio_encoder.audio_projector."):
+        if map_names and sgl_name.startswith("audio_encoder.") and not sgl_name.startswith("audio_encoder.audio_projector."):
             sgl_name = sgl_name.replace("audio_encoder.", "audio_encoder.encoder.", 1)
 
        
         is_stacked = False
-        for orig_key, (target_key, part_name) in target_map.items():
+        for orig_key, (target_key, part_name) in (target_map.items() if map_names else ()):
             if f".{orig_key}." in sgl_name or sgl_name.endswith(f".{orig_key}"):
                 merged_sgl_name = sgl_name.replace(orig_key, target_key)
                 if merged_sgl_name not in merged_tasks:
@@ -590,8 +590,9 @@ def compare_weights(orig_sd, sgl_sd):
             all_matched = False
             continue
             
-        max_diff = torch.max(torch.abs(orig_tensor - sgl_tensor)).item()
-        if max_diff > 1e-5:
+        orig_tensor = orig_tensor.to(device=sgl_tensor.device, dtype=sgl_tensor.dtype)
+        if not torch.equal(orig_tensor, sgl_tensor):
+            max_diff = torch.max(torch.abs(orig_tensor - sgl_tensor)).item()
             print(f"❌ [Value Differs] {orig_name} -> Max Diff: {max_diff:.6f}")
             all_matched = False
 
@@ -631,13 +632,14 @@ def compare_weights(orig_sd, sgl_sd):
             all_matched = False
             continue
             
-        max_diff = torch.max(torch.abs(orig_merged - sgl_tensor)).item()
-        if max_diff > 1e-5:
+        orig_merged = orig_merged.to(device=sgl_tensor.device, dtype=sgl_tensor.dtype)
+        if not torch.equal(orig_merged, sgl_tensor):
+            max_diff = torch.max(torch.abs(orig_merged - sgl_tensor)).item()
             print(f"❌ [Value Differs - Merged] {sgl_name} -> Max Diff: {max_diff:.6f}")
             all_matched = False
 
     if all_matched:
-        print("🎉 所有权重全部完美对齐！(包含 Vision/Audio 的命名映射、合并 QKV 及 Whisper 的 k_bias 注零验证)")
+        print("🎉 所有权重全部完美对齐！")
     else:
         print("⚠️ 存在未对齐的权重，请检查上面的报错信息。")
         
@@ -645,16 +647,29 @@ def compare_weights(orig_sd, sgl_sd):
 
 
 if __name__ == "__main__":
+    import argparse
     import os
     import glob
     import torch
     from safetensors import safe_open
+    from sglang.srt.model_loader.utils import set_default_torch_dtype
     
+    parser = argparse.ArgumentParser(description="Compare checkpoint weights and encoder outputs with VeOmni (TP=1).")
+    parser.add_argument("--model-path", default="/mnt/afs/share/20260907_beebee_14B_veomni_28k")
+    parser.add_argument("--no-mm-use-compiled-rope", action="store_false", dest="mm_use_compiled_rope", default=True)
+    parser.add_argument("--mm-attention-backend", default=None)
+    args = parser.parse_args()
+    MODEL_PATH = args.model_path
+    torch.manual_seed(42)
     init_distributed_environment()
     initialize_model_parallel()
-    MODEL_PATH = "/mnt/afs/share/llava_qwen2_14B-qwen35encoder-veomni-down16" 
     
-    dummy_args = ServerArgs(model_path=MODEL_PATH, mm_enable_dp_encoder=False)
+    dummy_args = ServerArgs(
+        model_path=MODEL_PATH,
+        mm_enable_dp_encoder=False,
+        mm_use_compiled_rope=args.mm_use_compiled_rope,
+        mm_attention_backend=args.mm_attention_backend,
+    )
     set_global_server_args_for_scheduler(dummy_args)
 
     print("Initializing models...")
@@ -664,7 +679,10 @@ if __name__ == "__main__":
     
     config = BeeBeeOmniConfig.from_pretrained(MODEL_PATH)
     
-    sglang_model = BeeBeeOmniForConditionalGeneration(config).to(torch.bfloat16).cuda()
+    # Match the server loader: create BF16 parameters while preserving explicitly
+    # FP32 buffers such as RoPE inv_freq. A blanket .to(bfloat16) casts those too.
+    with set_default_torch_dtype(torch.bfloat16):
+        sglang_model = BeeBeeOmniForConditionalGeneration(config).cuda()
     sglang_model.eval()
 
     # 初始化原始模型
@@ -689,17 +707,26 @@ if __name__ == "__main__":
     # check model weight
     orig_state_dict = train_model.state_dict()
     sgl_state_dict = sglang_model.state_dict()
-    compare_weights(orig_state_dict, sgl_state_dict)
+    # Neither implementation is a reliable reference until checked against the
+    # checkpoint: custom HF initialization can overwrite already-loaded weights.
+    checkpoint_state_dict = dict(weights_iterator)
+    print("\nChecking VeOmni against checkpoint...")
+    orig_matched = compare_weights(checkpoint_state_dict, orig_state_dict, map_names=False)
+    print("\nChecking SGLang against checkpoint...")
+    sgl_matched = compare_weights(checkpoint_state_dict, sgl_state_dict)
+    if not (orig_matched and sgl_matched):
+        raise RuntimeError("Checkpoint weights differ; fix weight loading before comparing encoder outputs.")
+    del checkpoint_state_dict, weights_iterator
     
     # ---------------------------------------------------------
     # 视觉编码器 (Image Encoder) 精度对比
     # ---------------------------------------------------------
     print("\n--- Testing Vision Encoder ---")
-    is_qwen35_encoder = True
-    if is_qwen35_encoder:
-        vision_hidden = 1536
-    else:
-        vision_hidden = 1176
+    vision_hidden = (
+        config.vision_config.in_channels
+        * config.vision_config.temporal_patch_size
+        * config.vision_config.patch_size ** 2
+    )
     dummy_pixel_values = torch.randn(1536, vision_hidden, dtype=torch.bfloat16, device="cuda")
   
     dummy_image_grid_thw = torch.tensor([[1, 32, 48]], dtype=torch.int32, device="cuda")
@@ -713,13 +740,13 @@ if __name__ == "__main__":
         print(sgl_vision_out.shape, orig_vision_out.shape)
 
 
-    v_max_diff = torch.max(torch.abs(sgl_vision_out - orig_vision_out)).item()
-    v_mean_diff = torch.mean(torch.abs(sgl_vision_out - orig_vision_out)).item()
+    v_max_diff = torch.max(torch.abs(sgl_vision_out.float() - orig_vision_out.float())).item()
+    v_mean_diff = torch.mean(torch.abs(sgl_vision_out.float() - orig_vision_out.float())).item()
     print(f"Vision Output Shape: {sgl_vision_out.shape}")
     print(f"Vision Max Diff:  {v_max_diff:.6f}")
     print(f"Vision Mean Diff: {v_mean_diff:.6f}")
     if v_mean_diff < 1e-3 and v_max_diff < 1e-2:
-        print("✅ Vision Encoder weights loaded perfectly!")
+        print("✅ Vision Encoder outputs match within tolerance.")
     else:
         print("❌ Vision Encoder has significant precision differences.")
 
@@ -740,14 +767,15 @@ if __name__ == "__main__":
 
         print(sgl_audio_out.shape, orig_audio_out.shape)
 
-    a_max_diff = torch.max(torch.abs(sgl_audio_out - orig_audio_out)).item()
-    a_mean_diff = torch.mean(torch.abs(sgl_audio_out - orig_audio_out)).item()
+    a_max_diff = torch.max(torch.abs(sgl_audio_out.float() - orig_audio_out.float())).item()
+    a_mean_diff = torch.mean(torch.abs(sgl_audio_out.float() - orig_audio_out.float())).item()
     print(f"Audio Output Shape: {sgl_audio_out.shape}")
     print(f"Audio Max Diff:  {a_max_diff:.6f}")
     print(f"Audio Mean Diff: {a_mean_diff:.6f}")
     if a_mean_diff < 1e-3 and a_max_diff < 1e-2:
-        print("✅ Audio Encoder weights loaded perfectly!")
+        print("✅ Audio Encoder outputs match within tolerance.")
     else:
         print("❌ Audio Encoder has significant precision differences.")
 
     print("\nAll tests completed.")
+    torch.distributed.destroy_process_group()

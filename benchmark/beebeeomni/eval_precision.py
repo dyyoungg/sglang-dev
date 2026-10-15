@@ -2,7 +2,7 @@
 
 Run from repository root; Python deps: aiohttp, jiwer==4.0.0, rapidfuzz, Pillow,
 AOSS client, soundfile, numpy, decord. Example:
-  PYTHONPATH=/tmp/sglang_beebee_eval_deps_mirror /usr/bin/python3 -u \
+  /usr/bin/python3 -u \
     benchmark/beebeeomni/eval_precision.py \
     --output fp8_analysis/business_0815_smoke --limit 1
   # Omit --limit for all samples. Restart the identical command to resume.
@@ -304,7 +304,13 @@ def score(row, raw):
     if metric == "cer":
         ref = protocol._mixed_language_chars([gt])[0]
         hyp = protocol._mixed_language_chars([pred])[0]
-        err = Levenshtein.distance(ref, hyp)
+        # Map each mixed-language unit to one code point. Some lightweight
+        # rapidfuzz substitutes stringify lists, silently inflating CER.
+        alphabet = {unit: chr(i) for i, unit in enumerate(dict.fromkeys(ref + hyp))}
+        err = Levenshtein.distance(
+            "".join(alphabet[unit] for unit in ref),
+            "".join(alphabet[unit] for unit in hyp),
+        )
         # Keep standard CER as the primary score (lower is better), and also
         # report the training-style normalized edit similarity (higher is
         # better) using max(reference, hypothesis) as the denominator.

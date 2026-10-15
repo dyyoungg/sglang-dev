@@ -47,10 +47,9 @@ class WhisperAttention(nn.Module):
       - Varlen batch  (cu_seqlens_q provided): hidden_states [total_tokens, D]
         Uses flash_attn_varlen_func with TP-local head counts.
  
-    Weight-loading note: Whisper encoder k_proj has bias=False while q/v have
-    bias=True. With bias=True on the merged QKVParallelLinear the k bias slice
-    is never written by load_weights (no k_proj.bias key in the checkpoint) and
-    stays at the PyTorch default zero initialisation — which is correct.
+    Keep packed QKV storage for checkpoint loading and tensor parallelism, but
+    project unquantized Q/K/V separately to match VeOmni's BF16 GEMM rounding.
+    Whisper has no key bias; the model loader zeros that packed bias slice.
     """
  
     def __init__(
@@ -66,6 +65,7 @@ class WhisperAttention(nn.Module):
         assert self.head_dim * num_heads == embed_dim, \
             "embed_dim must be divisible by num_heads"
         self.scaling = self.head_dim ** -0.5
+        self.separate_qkv = quant_config is None
         self.use_data_parallel = get_global_server_args().mm_enable_dp_encoder
         tp_size = 1 if self.use_data_parallel else get_tensor_model_parallel_world_size()
         tp_rank = 0 if self.use_data_parallel else get_tensor_model_parallel_rank()
@@ -106,10 +106,17 @@ class WhisperAttention(nn.Module):
         max_seqlen_q:  Optional[int] = None,
         max_seqlen_kv: Optional[int] = None,
     ) -> torch.Tensor:
-        # QKVParallelLinear returns (output, bias); output is already TP-local.
-        qkv, _ = self.qkv_proj(hidden_states)
-        # Split along last dim: each chunk is [*, num_heads_local * head_dim]
-        q, k, v = qkv.chunk(3, dim=-1)
+        if self.separate_qkv:
+            # Each packed slice already contains this TP rank's heads. Do not
+            # pass a zero bias for K: the reference uses a bias-free GEMM.
+            qw, kw, vw = self.qkv_proj.weight.chunk(3, dim=0)
+            qb, _, vb = self.qkv_proj.bias.chunk(3, dim=0)
+            q = F.linear(hidden_states, qw, qb)
+            k = F.linear(hidden_states, kw)
+            v = F.linear(hidden_states, vw, vb)
+        else:
+            qkv, _ = self.qkv_proj(hidden_states)
+            q, k, v = qkv.chunk(3, dim=-1)
  
         if cu_seqlens_q is None:
             # ── padded-batch path [B, T, D] ───────────────────────────────
@@ -118,8 +125,7 @@ class WhisperAttention(nn.Module):
             q = q.view(B, T, self.num_heads, self.head_dim).permute(0, 2, 1, 3)
             k = k.view(B, T, self.num_heads, self.head_dim).permute(0, 2, 1, 3)
             v = v.view(B, T, self.num_heads, self.head_dim).permute(0, 2, 1, 3)
-            # scale=1.0 because we already applied self.scaling above via
-            # QKVParallelLinear; match whisper.py encoder path exactly.
+            # Apply the attention scale once, matching the varlen path.
             out = F.scaled_dot_product_attention(q, k, v, scale=self.scaling)
             out = out.permute(0, 2, 1, 3).reshape(B, T, self.num_heads * self.head_dim)
         else:

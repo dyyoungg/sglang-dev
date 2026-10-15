@@ -91,24 +91,26 @@ class ViTCudaGraphRunner:
         return self.vit.dtype
 
     def _ensure_sin_cos_ws(self, seq_len: int, head_dim: int):
+        # Some encoders retain FP32 cos/sin even with BF16 activations.
+        rope_dtype = getattr(self.vit, "rotary_embedding_dtype", self.dtype)
         if self.sin_cos_ws is None:
             max_shape = self.max_context_len or seq_len
             max_shape = max(max_shape, seq_len)
             cos_ws = torch.empty(
-                max_shape, head_dim, dtype=self.dtype, device=self.device
+                max_shape, head_dim, dtype=rope_dtype, device=self.device
             )
             sin_ws = torch.empty(
-                max_shape, head_dim, dtype=self.dtype, device=self.device
+                max_shape, head_dim, dtype=rope_dtype, device=self.device
             )
             self.sin_cos_ws = (cos_ws, sin_ws)
         else:
             if self.sin_cos_ws[0].size(0) < seq_len:
                 max_shape = max(self.sin_cos_ws[0].size(0) * 2, seq_len)
                 cos_ws = torch.empty(
-                    max_shape, head_dim, dtype=self.dtype, device=self.device
+                    max_shape, head_dim, dtype=rope_dtype, device=self.device
                 )
                 sin_ws = torch.empty(
-                    max_shape, head_dim, dtype=self.dtype, device=self.device
+                    max_shape, head_dim, dtype=rope_dtype, device=self.device
                 )
                 self.sin_cos_ws = (cos_ws, sin_ws)
 

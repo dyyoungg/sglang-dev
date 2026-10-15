@@ -24,7 +24,6 @@ from sglang.srt.distributed import (
 from sglang.srt.distributed.parallel_state import get_pp_group
 from sglang.srt.environ import envs
 from sglang.srt.layers.rotary_embedding import get_rope
-from sglang.srt.layers.activation import SiluAndMul
 from sglang.srt.layers.attention.vision import VisionAttention, BATCH_BUCKETS, FLASHINFER_MAX_SEQLEN_BUCKETS, FLASHINFER_WORKSPACE_SIZE_BYTES
 from sglang.srt.layers.layernorm import RMSNorm
 from sglang.srt.layers.linear import (
@@ -87,19 +86,32 @@ class Qwen2_5_VLMLP(nn.Module):
             tp_rank=self.tp_rank,
         )
         self.hidden_act = hidden_act
-        if self.hidden_act == "silu":
-            self.act = SiluAndMul()
-        else:
-            base_act = ACT2FN[self.hidden_act]
+        self.separate_gate_up = quant_config is None
+        base_act = ACT2FN[self.hidden_act]
 
-            def _act_fn(x: torch.Tensor) -> torch.Tensor:
-                gate, up = x.chunk(2, dim=-1)
-                return base_act(gate) * up
+        def _act_fn(x: torch.Tensor) -> torch.Tensor:
+            # Match the reference's activation rounding before multiplication.
+            gate, up = x.chunk(2, dim=-1)
+            return base_act(gate) * up
 
-            self.act = _act_fn
+        self.act = _act_fn
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        gate_up, _ = self.gate_up_proj(x)
+        if self.separate_gate_up:
+            # As with Whisper QKV, GEMM packing can change BF16 rounding for
+            # some token counts. Retain TP-local storage but match HF GEMMs.
+            gate_weight, up_weight = self.gate_up_proj.weight.chunk(2, dim=0)
+            gate_bias, up_bias = (
+                self.gate_up_proj.bias.chunk(2, dim=0)
+                if self.gate_up_proj.bias is not None
+                else (None, None)
+            )
+            gate_up = torch.cat(
+                (F.linear(x, gate_weight, gate_bias), F.linear(x, up_weight, up_bias)),
+                dim=-1,
+            )
+        else:
+            gate_up, _ = self.gate_up_proj(x)
         x = self.act(gate_up)
         x_down, _ = self.down_proj(x)
         return x_down
@@ -121,8 +133,8 @@ class Qwen2_5_VisionBlock(nn.Module):
         use_data_parallel: bool = False,
     ) -> None:
         super().__init__()
-        self.norm1 = RMSNorm(dim, eps=rms_norm_eps)
-        self.norm2 = RMSNorm(dim, eps=rms_norm_eps)
+        self.norm1 = RMSNorm(dim, eps=rms_norm_eps, cast_x_before_out_mul=True)
+        self.norm2 = RMSNorm(dim, eps=rms_norm_eps, cast_x_before_out_mul=True)
 
         self.attn = VisionAttention(
             embed_dim=dim,
@@ -135,6 +147,7 @@ class Qwen2_5_VisionBlock(nn.Module):
             prefix=add_prefix("attn", prefix),
             num_dummy_heads=num_dummy_heads,
             use_data_parallel=use_data_parallel,
+            use_compiled_rope=get_global_server_args().mm_use_compiled_rope,
         )
         self.mlp = Qwen2_5_VLMLP(
             dim,
@@ -155,7 +168,7 @@ class Qwen2_5_VisionBlock(nn.Module):
         S, B, H = x.shape
         # norm1: flatten to 2D -> [S*B, H], then reshape back
         x2d = x.reshape(-1, H)
-        hidden_states = self.norm1(x2d).reshape(S, B, H)
+        hidden_states = self.norm1.forward_native(x2d).reshape(S, B, H)
 
         # Attention expects [B, S, H]
         nvtx.range_push("vit_attn")
@@ -169,9 +182,11 @@ class Qwen2_5_VisionBlock(nn.Module):
         attn = rearrange(attn, "b s h -> s b h")
         nvtx.range_pop()  # vit_attn
 
-        # norm2 with fused residual-add: also 2D
+        # Round the residual addition before normalization, as in VeOmni.
+        # A fused add/RMSNorm normalizes the unrounded FP32 sum instead.
         attn2d = attn.reshape(-1, H)
-        x_norm_2d, x_after_add_2d = self.norm2(x2d, residual=attn2d)
+        x_after_add_2d = x2d + attn2d
+        x_norm_2d = self.norm2.forward_native(x_after_add_2d)
         x_norm = x_norm_2d.reshape(S, B, H)
         x_after_add = x_after_add_2d.reshape(S, B, H)
 
@@ -192,12 +207,12 @@ class BeeBeeVLPatchMerger(nn.Module):
     def __init__(self, context_dim: int, spatial_merge_size: int = 2) -> None:
         super().__init__()
         self.hidden_size = context_dim * (spatial_merge_size ** 2)
-        self.ln_q = RMSNorm(context_dim, eps=1e-6)
+        self.ln_q = RMSNorm(context_dim, eps=1e-6, cast_x_before_out_mul=True)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         S, B, D = x.shape
         x2d = x.reshape(-1, D)
-        x2d = self.ln_q(x2d)
+        x2d = self.ln_q.forward_native(x2d)
         x2d = x2d.view(-1, self.hidden_size)
         return x2d
     
@@ -339,6 +354,7 @@ class BeeBeeQwen25VisionModel(nn.Module, RotaryPosMixin):
         norm_layer = partial(nn.LayerNorm, eps=norm_eps)
         head_dim = hidden_size // num_heads
         self.rotary_pos_emb = Qwen2_5_VisionRotaryEmbedding(head_dim // 2)
+        self.rotary_embedding_dtype = torch.float32
         self.blocks = nn.ModuleList(
             [
                 Qwen2_5_VisionBlock(
@@ -440,7 +456,13 @@ class BeeBeeQwen25VisionModel(nn.Module, RotaryPosMixin):
 
         pos_ids = torch.cat(pos_ids, dim=0)
         max_grid_size = grid_thw[:, 1:].max()
-        rotary_pos_emb_full = self.rotary_pos_emb(max_grid_size)
+        # Transformers 5 changed this module's forward from a sequence length
+        # to position IDs. Build the same frequency table on either version.
+        inv_freq = self.rotary_pos_emb.inv_freq
+        positions = torch.arange(
+            max_grid_size, device=inv_freq.device, dtype=inv_freq.dtype
+        )
+        rotary_pos_emb_full = torch.outer(positions, inv_freq)
         rotary_pos_emb = rotary_pos_emb_full[pos_ids].flatten(1)
         return rotary_pos_emb
 
@@ -479,8 +501,9 @@ class BeeBeeQwen25VisionModel(nn.Module, RotaryPosMixin):
         window_index = window_index.to(device=x.device)
         reverse_indices = permute_inv(window_index)
 
-        # Ensure rotary_pos_emb is on the same device/dtype as x
-        rotary_pos_emb = rotary_pos_emb.to(device=x.device, dtype=x.dtype)
+        # Keep angles and cos/sin in FP32, as in VeOmni. Rounding angles to
+        # BF16 before trig changes the rotations even with noncompiled RoPE.
+        rotary_pos_emb = rotary_pos_emb.to(device=x.device, dtype=torch.float32)
 
         seq_len, _ = x.size()
 
@@ -494,11 +517,6 @@ class BeeBeeQwen25VisionModel(nn.Module, RotaryPosMixin):
         rotary_pos_emb = rotary_pos_emb.reshape(seq_len, -1)
         emb = torch.cat((rotary_pos_emb, rotary_pos_emb), dim=-1)
         position_embeddings = (emb.cos(), emb.sin())
-        # After building position_embeddings, make sure both cos and sin are on the same device/dtype as the attention input
-        position_embeddings = (
-            position_embeddings[0].to(x.device, x.dtype),
-            position_embeddings[1].to(x.device, x.dtype),
-        )
 
 
         cu_seqlens = torch.repeat_interleave(
@@ -569,7 +587,7 @@ class BeeBeeQwen25VisionModel(nn.Module, RotaryPosMixin):
 
         window_index = window_index.to(device=x.device)
         reverse_indices = permute_inv(window_index)
-        rotary_pos_emb = rotary_pos_emb.to(device=x.device, dtype=x.dtype)
+        rotary_pos_emb = rotary_pos_emb.to(device=x.device, dtype=torch.float32)
 
         # patch token num
         seq_len, _ = x.size()
@@ -587,12 +605,6 @@ class BeeBeeQwen25VisionModel(nn.Module, RotaryPosMixin):
 
         emb = torch.cat((rotary_pos_emb, rotary_pos_emb), dim=-1)
         position_embeddings = (emb.cos(), emb.sin())
-        # After building position_embeddings, make sure both cos and sin are on
-        # the same device/dtype as the attention input
-        position_embeddings = (
-            position_embeddings[0].to(x.device, x.dtype),
-            position_embeddings[1].to(x.device, x.dtype),
-        )
 
         # compute cu_seqlens - move cu_seqlens to GPU and make it int32
         cu_seqlens = torch.cat(

@@ -21,13 +21,13 @@ def atomic_json(path, value):
     tmp.replace(path)
 
 
-def summarize(rows, dataset):
+def summarize(rows, dataset, variant="bf16"):
     out = [
-        r["outputs"]["bf16"]
+        r["outputs"][variant]
         for r in rows
-        if r.get("outputs", {}).get("bf16", {}).get("status") == "success"
+        if r.get("outputs", {}).get(variant, {}).get("status") == "success"
     ]
-    errors = [r for r in rows if r.get("outputs", {}).get("bf16", {}).get("status") != "success"]
+    errors = [r for r in rows if r.get("outputs", {}).get(variant, {}).get("status") != "success"]
     scores = [x["score"] for x in out]
     result = {
         "total": len(rows),
@@ -35,7 +35,7 @@ def summarize(rows, dataset):
         "success": len(out),
         "errors": len(errors),
         "error_examples": [
-            {"index": r.get("index"), "error": r.get("outputs", {}).get("bf16", {}).get("error")}
+            {"index": r.get("index"), "error": r.get("outputs", {}).get(variant, {}).get("error")}
             for r in errors[:10]
         ],
         "mean_score": sum(scores) / len(scores) if scores else None,
@@ -46,7 +46,7 @@ def summarize(rows, dataset):
     }
     groups = {}
     for r in rows:
-        o = r.get("outputs", {}).get("bf16", {})
+        o = r.get("outputs", {}).get(variant, {})
         if o.get("status") == "success":
             groups.setdefault(r.get("subtask", ""), []).append(o["score"])
     for subtask, values in sorted(groups.items()):
@@ -60,6 +60,38 @@ def summarize(rows, dataset):
 async def run(args):
     args.output.mkdir(parents=True, exist_ok=True)
     args.cache.mkdir(parents=True, exist_ok=True)
+    config = {
+        "datasets": {
+            name: {
+                "path": str((args.data / base.DATASETS[name][0]).resolve()),
+                "samples": len(base.data_file(args.data / base.DATASETS[name][0])),
+                "sha256": hashlib.sha256(
+                    (args.data / base.DATASETS[name][0]).read_bytes()
+                ).hexdigest(),
+            }
+            for name in args.datasets
+        },
+        "url": args.url,
+        "frames": args.frames,
+        "ratio": args.ratio,
+        "size_factor": args.size_factor,
+        "concurrency": args.concurrency,
+        "max_tokens": {
+            "asr": args.asr_tokens,
+            "mcq": args.mcq_tokens,
+            "ocr": args.ocr_tokens,
+        },
+        "protocol_sha256": hashlib.sha256(
+            Path(base.protocol.__file__).read_bytes()
+        ).hexdigest(),
+    }
+    # Preserve existing BF16 resume configs; FP8 runs explicitly record precision.
+    if args.variant != "bf16":
+        config["variant"] = args.variant
+    config_path = args.output / "config.json"
+    if config_path.exists() and json.loads(config_path.read_text()) != config:
+        raise ValueError("Resume configuration mismatch; use a new output directory")
+    atomic_json(config_path, config)
     timeout = aiohttp.ClientTimeout(total=1800, connect=30)
     connector = aiohttp.TCPConnector(limit=args.concurrency * 2 + 4)
     async with aiohttp.ClientSession(timeout=timeout, connector=connector) as session:
@@ -75,7 +107,16 @@ async def run(args):
                     if line.strip():
                         row = json.loads(line)
                         saved[row["index"]] = row
-            pending = [(i, sample) for i, sample in enumerate(data) if i not in saved]
+            pending = [
+                (i, sample)
+                for i, sample in enumerate(data)
+                if i not in saved
+                or (
+                    args.retry_errors
+                    and saved[i].get("outputs", {}).get(args.variant, {}).get("status")
+                    != "success"
+                )
+            ]
             queue = asyncio.Queue()
             for item in pending:
                 queue.put_nowait(item)
@@ -91,30 +132,25 @@ async def run(args):
                     try:
                         payload, row = await asyncio.to_thread(base.prepare, name, i, sample, args)
                         response = await base.request(session, args.url, payload, row)
-                        row["outputs"] = {"bf16": response}
+                        row["outputs"] = {args.variant: response}
                     except Exception as exc:
-                        row = {"dataset": name, "index": i, "outputs": {"bf16": {"status": "error", "error": str(exc)[:1000]}}}
+                        row = {"dataset": name, "index": i, "outputs": {args.variant: {"status": "error", "error": str(exc)[:1000]}}}
                     saved[i] = row
                     with path.open("a") as f:
                         f.write(json.dumps(row, ensure_ascii=False) + "\n")
                     queue.task_done()
                     if len(saved) % 25 == 0 or len(saved) == len(data):
-                        ok = sum(r.get("outputs", {}).get("bf16", {}).get("status") == "success" for r in saved.values())
+                        ok = sum(r.get("outputs", {}).get(args.variant, {}).get("status") == "success" for r in saved.values())
                         print(f"{name}: done {len(saved)}/{len(data)}, success={ok}, elapsed={time.monotonic()-started:.1f}s", flush=True)
 
             tasks = [asyncio.create_task(worker()) for _ in range(min(args.concurrency, max(1, len(pending))))]
             await asyncio.gather(*tasks)
-            result = summarize(list(saved.values()), name)
+            result = summarize(list(saved.values()), name, args.variant)
+            if args.variant != "bf16":
+                result["variant"] = args.variant
             result["elapsed_seconds"] = time.monotonic() - started
             atomic_json(args.output / f"{name}_summary.json", result)
             print(json.dumps(result, ensure_ascii=False), flush=True)
-            atomic_json(args.output / "config.json", {
-                "datasets": {n: {"path": str((args.data / base.DATASETS[n][0]).resolve()), "samples": len(base.data_file(args.data / base.DATASETS[n][0]))} for n in args.datasets},
-                "url": args.url, "frames": args.frames, "ratio": args.ratio,
-                "size_factor": args.size_factor, "video_concurrency": args.concurrency,
-                "tp_size": 2, "dp_size": 4,
-                "protocol_sha256": hashlib.sha256(Path(base.protocol.__file__).read_bytes()).hexdigest(),
-            })
 
 
 if __name__ == "__main__":
@@ -122,9 +158,11 @@ if __name__ == "__main__":
     p.add_argument("--data", type=Path, default=Path("benchmark/beebeeomni"))
     p.add_argument("--output", type=Path, required=True)
     p.add_argument("--url", default="http://127.0.0.1:18102")
-    p.add_argument("--datasets", nargs="+", choices=["mvbench", "videomme", "videommmu"], required=True)
+    p.add_argument("--variant", choices=("bf16", "fp8"), default="bf16")
+    p.add_argument("--datasets", nargs="+", choices=list(base.DATASETS), required=True)
     p.add_argument("--cache", type=Path, default=Path("/tmp/sglang_beebee_benchmark_cache"))
     p.add_argument("--limit", type=int, default=0)
+    p.add_argument("--retry-errors", action="store_true")
     p.add_argument("--concurrency", type=int, default=8)
     p.add_argument("--frames", type=int, default=64)
     p.add_argument("--ratio", type=int, default=12)
