@@ -43,6 +43,22 @@ class BatchedRepetitionPenalizer(_BatchedPenalizer):
             )
         ).unsqueeze_(1)
 
+        # Pre-fill penalty for custom_penalty_ids (only when input_penalty is enabled)
+        for i, req in enumerate(self.orchestrator.reqs()):
+            # print("req.sampling_params.input_penalty", req.sampling_params.input_penalty)
+            if not getattr(req.sampling_params, 'input_penalty', False):
+                continue
+            ids = req.sampling_params.custom_penalty_ids
+            if ids:
+                unique_ids = torch.tensor(
+                    list(set(ids)), dtype=torch.long, device=self.orchestrator.device
+                )
+                self.cumulated_repetition_penalties[i].scatter_(
+                    dim=0,
+                    index=unique_ids,
+                    value=req.sampling_params.repetition_penalty,
+                )
+
     def _cumulate_output_tokens(self, output_ids: torch.Tensor):
         self.cumulated_repetition_penalties.scatter_(
             dim=1,

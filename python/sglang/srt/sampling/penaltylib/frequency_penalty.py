@@ -58,13 +58,27 @@ class BatchedFrequencyPenalizer(_BatchedPenalizer):
             
             if tokens is not None and len(tokens) > 0:
                 # 把 tokens 转换成 tensor 以便做索引
-                token_tensor = torch.tensor(tokens, dtype=torch.long, device=self.orchestrator.device)
-                
+                token_tensor = torch.tensor(tokens, dtype=torch.long, device=self.orchestrator.device).unsqueeze(0)
+
                 # 获取该请求设定的惩罚值 (比如 1.5)
                 penalty_val = req.sampling_params.frequency_penalty
+
+                src = torch.full_like(token_tensor, fill_value=penalty_val, dtype=torch.float32)
                 
-                # 这样在模型还没生成任何字的时候，这些 token 的惩罚就已经生效了
-                self.cumulated_frequency_penalties[i, token_tensor] = penalty_val
+                # 使用 scatter_add_ 在第 i 行按词频累加！
+                self.cumulated_frequency_penalties[i:i+1].scatter_add_(
+                    dim=1,
+                    index=token_tensor,
+                    src=src
+                )
+                
+                # print(f"[DEBUG Penalty] 请求 {req_id}: 已对 {len(tokens)} 个 Token (含重复计数) 按频次累加了惩罚值")
+                
+                # # 获取该请求设定的惩罚值 (比如 1.5)
+                # penalty_val = req.sampling_params.frequency_penalty
+                
+                # # 这样在模型还没生成任何字的时候，这些 token 的惩罚就已经生效了
+                # self.cumulated_frequency_penalties[i, token_tensor] = penalty_val
                 
                 # print(f"[DEBUG Penalty] 请求 {req_id}: 已在一开始对特定的 {len(tokens)} 个 Token 施加了初始惩罚值: {penalty_val}")
 

@@ -52,6 +52,7 @@ class SamplingParams:
         custom_penalty_ids: Optional[List[int]] = None,
         presence_penalty: float = 0.0,
         repetition_penalty: float = 1.0,
+        input_penalty: bool = False,
         min_new_tokens: int = 0,
         n: int = 1,
         json_schema: Optional[str] = None,
@@ -92,6 +93,7 @@ class SamplingParams:
         self.repetition_penalty = (
             repetition_penalty if repetition_penalty is not None else 1.0
         )
+        self.input_penalty = input_penalty if input_penalty is not None else False
         self.min_new_tokens = min_new_tokens if min_new_tokens is not None else 0
         self.regex = regex
         self.n = n if n is not None else 1
