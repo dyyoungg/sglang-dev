@@ -496,7 +496,7 @@ class BeeBeeAudioEncoder(nn.Module):
 
         # WhisperEncoder: [B, mel, T] -> [B, T//2, d_model]
         nvtx.range_push("whisper_encoder")
-        whisper_out = self.encoder(input_features, input_seq_lens=input_seq_lens)
+        whisper_out = self.encoder(input_features, input_seq_lens=None)
         nvtx.range_pop()  # whisper_encoder
 
         # AudioConvUpScaleProjector: [B, T//2, d_model] -> [N_tokens, llm_hidden]

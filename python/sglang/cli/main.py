@@ -55,3 +55,6 @@ def main():
         generate(args, extra_argv)
     elif args.subcommand == "version":
         version(args, extra_argv)
+
+if __name__ == "__main__":
+    main()

@@ -22,6 +22,7 @@ import json
 import logging
 import os
 import pickle
+import re
 import signal
 import socket
 import sys
@@ -207,6 +208,47 @@ asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
 _REQUEST_STATE_WAIT_TIMEOUT = envs.SGLANG_REQUEST_STATE_WAIT_TIMEOUT.get()
 
 logger = logging.getLogger(__name__)
+
+
+def get_assistant_penalty_tokens(text: str, tokenizer) -> List[int]:
+    """Extract penalty token IDs from the latest assistant responses in a prompt."""
+    if not text or tokenizer is None:
+        return []
+
+    matches = re.findall(
+        r"<\|im_start\|>assistant\n(.*?)(?=<\|im_end\|>)",
+        text,
+        re.DOTALL,
+    )
+    if not matches:
+        return []
+
+    penalty_ids = []
+    for segment in matches[-5:]:
+        segment = re.sub(r"\(.*?\)", "", segment)
+        segment = re.sub(r"（.*?）", "", segment).strip()
+        if not segment:
+            continue
+
+        try:
+            token_ids = tokenizer.encode(
+                segment,
+                multimodal_params=None,
+                add_special_tokens=False,
+            )
+        except TypeError:
+            token_ids = tokenizer.encode(segment, add_special_tokens=False)
+
+        valid_token_count = 0
+        for token_id in token_ids:
+            token_str = tokenizer.decode([token_id])
+            if re.sub(r"[^\w\s\u4e00-\u9fff]", "", token_str).strip():
+                penalty_ids.append(int(token_id))
+                valid_token_count += 1
+                if valid_token_count == 5:
+                    break
+
+    return penalty_ids
 
 
 def _validate_watermark_request(sampling_params: SamplingParams) -> None:
@@ -916,6 +958,26 @@ class TokenizerManager(TokenizerControlMixin, TokenizerManagerScoreMixin):
 
         # Normalize the request
         obj.normalize_batch_and_arguments()
+
+        if isinstance(obj, GenerateReqInput):
+            if obj.is_single:
+                sampling_params_list = [obj.sampling_params]
+                prompt_texts = [obj.text]
+            else:
+                # Normalization can reuse one sampling dict across batch entries.
+                obj.sampling_params = [dict(params) for params in obj.sampling_params]
+                sampling_params_list = obj.sampling_params
+                prompt_texts = obj.text or [None] * len(sampling_params_list)
+            for sampling_params, prompt_text in zip(sampling_params_list, prompt_texts):
+                if (
+                    sampling_params.get("custom_penalty_ids") is None
+                    and (self.preferred_sampling_params or {}).get("custom_penalty_ids")
+                    is None
+                ):
+                    sampling_params["custom_penalty_ids"] = (
+                        get_assistant_penalty_tokens(prompt_text, self.tokenizer)
+                    )
+
         self._set_default_priority(obj)
         if (
             isinstance(obj, GenerateReqInput)
