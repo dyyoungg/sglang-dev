@@ -357,7 +357,7 @@ def floor_by_factor(number: int, factor: int) -> int:
     """Returns the largest integer less than or equal to 'number' that is divisible by 'factor'."""
     return math.floor(number / factor) * factor
 
-IMAGE_FACTOR=32
+IMAGE_FACTOR = int(os.getenv("API_TEST_IMAGE_FACTOR", "28"))
 MIN_PIXELS_SEQ = 64
 MIN_PIXELS_SEQ = 64  # 64 token
 MAX_PIXELS_SEQ = 1980 # 1980 token
@@ -416,7 +416,7 @@ async def run_asset_tests(mode: str) -> None:
     Server: TP=1, skip-server-warmup, disable-radix-cache; run requests serially.
     """
     client = MultiModalClient(
-        url=os.getenv("API_TEST_URL", "http://127.0.0.1:18004/generate_stream"),
+        url=os.getenv("API_TEST_URL", "http://127.0.0.1:18004/generate"),
         default_sampling_params={
             "max_new_tokens": 256,
             "temperature": 0.0,
@@ -559,7 +559,7 @@ async def main():
         return
 
     client = MultiModalClient(
-        url=os.getenv("API_TEST_URL", "http://127.0.0.1:18004/generate_stream"),
+        url=os.getenv("API_TEST_URL", "http://127.0.0.1:18004/generate"),
         default_sampling_params={
             "max_new_tokens": 2048,
             "temperature": 0.7,
@@ -572,7 +572,7 @@ async def main():
 
     image_path = os.getenv(
         "API_TEST_IMAGE",
-        "./examples/assets/test1.png",
+        "./examples/assets/test1.jpg",
     )
     image = Image.open(image_path)
     width, height = image.size
@@ -635,7 +635,7 @@ async def main():
 
     # ═══════════════════════════════════════════════════════
     # 测试4: 多对图 + 不同 ratio
-    #   4张图 → 2对 → ratios=[1, 16]
+    #   4张图 → 2对 → ratios=[4, 12]
     # ═══════════════════════════════════════════════════════
     print("=== 测试4: 多对图不同ratio [4, 12] ===")
     images_multi = [resized_image] * 4  # 4张图 → 2对
@@ -649,7 +649,7 @@ async def main():
         if first_time == 0:
             first_time = time.time() - t1
         print(token, end="", flush=True)
-    print(f"\n[ratios=[1,16]] TTFT={first_time:.3f}s\n")
+    print(f"\n[ratios=[4,12]] TTFT={first_time:.3f}s\n")
 
 
 if __name__ == "__main__":

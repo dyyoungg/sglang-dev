@@ -6,8 +6,11 @@ from unittest.mock import patch
 
 import torch
 
-from sglang.srt.sampling.legacy_sampler import sample_legacy_top_kp
-from sglang.srt.sampling.sampling_params import TOP_K_ALL
+from sglang.srt.sampling.legacy_sampler import (
+    sample_legacy_top_kp,
+    validate_legacy_sampling_request,
+)
+from sglang.srt.sampling.sampling_params import TOP_K_ALL, SamplingParams
 from sglang.test.ci.ci_register import register_cpu_ci
 
 register_cpu_ci(est_time=5, suite="stage-a-test-cpu")
@@ -27,6 +30,15 @@ def make_info(top_ks, top_ps, temperatures=None):
 
 
 class TestLegacySampler(unittest.TestCase):
+    def test_unsupported_options_rejected_at_request_ingress(self):
+        """Reject unsupported requests without killing the scheduler's sampler."""
+        for kwargs in ({"min_p": 0.1}, {"sampling_seed": 42}):
+            with self.subTest(kwargs=kwargs):
+                params = SamplingParams(**kwargs)
+                with self.assertRaisesRegex(ValueError, "legacy_top_kp"):
+                    validate_legacy_sampling_request(params, "legacy_top_kp")
+                validate_legacy_sampling_request(params, "pytorch")
+
     def test_top_k_keeps_k_plus_one_and_restores_vocab_order(self):
         probs = torch.tensor([[0.05, 0.30, 0.10, 0.40, 0.15]])
         with patch("torch.multinomial", return_value=torch.tensor([[1]])) as sample:

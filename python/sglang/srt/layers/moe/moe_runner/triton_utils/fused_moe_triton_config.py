@@ -9,47 +9,28 @@ from typing import Any, Dict, List, Optional, Tuple
 import torch
 import triton
 
-from sglang.srt.server_args import get_global_server_args
+from sglang.srt.runtime_context import get_exec
 from sglang.srt.utils import get_device_name, is_hip
 
 logger = logging.getLogger(__name__)
 _is_hip = is_hip()
+_LOW_SMEM_FP8_DEFAULT_CUTOFF_BYTES = 128 * 1024
 
 
-@functools.lru_cache(maxsize=1)
-def _get_device_shared_mem_limit() -> int:
-    """Return max dynamic shared memory per block (bytes). 0 if detection fails.
-
-    Triton's OutOfResources check uses the per-block opt-in limit from
-    cuDeviceGetAttribute(CU_DEVICE_ATTRIBUTE_MAX_SHARED_MEMORY_PER_BLOCK_OPTIN).
-    torch exposes the per-SM value which is always >= per-block, so it works as
-    a conservative upper bound. On architectures where the two are equal (e.g.
-    SM120 Blackwell = 101376) this is exact.
-    """
+@functools.lru_cache(maxsize=None)
+def _get_cuda_shared_memory_per_block_optin() -> Optional[int]:
+    if _is_hip or not torch.cuda.is_available():
+        return None
     try:
-        import torch
-
-        if torch.cuda.is_available():
-            props = torch.cuda.get_device_properties(torch.cuda.current_device())
-            # Prefer the per-block attribute if available (PyTorch ≥2.4),
-            # otherwise fall back to per-SM which is always a safe upper bound.
-            limit = getattr(
-                props,
-                "max_shared_memory_per_block_optin",
-                getattr(props, "shared_memory_per_multiprocessor", 0),
-            )
-            return limit
-    except Exception:
-        pass
-    return 0
+        props = torch.cuda.get_device_properties(torch.cuda.current_device())
+    except (AssertionError, RuntimeError):
+        return None
+    return getattr(props, "shared_memory_per_block_optin", None)
 
 
-def _estimate_smem_bytes(
-    block_m: int, block_n: int, block_k: int, num_stages: int, elem_bytes: int = 1
-) -> int:
-    """Rough estimate of Triton pipeline shared memory: (A_tile + B_tile) * (num_stages - 1)."""
-    per_stage = (block_m * block_k + block_n * block_k) * elem_bytes
-    return per_stage * max(num_stages - 1, 1)
+def _use_low_smem_fp8_default() -> bool:
+    smem_limit = _get_cuda_shared_memory_per_block_optin()
+    return smem_limit is not None and smem_limit < _LOW_SMEM_FP8_DEFAULT_CUTOFF_BYTES
 
 
 def get_config_file_name(
@@ -88,13 +69,11 @@ def get_moe_configs(
     kernel on a given batch size bs, the closest batch size in the grid should
     be picked and the associated configuration chosen to invoke the kernel.
     """
-    if get_global_server_args().enable_deterministic_inference:
+    if get_exec().deterministic.enable_deterministic_inference:
         logger.warning(
             "Deterministic inference is enabled, using default MoE kernel config."
         )
         return None
-    # Supported Triton versions, should be sorted from the newest to the oldest
-    supported_triton_versions = ["3.4.0", "3.3.1", "3.2.0", "3.1.0"]
 
     # First look up if an optimized configuration is available in the configs
     # directory
@@ -132,13 +111,23 @@ def get_moe_configs(
             # If a configuration has been found, return it
             return {int(key): val for key, val in json.load(f).items()}
 
-    # Searching for other triton versions that supports the same config
-    for try_triton_version in supported_triton_versions:
+    # Discover available triton config dirs on disk and search newest-first.
+    configs_root = os.path.join(config_dir, "configs")
+    available_versions = sorted(
+        (
+            d.removeprefix("triton_").replace("_", ".")
+            for d in os.listdir(configs_root)
+            if d.startswith("triton_")
+        ),
+        key=lambda v: tuple(int(x) for x in v.split(".")),
+        reverse=True,
+    )
+
+    for try_triton_version in available_versions:
         if try_triton_version == triton_version:
             continue
         try_config_file_path = os.path.join(
-            config_dir,
-            "configs",
+            configs_root,
             f"triton_{try_triton_version.replace('.', '_')}",
             json_file_name,
         )
@@ -150,12 +139,29 @@ def get_moe_configs(
                 # If a configuration has been found, return it
                 return {int(key): val for key, val in json.load(f).items()}
 
-    # If no optimized configuration is available, we will use the default configuration when down_moe is False
-    # When down_moe is True, we will try to use the config for down_moe=False
     if down_moe:
+        # A separate down-projection config enables the TMA path, but it is
+        # optional. Reuse a tuned up-projection config when it is absent so
+        # the second GEMM does not silently fall back to the heuristic.
+        up_configs = get_moe_configs(
+            E,
+            N,
+            dtype,
+            block_n,
+            block_k,
+            per_channel_quant=per_channel_quant,
+            down_moe=False,
+        )
+        if up_configs is not None:
+            logger.warning(
+                "Down MoE config file not found at %s; reusing the tuned "
+                "up-projection config without TMA. Performance might be sub-optimal.",
+                config_file_path,
+            )
+            return up_configs
         logger.warning(
             (
-                "Using MoE kernel config with down_moe=False. Performance might be sub-optimal! "
+                "Using default MoE kernel config. Performance might be sub-optimal! "
                 "Config file not found at %s, you can create them with https://github.com/sgl-project/sglang/tree/main/benchmark/kernels/fused_moe_triton"
             ),
             config_file_path,
@@ -181,7 +187,7 @@ def get_default_config(
     is_marlin: bool,
     block_shape: Optional[List[int]] = None,
 ) -> Dict[str, int]:
-    if get_global_server_args().enable_deterministic_inference:
+    if get_exec().deterministic.enable_deterministic_inference:
         config = {
             "BLOCK_SIZE_M": 64,
             "BLOCK_SIZE_N": 64,
@@ -191,41 +197,42 @@ def get_default_config(
         return config
     if dtype == "fp8_w8a8":
         if block_shape is None:
-            config = {
-                "BLOCK_SIZE_M": 128,
-                "BLOCK_SIZE_N": 256,
-                "BLOCK_SIZE_K": 128,
-                "GROUP_SIZE_M": 32,
-                "num_warps": 8,
-                "num_stages": 2 if _is_hip else 4,
-            }
-            if M <= E:
+            if _use_low_smem_fp8_default():
                 config = {
-                    "BLOCK_SIZE_M": 64,
-                    "BLOCK_SIZE_N": 128,
-                    "BLOCK_SIZE_K": 128,
+                    "BLOCK_SIZE_M": 32,
+                    "BLOCK_SIZE_N": 64,
+                    "BLOCK_SIZE_K": 256,
                     "GROUP_SIZE_M": 1,
                     "num_warps": 4,
+                    "num_stages": 4,
+                }
+                if M > E:
+                    config = {
+                        "BLOCK_SIZE_M": 64,
+                        "BLOCK_SIZE_N": 128,
+                        "BLOCK_SIZE_K": 256,
+                        "GROUP_SIZE_M": 64,
+                        "num_warps": 4,
+                        "num_stages": 2,
+                    }
+            else:
+                config = {
+                    "BLOCK_SIZE_M": 128,
+                    "BLOCK_SIZE_N": 256,
+                    "BLOCK_SIZE_K": 128,
+                    "GROUP_SIZE_M": 32,
+                    "num_warps": 8,
                     "num_stages": 2 if _is_hip else 4,
                 }
-            # Clamp num_stages if shared memory would exceed hardware limit
-            # (e.g. SM120 Blackwell has only ~99KB vs SM90 Hopper's ~228KB)
-            smem_limit = _get_device_shared_mem_limit()
-            if smem_limit > 0:
-                while config["num_stages"] > 1:
-                    est = _estimate_smem_bytes(
-                        config["BLOCK_SIZE_M"],
-                        config["BLOCK_SIZE_N"],
-                        config["BLOCK_SIZE_K"],
-                        config["num_stages"],
-                    )
-                    if est <= smem_limit:
-                        break
-                    config["num_stages"] -= 1
-                    # logger.info(
-                    #     f"Reduced MoE FP8 num_stages to {config['num_stages']} "
-                    #     f"(smem est {est} > hw limit {smem_limit})"
-                    # )
+                if M <= E:
+                    config = {
+                        "BLOCK_SIZE_M": 64,
+                        "BLOCK_SIZE_N": 128,
+                        "BLOCK_SIZE_K": 128,
+                        "GROUP_SIZE_M": 1,
+                        "num_warps": 4,
+                        "num_stages": 2 if _is_hip else 4,
+                    }
         else:
             # Block-wise quant: BLOCK_SIZE_K must be divisible by block_shape[1]
             config = {
@@ -315,9 +322,20 @@ def try_get_optimal_moe_config(
                     [cfg["BLOCK_SIZE_M"] for cfg in down_configs.values()]
                 )
     if return_down_config:
-        assert (
-            down_config is None or config["BLOCK_SIZE_M"] == down_config["BLOCK_SIZE_M"]
-        )
+        if (
+            down_config is not None
+            and config["BLOCK_SIZE_M"] != down_config["BLOCK_SIZE_M"]
+        ):
+            # Both kernels share one moe_align_block_size sort, so the down
+            # config must use the up config's BLOCK_SIZE_M.
+            logger.warning_once(
+                "down_moe config BLOCK_SIZE_M=%d does not match up config "
+                "BLOCK_SIZE_M=%d at M=%d; overriding down BLOCK_SIZE_M to match.",
+                down_config["BLOCK_SIZE_M"],
+                config["BLOCK_SIZE_M"],
+                M,
+            )
+            down_config["BLOCK_SIZE_M"] = config["BLOCK_SIZE_M"]
         return config, (down_config, max_block_m)
     return config
 

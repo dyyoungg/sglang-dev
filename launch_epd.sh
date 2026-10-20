@@ -55,14 +55,14 @@ COMMON_ARGS=(
     --log-level debug
     --chunked-prefill-size 16384
     --model-loader-extra-config '{"enable_multithread_load": true,"num_threads": 8}'
-    --cuda-graph-max-bs 8
+    --cuda-graph-max-bs-decode 8
     --tp-size "$TP_SIZE"
     --enable-mfu-metrics
     --enable-metrics
     --enable-request-time-stats-logging
     --show-time-cost
     --enable-dynamic-batch-tokenizer
-    --disable-piecewise-cuda-graph
+    --cuda-graph-backend-prefill disabled
     --enable-multimodal
     --enable-broadcast-mm-inputs-process
 )

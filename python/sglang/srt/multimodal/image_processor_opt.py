@@ -23,14 +23,16 @@ from transformers.utils import TensorType
 from transformers.image_processing_utils import BatchFeature, get_size_dict
 from transformers.image_transforms import convert_to_rgb
 
-_numexpr_override = os.environ.get("SGLANG_NUMEXPR_NUM_THREADS")
+from sglang.srt.environ import envs
+
+_numexpr_override = envs.SGLANG_NUMEXPR_NUM_THREADS.get()
 if _numexpr_override is not None:
     ne.set_num_threads(int(_numexpr_override))
 else:
-    ne.set_num_threads(min(os.cpu_count() // 4, 16))  # 动态计算线程数
+    ne.set_num_threads(max(1, min((os.cpu_count() or 1) // 4, 16)))
 
-_IMG_PREPROCESS_BACKEND = os.environ.get("SGLANG_IMG_PREPROCESS_BACKEND", "numexpr").lower()
-_IMG_TORCH_THREADS = os.environ.get("SGLANG_IMG_TORCH_THREADS")
+_IMG_PREPROCESS_BACKEND = envs.SGLANG_IMG_PREPROCESS_BACKEND.get().lower()
+_IMG_TORCH_THREADS = envs.SGLANG_IMG_TORCH_THREADS.get()
 print(f"Image preprocess backend: {_IMG_PREPROCESS_BACKEND}!! torch thread: {_IMG_TORCH_THREADS}")
 
 def batch_center_crop(

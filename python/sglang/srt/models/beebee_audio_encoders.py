@@ -12,10 +12,6 @@ from transformers.activations import ACT2FN
 from transformers.models.whisper.configuration_whisper import WhisperConfig
 from flash_attn import flash_attn_varlen_func
 
-from sglang.srt.distributed import (
-    get_tensor_model_parallel_rank,
-    get_tensor_model_parallel_world_size,
-)
 from sglang.srt.layers.linear import (
     ColumnParallelLinear,
     RowParallelLinear,
@@ -23,7 +19,7 @@ from sglang.srt.layers.linear import (
 )
 from sglang.srt.configs.beebeeomni_config import BeeBeeAudioConfig
 from sglang.srt.layers.quantization.base_config import QuantizationConfig
-from sglang.srt.server_args import get_global_server_args
+from sglang.srt.runtime_context import get_mm, get_parallel
 from sglang.srt.utils import is_cuda, is_npu
 
 
@@ -66,9 +62,8 @@ class WhisperAttention(nn.Module):
             "embed_dim must be divisible by num_heads"
         self.scaling = self.head_dim ** -0.5
         self.separate_qkv = quant_config is None
-        self.use_data_parallel = get_global_server_args().mm_enable_dp_encoder
-        tp_size = 1 if self.use_data_parallel else get_tensor_model_parallel_world_size()
-        tp_rank = 0 if self.use_data_parallel else get_tensor_model_parallel_rank()
+        self.use_data_parallel = get_mm().mm_enable_dp_encoder
+        tp_size = 1 if self.use_data_parallel else get_parallel().tp_size
         
         assert num_heads % tp_size == 0, (
             f"num_heads ({num_heads}) must be divisible by tp_size ({tp_size})"
@@ -85,8 +80,7 @@ class WhisperAttention(nn.Module):
             total_num_heads=num_heads,
             bias=True,
             quant_config=quant_config,
-            tp_rank=tp_rank,
-            tp_size=tp_size,
+            parallel_group="replicated" if self.use_data_parallel else "tp",
         )
         # RowParallelLinear reduces across TP ranks after the projection.
         self.out_proj = RowParallelLinear(
@@ -94,8 +88,7 @@ class WhisperAttention(nn.Module):
             output_size=embed_dim,
             bias=True,
             quant_config=quant_config,
-            tp_rank=tp_rank,
-            tp_size=tp_size,
+            parallel_group="replicated" if self.use_data_parallel else "tp",
         )
  
     def forward(
@@ -160,11 +153,11 @@ class WhisperEncoderLayer(nn.Module):
         self.activation_fn = ACT2FN[config.activation_function]
         self.activation_dropout = config.activation_dropout
         self.dropout = config.dropout
-        self.use_data_parallel = get_global_server_args().mm_enable_dp_encoder
-        self.tp_size = 1 if self.use_data_parallel else get_tensor_model_parallel_world_size()
-        self.tp_rank = 0 if self.use_data_parallel else get_tensor_model_parallel_rank()
-        self.fc1 = ColumnParallelLinear(d, config.encoder_ffn_dim, quant_config=quant_config, tp_rank=self.tp_rank, tp_size=self.tp_size)
-        self.fc2 = RowParallelLinear(config.encoder_ffn_dim, d, quant_config=quant_config, tp_rank=self.tp_rank, tp_size=self.tp_size)
+        self.use_data_parallel = get_mm().mm_enable_dp_encoder
+        self.tp_size = 1 if self.use_data_parallel else get_parallel().tp_size
+        self.tp_rank = 0 if self.use_data_parallel else get_parallel().tp_rank
+        self.fc1 = ColumnParallelLinear(d, config.encoder_ffn_dim, quant_config=quant_config, parallel_group="replicated" if self.use_data_parallel else "tp")
+        self.fc2 = RowParallelLinear(config.encoder_ffn_dim, d, quant_config=quant_config, parallel_group="replicated" if self.use_data_parallel else "tp")
         self.final_layer_norm = nn.LayerNorm(d)
  
     def forward(

@@ -10,6 +10,18 @@ import torch
 
 if TYPE_CHECKING:
     from sglang.srt.sampling.sampling_batch_info import SamplingBatchInfo
+    from sglang.srt.sampling.sampling_params import SamplingParams
+
+
+def validate_legacy_sampling_request(
+    sampling_params: "SamplingParams", sampling_backend: str
+) -> None:
+    if sampling_backend != "legacy_top_kp":
+        return
+    if sampling_params.min_p > 0:
+        raise ValueError("legacy_top_kp does not support min_p > 0")
+    if sampling_params.sampling_seed is not None:
+        raise ValueError("legacy_top_kp does not support deterministic sampling")
 
 
 def sample_legacy_top_kp(

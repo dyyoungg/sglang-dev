@@ -17,16 +17,18 @@ from pathlib import Path
 
 import torch
 
+from sglang.srt.model_executor.cuda_graph_config import cuda_graph_fully_disabled
+from sglang.srt.runtime_context import get_model, get_parallel, get_schedule, get_spec
+
 
 def install_output_logits_capture(runner, output_dir):
-    args = runner.server_args
-    if runner.tp_size != 1 or runner.pp_size != 1:
+    if get_parallel().tp_size != 1 or get_parallel().pp_size != 1:
         raise ValueError("Output logits diagnostics require TP=PP=1")
-    if not args.disable_cuda_graph or not args.disable_overlap_schedule:
+    if not cuda_graph_fully_disabled() or not get_schedule().disable_overlap_schedule:
         raise ValueError(
             "Output logits diagnostics require disabling CUDA graphs and overlap"
         )
-    if args.speculative_algorithm is not None:
+    if get_spec().speculative_algorithm is not None:
         raise ValueError(
             "Output logits diagnostics do not support speculative decoding"
         )
@@ -46,7 +48,7 @@ def install_output_logits_capture(runner, output_dir):
     (root / "inventory.json").write_text(
         json.dumps(
             {
-                "quantization": args.quantization,
+                "quantization": get_model().quantization,
                 "dtype": str(runner.dtype),
                 "methods": dict(Counter(v["method"] for v in inventory.values())),
                 "modules": inventory,

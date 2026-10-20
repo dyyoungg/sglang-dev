@@ -12,8 +12,10 @@ from transformers.models.qwen2_vl.image_processing_qwen2_vl_fast import Qwen2VLI
 
 
 # 动态调整 NumExpr 的计算线程数，以避免过多线程引发底层调度开销
-ne.set_num_threads(min(os.cpu_count() // 4, 16))
-_numexpr_override = os.environ.get("SGLANG_NUMEXPR_NUM_THREADS")
+from sglang.srt.environ import envs
+
+ne.set_num_threads(max(1, min((os.cpu_count() or 1) // 4, 16)))
+_numexpr_override = envs.SGLANG_NUMEXPR_NUM_THREADS.get()
 if _numexpr_override is not None:
     ne.set_num_threads(int(_numexpr_override))
 

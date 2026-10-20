@@ -29,7 +29,7 @@ from typing import Callable
 
 import torch
 
-from sglang.srt.model_executor.cuda_graph_runner import get_is_capture_mode
+from sglang.srt.model_executor.runner import get_is_capture_mode
 from sglang.srt.utils import is_cuda, is_hip, is_xpu, next_power_of_2
 
 _is_cuda = is_cuda()
@@ -37,7 +37,7 @@ _is_hip = is_hip()
 _is_xpu = is_xpu()
 
 if _is_cuda or _is_hip or _is_xpu:
-    from sglang.jit_kernel.moe_lora_align import moe_lora_align_block_size
+    from sglang.kernels.ops.lora.moe.moe_lora_align import moe_lora_align_block_size
 
 
 def _get_moe_lora_block_config(max_lora_rank: int) -> dict:
@@ -176,16 +176,14 @@ class LoRAInfo:
     # LoRA config per adapter
     lora_ranks: torch.Tensor  # [num_loras]
     adapter_enabled: torch.Tensor  # [num_loras] - which adapters are enabled
+    token_lora_mapping: torch.Tensor  # [num_tokens] - adapter used by each token
     max_lora_rank: int  # Maximum LoRA rank across all adapters
 
     num_experts: int
+    has_active_lora: bool = True
     experts_shared_outer_loras: bool = False
     cg_buffers: dict | None = None
 
-    fully_sharded: bool = False
-    tp_size: int = 1
-    tp_rank: int = 0
-    hidden_size: int = 0
     lora_use_virtual_experts: bool = False
 
 
@@ -199,22 +197,6 @@ class LoRAHooks:
     after_down: (
         Callable[[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor], None] | None
     ) = None
-
-
-def _compute_token_lora_mapping(
-    hidden_states: torch.Tensor,
-    lora_info: LoRAInfo,
-) -> torch.Tensor:
-    """Map each token to its LoRA adapter index (-1 for no LoRA)."""
-    token_positions = torch.arange(
-        hidden_states.shape[0], device=hidden_states.device, dtype=torch.int32
-    )
-    req_indices = torch.searchsorted(
-        lora_info.seg_indptr[1:].to(torch.int32),
-        token_positions,
-        right=True,
-    )
-    return lora_info.req_to_lora.to(torch.int32)[req_indices]
 
 
 def _compute_lora_alignment(
@@ -241,7 +223,7 @@ def _compute_lora_alignment(
 
     device = topk_ids.device
 
-    use_naive = (
+    use_naive = _is_xpu or (
         cg is None
         and M * topk_ids.shape[1] * _SPARSITY_FACTOR
         <= lora_info.num_experts * max_loras
@@ -330,19 +312,14 @@ def _add_lora_gate_up_delta(
     routing_cache: dict | None = None,
 ) -> None:
     """Add LoRA gate_up delta to intermediate_cache in-place."""
-    from sglang.srt.lora.triton_ops import (
-        fused_moe_lora,
+    from sglang.kernels.ops.lora.moe.fused_moe_lora_kernel import fused_moe_lora
+    from sglang.kernels.ops.lora.moe.virtual_experts import (
         merged_experts_fused_moe_lora_add,
     )
 
-    if get_is_capture_mode():
-        from sglang.srt.model_executor.cuda_graph_runner import get_capture_lora_variant
-
-        # Record LoRA kernels for lora graph; skip for nolora graph.
-        if get_capture_lora_variant() == "nolora":
-            return
-
     if lora_info is None or lora_info.max_lora_rank == 0:
+        return
+    if not get_is_capture_mode() and not lora_info.has_active_lora:
         return
 
     M, top_k, gate_up_dim = intermediate_cache.shape
@@ -410,7 +387,6 @@ def _add_lora_gate_up_delta(
             expand_num_warps=4,
             expand_num_stages=2,
             expand_split_k=1,
-            fully_sharded=lora_info.fully_sharded,
         )
 
 
@@ -428,19 +404,13 @@ def _add_lora_down_delta(
     routing_cache: dict | None = None,
 ) -> None:
     """Add LoRA down delta to intermediate_cache in-place."""
-    from sglang.srt.lora.triton_ops import (
-        fused_moe_lora,
+    from sglang.kernels.ops.lora.moe.fused_moe_lora_kernel import fused_moe_lora
+    from sglang.kernels.ops.lora.moe.virtual_experts import (
         merged_experts_fused_moe_lora_add,
     )
 
     if lora_info.max_lora_rank == 0:
         return
-
-    if get_is_capture_mode():
-        from sglang.srt.model_executor.cuda_graph_runner import get_capture_lora_variant
-
-        if get_capture_lora_variant() == "nolora":
-            return
 
     M, top_k, hidden_dim = intermediate_cache.shape
 
@@ -448,12 +418,6 @@ def _add_lora_down_delta(
     down_lora_b = lora_info.down_lora_b_weights
     if lora_info.experts_shared_outer_loras and not lora_info.lora_use_virtual_experts:
         down_lora_b = down_lora_b.expand(-1, lora_info.num_experts, -1, -1)
-
-    if lora_info.fully_sharded and lora_info.tp_size > 1:
-        shard_size = lora_info.hidden_size // lora_info.tp_size
-        offset = shard_size * lora_info.tp_rank
-    else:
-        offset = 0
 
     if lora_info.lora_use_virtual_experts:
         merged_experts_fused_moe_lora_add(
@@ -499,8 +463,6 @@ def _add_lora_down_delta(
             expand_num_stages=2,
             expand_split_k=1,
             mul_routed_weight=True,
-            fully_sharded=lora_info.fully_sharded,
-            offset=offset,
         )
 
 
@@ -516,12 +478,11 @@ def build_lora_hooks(
     """
     if lora_info is None or lora_info.max_lora_rank == 0:
         return LoRAHooks()
-
-    if get_is_capture_mode():
-        from sglang.srt.model_executor.cuda_graph_runner import get_capture_lora_variant
-
-        if get_capture_lora_variant() == "nolora":
-            return LoRAHooks()
+    # Skip alignment/mapping work entirely when the batch has no active adapter.
+    # During CUDA graph capture we still need to record the kernels into the
+    # graph (adapter_enabled is all-zero, kernels early-exit on GPU).
+    if not get_is_capture_mode() and not lora_info.has_active_lora:
+        return LoRAHooks()
 
     # Compute alignment / mapping (once, shared by both hooks)
     token_lora_mapping: torch.Tensor | None = None
@@ -531,7 +492,7 @@ def build_lora_hooks(
     lora_ids: torch.Tensor | None = None
 
     if lora_info.lora_use_virtual_experts:
-        token_lora_mapping = _compute_token_lora_mapping(hidden_states, lora_info)
+        token_lora_mapping = lora_info.token_lora_mapping
     else:
         (
             sorted_token_ids_reshaped,

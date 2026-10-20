@@ -3,7 +3,6 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, List
 
-
 import numpy as np
 import tqdm
 
@@ -129,53 +128,77 @@ async def voice_chat(disaggregation_mode: str, tokenizer_manager: TokenizerManag
 
 
 @warmup("beebee_omni_warmup")
-async def beebee_omni_warmup(disaggregation_mode: str, tokenizer_manager):
-    import io
-    from PIL import Image
+async def beebee_omni_warmup(
+    disaggregation_mode: str, tokenizer_manager: TokenizerManager
+):
+    import asyncio
     import base64
+    import io
     import wave
-    logger.info("🚀 Start BeeBeeOmni warmup")
+
+    from PIL import Image
+
+    from sglang.srt.runtime_context import get_parallel
 
     if disaggregation_mode == "decode":
-        logger.info("当前为 Decode 节点，跳过多模态预热。")
         return
+    images = []
+    for size in ((448, 448), (1120, 672)):
+        buffer = io.BytesIO()
+        Image.new("RGB", size).save(buffer, format="JPEG")
+        images.append(
+            "data:image/jpeg;base64," + base64.b64encode(buffer.getvalue()).decode()
+        )
+    buffer = io.BytesIO()
+    with wave.open(buffer, "wb") as wav:
+        wav.setnchannels(1)
+        wav.setsampwidth(2)
+        wav.setframerate(16000)
+        wav.writeframes(bytes(32000))
+    audio = "data:audio/wav;base64," + base64.b64encode(buffer.getvalue()).decode()
 
-    dummy_img = Image.new("RGB", (448, 448), (0, 0, 0))
-    img_buffer = io.BytesIO()
-    dummy_img.save(img_buffer, format="JPEG")
-    img_b64_str = base64.b64encode(img_buffer.getvalue()).decode("utf-8")
-    dummy_image_input1 = f"data:image/jpeg;base64,{img_b64_str}"
+    async def run_one():
+        req = GenerateReqInput(
+            text="<image>" * 16 + "<audio>" * 8 + "请描述这段画面。",
+            image_data=[images[0]] * 8 + [images[1]] * 8,
+            audio_data=[audio] * 8,
+            sampling_params={"max_new_tokens": 1},
+        )
+        await tokenizer_manager.generate_request(req, None).__anext__()
 
-    dummy_img = Image.new("RGB", (1120, 672), (0, 0, 0))
-    img_buffer = io.BytesIO()
-    dummy_img.save(img_buffer, format="JPEG")
-    img_b64_str = base64.b64encode(img_buffer.getvalue()).decode("utf-8")
-    dummy_image_input2 = f"data:image/jpeg;base64,{img_b64_str}"    
+    await asyncio.gather(*(run_one() for _ in range(get_parallel().dp_size)))
+    logger.info("BeeBeeOmni multimodal warmup complete")
 
-    audio_buffer = io.BytesIO()
-    with wave.open(audio_buffer, 'wb') as wav_file:
-        wav_file.setnchannels(1)                # 单声道
-        wav_file.setsampwidth(2)                # 16-bit (2 bytes)
-        wav_file.setframerate(16000)            # 16kHz
-        wav_file.writeframes(b'\x00\x00' * 16000)
-    
-    audio_b64_str = base64.b64encode(audio_buffer.getvalue()).decode("utf-8")
-    dummy_audio_input = f"data:audio/wav;base64,{audio_b64_str}"
-    try:
-        dp_size = tokenizer_manager.server_args.dp_size
 
-        async def _run_one_warmup():
-            req = GenerateReqInput(
-                text="<image>"*16 + "<audio>"*8 + "请描述这段画面。",
-                image_data=[dummy_image_input1]*8 + [dummy_image_input2] * 8,
-                audio_data=[dummy_audio_input]*8,
-                sampling_params={"max_new_tokens": 1}
-            )
-            await tokenizer_manager.generate_request(req, None).__anext__()
+@warmup("prefill_shapes")
+async def prefill_shapes(disaggregation_mode: str, tokenizer_manager: TokenizerManager):
+    """Warmup Triton kernels across a wide range of prefill seq_lens (up to 32K).
 
-        import asyncio
-        await asyncio.gather(*[_run_one_warmup() for _ in range(dp_size)])
+    Uses power-of-2 sizes plus intermediate points to cover the shape space
+    that fused_moe, attention extend, and other Triton kernels may encounter.
+    """
+    page_size = 64
+    sizes = set()
+    base = 64
+    while base <= 32768:
+        sizes.add(base)
+        mid = base * 3 // 2
+        mid = (mid + page_size - 1) // page_size * page_size
+        if mid <= 32768:
+            sizes.add(mid)
+        base *= 2
+    sizes = sorted(sizes)
 
-        logger.info("✅ warmup successfully!!")
-    except Exception as e:
-        logger.error(f"❌ warmup failed! error:{e}")
+    for size in tqdm.tqdm(sizes, desc="Warmup prefill shapes (up to 32K)"):
+        generate_req_input = GenerateReqInput(
+            input_ids=(np.random.randint(2**16, size=[size])).tolist(),
+            sampling_params={
+                "max_new_tokens": 1,
+                "temperature": 0.0,
+            },
+        )
+        if disaggregation_mode != "null":
+            generate_req_input.bootstrap_room = 0
+            generate_req_input.bootstrap_host = FAKE_BOOTSTRAP_HOST
+
+        await tokenizer_manager.generate_request(generate_req_input, None).__anext__()

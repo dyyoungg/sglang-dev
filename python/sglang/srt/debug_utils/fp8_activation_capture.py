@@ -18,6 +18,8 @@ from pathlib import Path
 
 import torch
 
+from sglang.srt.environ import envs
+
 _CAPTURE = None
 
 
@@ -32,7 +34,7 @@ class Fp8ActivationCapture:
             raise ValueError("Matched checkpoint analysis requires TP=PP=1")
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
-        self.max_tokens = int(os.getenv("SGLANG_FP8_ACTIVATION_MAX_TOKENS", "1024"))
+        self.max_tokens = int(envs.SGLANG_FP8_ACTIVATION_MAX_TOKENS.get())
         if self.max_tokens < 1:
             raise ValueError("capture token limit must be positive")
         self.context = None

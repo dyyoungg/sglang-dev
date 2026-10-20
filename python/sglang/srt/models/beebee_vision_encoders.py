@@ -17,11 +17,6 @@ from transformers.models.qwen2_5_vl.modeling_qwen2_5_vl import (
     Qwen2_5_VisionPatchEmbed,
     Qwen2_5_VisionRotaryEmbedding,
 )
-from sglang.srt.distributed import (
-    get_tensor_model_parallel_rank,
-    get_tensor_model_parallel_world_size,
-)
-from sglang.srt.distributed.parallel_state import get_pp_group
 from sglang.srt.environ import envs
 from sglang.srt.layers.rotary_embedding import get_rope
 from sglang.srt.layers.attention.vision import VisionAttention, BATCH_BUCKETS, FLASHINFER_MAX_SEQLEN_BUCKETS, FLASHINFER_WORKSPACE_SIZE_BYTES
@@ -36,8 +31,6 @@ from sglang.srt.layers.utils import PPMissingLayer
 from sglang.srt.layers.vocab_parallel_embedding import VocabParallelEmbedding
 from sglang.srt.layers.conv import Conv3dLayer
 from sglang.srt.layers.dp_attention import (
-    get_attention_tp_rank,
-    get_attention_tp_size,
     is_dp_attention_enabled,
 )
 
@@ -45,7 +38,7 @@ from sglang.srt.configs.beebeeomni_config import BeeBeeVisionConfig
 from sglang.srt.configs.beebeeomni_moe_config import BeeBeeMoEVisionConfig
 from sglang.srt.models.utils import RotaryPosMixin, permute_inv, compute_cu_seqlens_from_grid_numpy
 from sglang.srt.multimodal.vit_cuda_graph_runner import ViTCudaGraphRunner
-from sglang.srt.server_args import get_global_server_args
+from sglang.srt.runtime_context import get_exec, get_mm, get_parallel
 from sglang.srt.utils import add_prefix, is_cuda, is_npu, round_up, is_cpu
 
 _is_cuda = is_cuda()
@@ -65,16 +58,15 @@ class Qwen2_5_VLMLP(nn.Module):
         use_data_parallel: bool = False,
     ):
         super().__init__()
-        self.tp_size = 1 if use_data_parallel else get_tensor_model_parallel_world_size()
-        self.tp_rank = 0 if use_data_parallel else get_tensor_model_parallel_rank()
+        self.tp_size = 1 if use_data_parallel else get_parallel().tp_size
+        self.tp_rank = 0 if use_data_parallel else get_parallel().tp_rank
         self.gate_up_proj = MergedColumnParallelLinear(
             input_size=in_features,
             output_sizes=[hidden_features] * 2,  # [gate_proj, up_proj]
             bias=bias,
             quant_config=quant_config,
             prefix=add_prefix("gate_up_proj", prefix),
-            tp_size=self.tp_size,
-            tp_rank=self.tp_rank,
+            parallel_group="replicated" if use_data_parallel else "tp",
         )
         self.down_proj = RowParallelLinear(
             hidden_features,
@@ -82,8 +74,7 @@ class Qwen2_5_VLMLP(nn.Module):
             bias=bias,
             quant_config=quant_config,
             prefix=add_prefix("down_proj", prefix),
-            tp_size=self.tp_size,
-            tp_rank=self.tp_rank,
+            parallel_group="replicated" if use_data_parallel else "tp",
         )
         self.hidden_act = hidden_act
         self.separate_gate_up = quant_config is None
@@ -147,7 +138,7 @@ class Qwen2_5_VisionBlock(nn.Module):
             prefix=add_prefix("attn", prefix),
             num_dummy_heads=num_dummy_heads,
             use_data_parallel=use_data_parallel,
-            use_compiled_rope=get_global_server_args().mm_use_compiled_rope,
+            use_compiled_rope=get_mm().mm_use_compiled_rope,
         )
         self.mlp = Qwen2_5_VLMLP(
             dim,
@@ -237,9 +228,6 @@ class DynamicAvgPoolProjector(nn.Module):
         self.encoder_hidden = encoder_hidden
         self.merge_size = 2 
 
-        tp_size = 1 if use_data_parallel else get_tensor_model_parallel_world_size()
-        tp_rank = 0 if use_data_parallel else get_tensor_model_parallel_rank()
-
         self.mlp = nn.ModuleList([
             ColumnParallelLinear(
                 encoder_hidden,
@@ -247,8 +235,7 @@ class DynamicAvgPoolProjector(nn.Module):
                 bias=True,
                 quant_config=quant_config,
                 prefix=add_prefix("mlp.0", prefix),
-                tp_size=tp_size,
-                tp_rank=tp_rank,
+                parallel_group="replicated" if use_data_parallel else "tp",
             ),
             nn.GELU(),
             RowParallelLinear(
@@ -257,8 +244,7 @@ class DynamicAvgPoolProjector(nn.Module):
                 bias=True,
                 quant_config=quant_config,
                 prefix=add_prefix("mlp.2", prefix),
-                tp_size=tp_size,
-                tp_rank=tp_rank,
+                parallel_group="replicated" if use_data_parallel else "tp",
             )
         ])
 
@@ -387,7 +373,7 @@ class BeeBeeQwen25VisionModel(nn.Module, RotaryPosMixin):
         )
 
         # Resource prepared for vit cuda graph
-        self.tp_size = 1 if use_data_parallel else get_tensor_model_parallel_world_size()
+        self.tp_size = 1 if use_data_parallel else get_parallel().tp_size
         self.max_context_len = max_context_len
         self.enable_cg = _is_cuda and envs.SGLANG_VIT_ENABLE_CUDA_GRAPH.get()
 
@@ -646,16 +632,15 @@ class Qwen3_VisionMLP(nn.Module):
         use_data_parallel: bool = False,
     ):
         super().__init__()
-        self.tp_size = 1 if use_data_parallel else get_attention_tp_size()
-        self.tp_rank = 0 if use_data_parallel else get_attention_tp_rank()
+        self.tp_size = 1 if use_data_parallel else get_parallel().attn_tp_size
+        self.tp_rank = 0 if use_data_parallel else get_parallel().attn_tp_rank
         self.linear_fc1 = ColumnParallelLinear(
             in_features,
             hidden_features,
             bias=bias,
             quant_config=quant_config,
             prefix=add_prefix("linear_fc1", prefix),
-            tp_size=self.tp_size,
-            tp_rank=self.tp_rank,
+            parallel_group="replicated" if use_data_parallel else "attn_tp",
         )
         self.linear_fc2 = RowParallelLinear(
             hidden_features,
@@ -663,8 +648,7 @@ class Qwen3_VisionMLP(nn.Module):
             bias=bias,
             quant_config=quant_config,
             prefix=add_prefix("linear_fc2", prefix),
-            tp_size=self.tp_size,
-            tp_rank=self.tp_rank,
+            parallel_group="replicated" if use_data_parallel else "attn_tp",
             use_dp_attention_reduce=is_dp_attention_enabled(),
         )
         self.act = ACT2FN[hidden_act]
@@ -742,7 +726,7 @@ class Qwen3_VisionBlock(nn.Module):
             use_data_parallel=use_data_parallel,
             use_dp_attention_reduce=is_dp_attention_enabled(),
             workspace_buffer=workspace_buffer,
-            use_compiled_rope=get_global_server_args().mm_use_compiled_rope,
+            use_compiled_rope=get_mm().mm_use_compiled_rope,
         )
         self.mlp = Qwen3_VisionMLP(
             dim,
@@ -812,14 +796,14 @@ class BeeBeeQwen3MoeVisionModel(nn.Module, RotaryPosMixin):
     ) -> None:
         super().__init__()
         self.config = vision_config
-        self.pp_group = get_pp_group()
+        self.pp_group = get_parallel().pp_group
         self.hidden_size = vision_config.hidden_size
         self.num_heads = vision_config.num_heads
         self.num_position_embeddings = vision_config.num_position_embeddings
         self.num_grid_per_side = int(self.num_position_embeddings**0.5)
         self.num_grid = self.num_grid_per_side * self.num_grid_per_side
         self.align_corners = (
-            get_global_server_args().enable_precise_embedding_interpolation
+            get_exec().kernel.enable_precise_embedding_interpolation
         )
         self.patch_size = vision_config.patch_size
         self.spatial_merge_size = vision_config.spatial_merge_size
@@ -860,7 +844,7 @@ class BeeBeeQwen3MoeVisionModel(nn.Module, RotaryPosMixin):
             self.rotary_pos_emb.base
         ).to(self.device)
         workspace_buffer = None
-        if get_global_server_args().mm_attention_backend == "flashinfer_cudnn":
+        if get_mm().mm_attention_backend == "flashinfer_cudnn":
             if torch.cuda.is_available() and (not is_npu()):
                 ws_device = torch.device("cuda", torch.cuda.current_device())
             else:
@@ -901,7 +885,7 @@ class BeeBeeQwen3MoeVisionModel(nn.Module, RotaryPosMixin):
             prefix=add_prefix("mm_projector", prefix),
             use_data_parallel=use_data_parallel
         )
-        self.tp_size = 1 if use_data_parallel else get_tensor_model_parallel_world_size()
+        self.tp_size = 1 if use_data_parallel else get_parallel().tp_size
         self.enable_cg = _is_cuda and envs.SGLANG_VIT_ENABLE_CUDA_GRAPH.get()
         self.cuda_graph_runner: Optional[ViTCudaGraphRunner] = None
         if self.enable_cg:

@@ -72,10 +72,10 @@ def gen_random_input_text(
         return ""
 
     special_ids = set(tokenizer.all_special_ids)
-    token_pool = [
+    token_pool = sorted(
         token_id for token_id in tokenizer.get_vocab().values()
         if token_id not in special_ids
-    ]
+    )
     if not token_pool:
         raise ValueError("Tokenizer has no non-special tokens to sample.")
 
@@ -220,7 +220,8 @@ async def send_request(
     use_beam_search: bool,
     images_list: Optional[List[Image.Image]] = [],
     audios_list: Optional[List[np.ndarray]] = [],
-    max_output_token: int = 1024
+    max_output_token: int = 1024,
+    ignore_eos: bool = False,
 ) -> None:
     
     if backend in ["vllm", "sglang"]:
@@ -249,7 +250,10 @@ async def send_request(
 
         pload = {
             "text": prompt,
-            "sampling_params": {"max_new_tokens": max_output_token},
+            "sampling_params": {
+                "max_new_tokens": max_output_token,
+                **({"ignore_eos": True, "temperature": 0} if ignore_eos else {}),
+            },
             "stream": True,
         }
         
@@ -293,7 +297,7 @@ async def send_request(
     else:
         raise ValueError(f"Unknown backend: {backend}")
 
-    request_start_time = time.time()
+    request_start_time = time.perf_counter()
     timeout = aiohttp.ClientTimeout(total=3 * 3600)
     
     stream = True
@@ -311,7 +315,7 @@ async def send_request(
                 
                 output = b"".join(chunks).decode("utf-8")
                 output = json.loads(output)
-                request_end_time = time.time()
+                request_end_time = time.perf_counter()
         
                 if backend == "lightllm":
                     output_token_len = output.get("count_output_tokens", 0)
@@ -328,36 +332,41 @@ async def send_request(
             
         async with aiohttp.ClientSession(timeout=timeout) as session:
             async with session.post(api_url, headers={'Accept': 'text/event-stream'}, json=pload) as response:
+                response.raise_for_status()
                 async for line in response.content:
                     if line:
                         data = line.decode().strip()
                         if data.startswith("data:"):
-                            if first_token_time == 0:
-                                first_token_time = time.time() - request_start_time
+                            if backend != "sglang" and first_token_time == 0:
+                                first_token_time = time.perf_counter() - request_start_time
                             line = data[5:].strip()
                         
                             if backend == "lightllm":
                                 try:
                                     json_data = json.loads(line)
                                     if json_data.get("finished", False):
-                                        request_end_time = time.time()
+                                        request_end_time = time.perf_counter()
                                         output_token_len = json_data.get("token", {}).get("count_output_tokens", 0)
                                 except:
                                     pass
                             elif backend == "sglang":
                                 if "[DONE]" in line:
-                                    request_end_time = time.time()
+                                    request_end_time = time.perf_counter()
                                     break
-                                try:
-                                    json_data = json.loads(line)
-                                    if "meta_info" in json_data and "completion_tokens" in json_data["meta_info"]:
-                                         output_token_len = json_data["meta_info"]["completion_tokens"]
-                                except:
-                                    pass
+                                json_data = json.loads(line)
+                                if "error" in json_data:
+                                    raise RuntimeError(f"Server returned an SSE error: {json_data['error']}")
+                                output_token_len = json_data.get("meta_info", {}).get("completion_tokens", output_token_len)
+                                if output_token_len > 0 and first_token_time == 0:
+                                    first_token_time = time.perf_counter() - request_start_time
                                            
-        request_end_time = time.time()                      
+        request_end_time = time.perf_counter()
         print(f"## Finished request. Output tokens: {output_token_len}") # 可视情况关闭打印避免刷屏
         
+    if backend == "sglang" and (output_token_len == 0 or first_token_time == 0):
+        raise RuntimeError("Stream ended without generated tokens.")
+    if backend == "sglang" and ignore_eos and output_token_len != max_output_token:
+        raise RuntimeError(f"Expected {max_output_token} output tokens, got {output_token_len}.")
     request_latency = request_end_time - request_start_time
     REQUEST_LATENCY.append((prompt_len, output_token_len, request_latency, first_token_time))
 
@@ -371,29 +380,43 @@ async def benchmark(
     use_beam_search: bool,
     request_rate: float,
     max_output_token: int = 1024,
-    mode:str="uniform"
+    mode:str="uniform",
+    max_concurrency: Optional[int] = None,
+    ignore_eos: bool = False,
 ) -> None:
+    # Acquire before dispatch so pending client work does not count as server latency.
+    semaphore = asyncio.Semaphore(max_concurrency or max(1, len(input_requests)))
+
+    async def run_one(request):
+        try:
+            prompt, prompt_len, images, audios = request
+            await send_request(
+                backend, model_dir, api_url, prompt, prompt_len, best_of,
+                use_beam_search, images, audios, max_output_token, ignore_eos,
+            )
+        finally:
+            semaphore.release()
+
     tasks: List[asyncio.Task] = []
     async for request in get_request(input_requests, request_rate, mode):
-        prompt, prompt_len, images, audios = request
-        task = asyncio.create_task(send_request(backend, 
-                                                model_dir, 
-                                                api_url, 
-                                                prompt,
-                                                prompt_len, 
-                                                best_of, 
-                                                use_beam_search, 
-                                                images, 
-                                                audios,
-                                                max_output_token))
-        tasks.append(task)
+        await semaphore.acquire()
+        tasks.append(asyncio.create_task(run_one(request)))
     await asyncio.gather(*tasks)
 
 
 def main(args: argparse.Namespace):
     print(args)
-    # random.seed(args.seed)
-    # np.random.seed(args.seed)
+    if args.num_prompts < 1 or args.max_output_token < 1:
+        raise ValueError("num_prompts and max_output_token must be positive.")
+    if args.request_rate <= 0 or math.isnan(args.request_rate):
+        raise ValueError("request_rate must be positive.")
+    if args.ignore_eos and args.backend != "sglang":
+        raise ValueError("--ignore-eos is currently supported only for SGLang.")
+    random.seed(args.seed)
+    np.random.seed(args.seed)
+    REQUEST_LATENCY.clear()
+    if args.max_concurrency is not None and args.max_concurrency < 1:
+        raise ValueError("max_concurrency must be positive.")
 
     api_url = f"http://{args.host}:{args.port}/generate"
 
@@ -411,7 +434,7 @@ def main(args: argparse.Namespace):
         audio_sec=args.audio_sec,
     )
 
-    benchmark_start_time = time.time()
+    benchmark_start_time = time.perf_counter()
     asyncio.run(benchmark(args.backend, 
                           args.tokenizer,
                           api_url, 
@@ -420,10 +443,12 @@ def main(args: argparse.Namespace):
                           args.use_beam_search, 
                           args.request_rate, 
                           args.max_output_token,
-                          args.mode
+                          args.mode,
+                          args.max_concurrency,
+                          args.ignore_eos,
                           ))
     
-    benchmark_end_time = time.time()
+    benchmark_end_time = time.perf_counter()
     benchmark_time = benchmark_end_time - benchmark_start_time
     print(f"\n{'='*40}")
     print(f"Total time: {benchmark_time:.4f} s")
@@ -432,6 +457,43 @@ def main(args: argparse.Namespace):
     if not REQUEST_LATENCY:
         print("No requests completed.")
         return
+
+    def stats(values):
+        return {
+            "mean": float(np.mean(values)),
+            "p50": float(np.percentile(values, 50)),
+            "p95": float(np.percentile(values, 95)),
+        }
+
+    tpot = [
+        (latency - first_time) / (output_len - 1)
+        for _, output_len, latency, first_time in REQUEST_LATENCY
+        if output_len > 1
+    ]
+    result_args = dict(vars(args))
+    if math.isinf(result_args["request_rate"]):
+        result_args["request_rate"] = "inf"
+    result = {
+        "args": result_args,
+        "completed": len(REQUEST_LATENCY),
+        "duration_s": benchmark_time,
+        "request_throughput": len(REQUEST_LATENCY) / benchmark_time,
+        "output_throughput_tokens_s": sum(x[1] for x in REQUEST_LATENCY) / benchmark_time,
+        "latency_s": stats([x[2] for x in REQUEST_LATENCY]),
+        "ttft_s": stats([x[3] for x in REQUEST_LATENCY]),
+        "tpot_s": stats(tpot) if tpot else None,
+        "requests": [
+            {"input_tokens": p, "output_tokens": o, "latency_s": latency, "ttft_s": first}
+            for p, o, latency, first in REQUEST_LATENCY
+        ],
+    }
+    print("Output throughput: %.2f tokens/s" % result["output_throughput_tokens_s"])
+    print("P95 request latency: %.4f s" % result["latency_s"]["p95"])
+    if result["tpot_s"]:
+        print("Mean decode time per output token: %.2f ms" % (1000 * result["tpot_s"]["mean"]))
+    if args.result_file:
+        with open(args.result_file, "w") as f:
+            json.dump(result, f, indent=2, allow_nan=False)
 
     # Compute the latency statistics.
     avg_latency = np.mean([latency for _, _, latency, _ in REQUEST_LATENCY])
@@ -496,5 +558,9 @@ if __name__ == "__main__":
                         help="Number of requests per second. (inf = concurrent burst)")
     parser.add_argument("--seed", type=int, default=42)
     
+    parser.add_argument("--max-concurrency", type=int, default=None, help="Maximum in-flight requests; use request-rate inf for closed-loop load.")
+    parser.add_argument("--ignore-eos", action="store_true", help="For SGLang, use greedy decoding and force max_output_token output tokens.")
+    parser.add_argument("--result-file", type=str, default=None, help="Save aggregate metrics and per-request timings as JSON.")
+
     args = parser.parse_args()
     main(args)

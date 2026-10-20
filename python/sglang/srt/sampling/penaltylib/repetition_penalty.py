@@ -1,10 +1,13 @@
 import torch
 
 from sglang.srt.sampling.penaltylib.orchestrator import _BatchedPenalizer
-from sglang.srt.utils import get_compiler_backend
+from sglang.srt.utils import get_compiler_backend, is_npu
+from sglang.srt.utils.common import is_pin_memory_available
+
+_is_npu = is_npu()
 
 
-@torch.compile(dynamic=True, backend=get_compiler_backend())
+@torch.compile(dynamic=True, backend=get_compiler_backend(), disable=_is_npu)
 def apply_scaling_penalties(logits, scaling_penalties):
     logits[:] = torch.where(
         logits < 0,
@@ -15,7 +18,7 @@ def apply_scaling_penalties(logits, scaling_penalties):
 
 class BatchedRepetitionPenalizer(_BatchedPenalizer):
     """
-    Repetition penalizer penalizes tokens based on their presence in the generated output.
+    Penalize generated tokens and, when enabled, custom input tokens once each.
     """
 
     is_multiplicative: bool = True
@@ -27,6 +30,7 @@ class BatchedRepetitionPenalizer(_BatchedPenalizer):
         )
 
     def _prepare(self):
+        pin_memory = is_pin_memory_available(self.orchestrator.device)
         self.cumulated_repetition_penalties = torch.ones(
             (len(self.orchestrator.reqs()), self.orchestrator.vocab_size),
             dtype=torch.float32,
@@ -39,9 +43,23 @@ class BatchedRepetitionPenalizer(_BatchedPenalizer):
                     for req in self.orchestrator.reqs()
                 ],
                 dtype=torch.float32,
-                device=self.orchestrator.device,
+                pin_memory=pin_memory,
             )
-        ).unsqueeze_(1)
+            .to(self.orchestrator.device, non_blocking=True)
+            .unsqueeze_(1)
+        )
+
+        for index, req in enumerate(self.orchestrator.reqs()):
+            params = req.sampling_params
+            if params.input_penalty and params.custom_penalty_ids:
+                token_ids = torch.tensor(
+                    list(set(params.custom_penalty_ids)),
+                    dtype=torch.long,
+                    device=self.orchestrator.device,
+                )
+                self.cumulated_repetition_penalties[index].scatter_(
+                    dim=0, index=token_ids, value=params.repetition_penalty
+                )
 
     def _cumulate_output_tokens(self, output_ids: torch.Tensor):
         self.cumulated_repetition_penalties.scatter_(

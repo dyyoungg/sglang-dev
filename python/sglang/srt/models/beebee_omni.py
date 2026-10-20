@@ -7,7 +7,7 @@ import torch
 import torch.cuda.nvtx as nvtx
 import torch.nn as nn
 
-from sglang.srt.distributed.parallel_state import get_pp_group, init_distributed_environment, initialize_model_parallel
+from sglang.srt.distributed.parallel_state import init_distributed_environment, initialize_model_parallel
 from sglang.srt.layers.logits_processor import LogitsProcessor
 from sglang.srt.layers.pooler import Pooler, PoolingType
 from sglang.srt.layers.quantization.base_config import QuantizationConfig
@@ -30,7 +30,9 @@ from sglang.srt.models.beebee_vision_encoders import BeeBeeQwen25VisionModel, Be
 from sglang.srt.configs.beebeeomni_config import BeeBeeOmniConfig
 from sglang.srt.models.utils import WeightsMapper
 from sglang.srt.multimodal.mm_utils import run_dp_sharded_beebee_vision_model, run_dp_sharded_audio_model
-from sglang.srt.server_args import get_global_server_args, set_global_server_args_for_scheduler, ServerArgs
+from sglang.srt.models.beebee_encoder_preprocess import preprocess_beebee_mm_for_encoder
+from sglang.srt.runtime_context import get_parallel, get_disagg, get_exec, get_mm
+from sglang.srt.server_args import ServerArgs
 from sglang.srt.utils import add_prefix, is_cuda, is_npu
 
 
@@ -83,13 +85,13 @@ class BeeBeeOmniForConditionalGeneration(nn.Module):
     ) -> None:
         super().__init__()
 
-        self.pp_group = get_pp_group()
+        self.pp_group = get_parallel().pp_group
         self.config = config
-        self.use_data_parallel = get_global_server_args().mm_enable_dp_encoder
+        self.use_data_parallel = get_mm().mm_enable_dp_encoder
         self.text_config = self.config.text_config
         self.vision_config = self.config.vision_config
         self.audio_config = self.config.audio_config
-        if not get_global_server_args().encoder_only:
+        if not get_disagg().encoder_only:
             self.model = Qwen2Model(
                 self.text_config,
                 quant_config,
@@ -111,7 +113,7 @@ class BeeBeeOmniForConditionalGeneration(nn.Module):
                 self.lm_head = PPMissingLayer()
         else:
             self.lm_head = None
-        self.max_image_bs = getattr(get_global_server_args(), "max_image_bs", 16)
+        self.max_image_bs = get_mm().max_image_bs
         self.downsample_ratio=getattr(
             self.vision_config,
             "image_downsample_ratio",
@@ -119,7 +121,7 @@ class BeeBeeOmniForConditionalGeneration(nn.Module):
         )
         # In language_only mode, encoders are remote — skip building them
         # to save GPU memory.
-        language_only = getattr(get_global_server_args(), "language_only", False)
+        language_only = get_disagg().language_only
         if not language_only:
             if self.vision_config.model_type == "beebee_vision_model":
                 self.image_encoder = BeeBeeQwen25VisionModel(
@@ -165,6 +167,11 @@ class BeeBeeOmniForConditionalGeneration(nn.Module):
     def pad_input_ids(self, input_ids: List[int], mm_inputs: MultimodalInputs):
         pattern = MultiModalityDataPaddingPatternMultimodalTokens()
         return pattern.pad_input_tokens(input_ids, mm_inputs)
+
+    def preprocess_mm_for_encoder(self, mm_data, modality, config, **kwargs):
+        return preprocess_beebee_mm_for_encoder(
+            self, mm_data, modality, config, **kwargs
+        )
 
     def get_image_feature(self, items: List[MultimodalDataItem]) -> torch.Tensor:
         nvtx.range_push("get_image_feature")
@@ -653,32 +660,48 @@ if __name__ == "__main__":
     import torch
     from safetensors import safe_open
     from sglang.srt.model_loader.utils import set_default_torch_dtype
-    
-    parser = argparse.ArgumentParser(description="Compare checkpoint weights and encoder outputs with VeOmni (TP=1).")
-    parser.add_argument("--model-path", default="/mnt/afs/share/20260907_beebee_14B_veomni_28k")
-    parser.add_argument("--no-mm-use-compiled-rope", action="store_false", dest="mm_use_compiled_rope", default=True)
+    from sglang.srt.runtime_context import SpawnRanks, publish
+
+    parser = argparse.ArgumentParser(
+        description="Compare checkpoint weights and encoder outputs with VeOmni (TP=1)."
+    )
+    parser.add_argument(
+        "--model-path", default="/mnt/afs/share/20260907_beebee_14B_veomni_28k"
+    )
+    parser.add_argument(
+        "--no-mm-use-compiled-rope",
+        action="store_false",
+        dest="mm_use_compiled_rope",
+        default=True,
+    )
     parser.add_argument("--mm-attention-backend", default=None)
     args = parser.parse_args()
     MODEL_PATH = args.model_path
     torch.manual_seed(42)
-    init_distributed_environment()
-    initialize_model_parallel()
-    
+
     dummy_args = ServerArgs(
         model_path=MODEL_PATH,
         mm_enable_dp_encoder=False,
         mm_use_compiled_rope=args.mm_use_compiled_rope,
         mm_attention_backend=args.mm_attention_backend,
     )
-    set_global_server_args_for_scheduler(dummy_args)
+    publish(
+        dummy_args,
+        role="scheduler",
+        ranks=SpawnRanks(world_rank=0, dp_rank=0, gpu_id=0),
+    )
+    # Run this TP=1 comparison with torchrun --standalone --nproc-per-node=1.
+    init_distributed_environment()
+    initialize_model_parallel()
 
     print("Initializing models...")
-    
-    from veomni.models.custom.llava_qwen2.modeling_llava_qwen2 import LlavaQwen2ForCausalLM
-    
-    
+
+    from veomni.models.custom.llava_qwen2.modeling_llava_qwen2 import (
+        LlavaQwen2ForCausalLM,
+    )
+
     config = BeeBeeOmniConfig.from_pretrained(MODEL_PATH)
-    
+
     # Match the server loader: create BF16 parameters while preserving explicitly
     # FP32 buffers such as RoPE inv_freq. A blanket .to(bfloat16) casts those too.
     with set_default_torch_dtype(torch.bfloat16):
@@ -686,7 +709,9 @@ if __name__ == "__main__":
     sglang_model.eval()
 
     # 初始化原始模型
-    train_model = LlavaQwen2ForCausalLM.from_pretrained(MODEL_PATH, torch_dtype=torch.bfloat16).cuda()
+    train_model = LlavaQwen2ForCausalLM.from_pretrained(
+        MODEL_PATH, torch_dtype=torch.bfloat16
+    ).cuda()
     train_model.eval()
 
     print("Loading weights into SGLang model...")
@@ -701,7 +726,7 @@ if __name__ == "__main__":
                 weights_iterator.append((k, st.get_tensor(k)))
 
     sglang_model.load_weights(weights_iterator)
-    
+
     sglang_model = sglang_model.cuda()
 
     # check model weight
@@ -711,13 +736,17 @@ if __name__ == "__main__":
     # checkpoint: custom HF initialization can overwrite already-loaded weights.
     checkpoint_state_dict = dict(weights_iterator)
     print("\nChecking VeOmni against checkpoint...")
-    orig_matched = compare_weights(checkpoint_state_dict, orig_state_dict, map_names=False)
+    orig_matched = compare_weights(
+        checkpoint_state_dict, orig_state_dict, map_names=False
+    )
     print("\nChecking SGLang against checkpoint...")
     sgl_matched = compare_weights(checkpoint_state_dict, sgl_state_dict)
     if not (orig_matched and sgl_matched):
-        raise RuntimeError("Checkpoint weights differ; fix weight loading before comparing encoder outputs.")
+        raise RuntimeError(
+            "Checkpoint weights differ; fix weight loading before comparing encoder outputs."
+        )
     del checkpoint_state_dict, weights_iterator
-    
+
     # ---------------------------------------------------------
     # 视觉编码器 (Image Encoder) 精度对比
     # ---------------------------------------------------------
@@ -725,23 +754,32 @@ if __name__ == "__main__":
     vision_hidden = (
         config.vision_config.in_channels
         * config.vision_config.temporal_patch_size
-        * config.vision_config.patch_size ** 2
+        * config.vision_config.patch_size**2
     )
-    dummy_pixel_values = torch.randn(1536, vision_hidden, dtype=torch.bfloat16, device="cuda")
-  
+    dummy_pixel_values = torch.randn(
+        1536, vision_hidden, dtype=torch.bfloat16, device="cuda"
+    )
+
     dummy_image_grid_thw = torch.tensor([[1, 32, 48]], dtype=torch.int32, device="cuda")
 
     with torch.no_grad():
         # SGLang 视觉前向
-        sgl_vision_out, _ = sglang_model.image_encoder(dummy_pixel_values, dummy_image_grid_thw)
-        
-        orig_vision_out, _ = train_model.image_encoder.lm_encode(dummy_pixel_values, dummy_image_grid_thw)
+        sgl_vision_out, _ = sglang_model.image_encoder(
+            dummy_pixel_values, dummy_image_grid_thw
+        )
+
+        orig_vision_out, _ = train_model.image_encoder.lm_encode(
+            dummy_pixel_values, dummy_image_grid_thw
+        )
 
         print(sgl_vision_out.shape, orig_vision_out.shape)
 
-
-    v_max_diff = torch.max(torch.abs(sgl_vision_out.float() - orig_vision_out.float())).item()
-    v_mean_diff = torch.mean(torch.abs(sgl_vision_out.float() - orig_vision_out.float())).item()
+    v_max_diff = torch.max(
+        torch.abs(sgl_vision_out.float() - orig_vision_out.float())
+    ).item()
+    v_mean_diff = torch.mean(
+        torch.abs(sgl_vision_out.float() - orig_vision_out.float())
+    ).item()
     print(f"Vision Output Shape: {sgl_vision_out.shape}")
     print(f"Vision Max Diff:  {v_max_diff:.6f}")
     print(f"Vision Mean Diff: {v_mean_diff:.6f}")
@@ -760,15 +798,21 @@ if __name__ == "__main__":
     dummy_mel_lengths = torch.tensor([300], device="cuda")
 
     with torch.no_grad():
-       
+
         sgl_audio_out, _ = sglang_model.audio_encoder(dummy_mel, dummy_mel_lengths)
-        
-        orig_audio_out, _ = train_model.audio_encoder.lm_encode(dummy_mel, dummy_mel_lengths)
+
+        orig_audio_out, _ = train_model.audio_encoder.lm_encode(
+            dummy_mel, dummy_mel_lengths
+        )
 
         print(sgl_audio_out.shape, orig_audio_out.shape)
 
-    a_max_diff = torch.max(torch.abs(sgl_audio_out.float() - orig_audio_out.float())).item()
-    a_mean_diff = torch.mean(torch.abs(sgl_audio_out.float() - orig_audio_out.float())).item()
+    a_max_diff = torch.max(
+        torch.abs(sgl_audio_out.float() - orig_audio_out.float())
+    ).item()
+    a_mean_diff = torch.mean(
+        torch.abs(sgl_audio_out.float() - orig_audio_out.float())
+    ).item()
     print(f"Audio Output Shape: {sgl_audio_out.shape}")
     print(f"Audio Max Diff:  {a_max_diff:.6f}")
     print(f"Audio Mean Diff: {a_mean_diff:.6f}")
@@ -779,3 +823,10 @@ if __name__ == "__main__":
 
     print("\nAll tests completed.")
     torch.distributed.destroy_process_group()
+    if not (
+        v_mean_diff < 1e-3
+        and v_max_diff < 1e-2
+        and a_mean_diff < 1e-3
+        and a_max_diff < 1e-2
+    ):
+        raise RuntimeError("Encoder outputs differ from VeOmni beyond tolerance.")

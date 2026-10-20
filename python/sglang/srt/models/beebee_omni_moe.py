@@ -7,7 +7,7 @@ from typing import Iterable, List, Optional, Tuple
 import torch
 import torch.nn as nn
 
-from sglang.srt.distributed.parallel_state import get_pp_group, init_distributed_environment, initialize_model_parallel
+from sglang.srt.distributed.parallel_state import init_distributed_environment, initialize_model_parallel
 from sglang.srt.layers.logits_processor import LogitsProcessor
 from sglang.srt.layers.pooler import Pooler, PoolingType
 from sglang.srt.layers.quantization.base_config import QuantizationConfig
@@ -31,7 +31,9 @@ from sglang.srt.models.beebee_vision_encoders import BeeBeeQwen25VisionModel, Be
 from sglang.srt.configs.beebeeomni_moe_config import BeeBeeMoEOmniConfig
 from sglang.srt.models.utils import WeightsMapper
 from sglang.srt.multimodal.mm_utils import run_dp_sharded_beebee_vision_model, run_dp_sharded_audio_model
-from sglang.srt.server_args import get_global_server_args, set_global_server_args_for_scheduler, ServerArgs
+from sglang.srt.models.beebee_encoder_preprocess import preprocess_beebee_mm_for_encoder
+from sglang.srt.runtime_context import get_parallel, get_disagg, get_exec, get_mm, get_model
+from sglang.srt.server_args import ServerArgs
 from sglang.srt.utils import add_prefix, is_cuda, is_npu, log_info_on_rank0
 
 _is_cuda = is_cuda()
@@ -84,13 +86,13 @@ class BeeBeeMoEOmniForConditionalGeneration(nn.Module):
     ) -> None:
         super().__init__()
 
-        self.pp_group = get_pp_group()
+        self.pp_group = get_parallel().pp_group
         self.config = config
-        self.use_data_parallel = get_global_server_args().mm_enable_dp_encoder
+        self.use_data_parallel = get_mm().mm_enable_dp_encoder
         self.text_config = self.config.text_config
         self.vision_config = self.config.vision_config
         self.audio_config = self.config.audio_config
-        if not get_global_server_args().encoder_only:
+        if not get_disagg().encoder_only:
             self.model = Qwen3MoeModel(
                 self.text_config, 
                 quant_config, 
@@ -142,7 +144,7 @@ class BeeBeeMoEOmniForConditionalGeneration(nn.Module):
         else:
             raise NotImplementedError(f"{self.vision_config.model_type} is not supported yet!")
 
-        self.max_image_bs = getattr(get_global_server_args(), "max_image_bs", 16)
+        self.max_image_bs = get_mm().max_image_bs
         audio_model_type = getattr(self.audio_config, "model_type", "beebee_audio_model")
         if audio_model_type == "beebee_qwen3_audio_model":
             self.audio_encoder = BeeBeeQwen3AudioEncoder(
@@ -167,15 +169,15 @@ class BeeBeeMoEOmniForConditionalGeneration(nn.Module):
             self._log_quantization_summary(quant_config)
 
     def _log_quantization_summary(self, quant_config: QuantizationConfig) -> None:
-        server_args = get_global_server_args()
+        server_args = get_exec()
         log_info_on_rank0(
             logger,
             f"[FP8 diagnostics] BeeBee quantization={quant_config.get_name()}, "
             f"config_class={type(quant_config).__name__}, "
             f"effective_config={vars(quant_config)}, "
-            f"fp8_gemm_backend_requested={server_args.fp8_gemm_runner_backend}, "
-            f"moe_runner_backend={server_args.moe_runner_backend}, "
-            f"kv_cache_dtype_requested={server_args.kv_cache_dtype}. "
+            f"fp8_gemm_backend_requested={server_args.kernel.fp8_gemm_runner_backend}, "
+            f"moe_runner_backend={server_args.moe.moe_runner_backend}, "
+            f"kv_cache_dtype_requested={get_model().kv_cache_dtype}. "
             "FP8 GEMM backend controls block/MXFP8 Linear dispatch; MoE and KV "
             "cache are configured separately. KV cache 'auto' follows model dtype.",
         )
@@ -207,6 +209,11 @@ class BeeBeeMoEOmniForConditionalGeneration(nn.Module):
     def pad_input_ids(self, input_ids: List[int], mm_inputs: MultimodalInputs):
         pattern = MultiModalityDataPaddingPatternMultimodalTokens()
         return pattern.pad_input_tokens(input_ids, mm_inputs)
+
+    def preprocess_mm_for_encoder(self, mm_data, modality, config, **kwargs):
+        return preprocess_beebee_mm_for_encoder(
+            self, mm_data, modality, config, **kwargs
+        )
     
     
     def get_image_feature(self, items: List[MultimodalDataItem]) -> torch.Tensor:
@@ -801,56 +808,77 @@ def compare_weights(orig_sd, sgl_sd):
     return all_matched
 
 if __name__ == "__main__":
+    import argparse
     import os
     import glob
     import torch
     from safetensors import safe_open
     from sglang.srt.layers.dp_attention import initialize_dp_attention
-    
-    
+    from sglang.srt.layers.moe.utils import initialize_moe_config
+    from sglang.srt.model_loader.utils import set_default_torch_dtype
+    from sglang.srt.runtime_context import SpawnRanks, publish
+
+    parser = argparse.ArgumentParser(
+        description="Compare BeeBee MoE components with VeOmni (TP=1, two GPUs)."
+    )
+    parser.add_argument(
+        "--model-path", default="/mnt/afs/share/20261009_beebee_30BA3B_veomni"
+    )
+    parser.add_argument("--mm-attention-backend", default="fa2")
+    parser.add_argument(
+        "--no-mm-use-compiled-rope",
+        action="store_false",
+        dest="mm_use_compiled_rope",
+        default=True,
+    )
+    args = parser.parse_args()
+    MODEL_PATH = args.model_path
+    torch.manual_seed(42)
+
+    dummy_args = ServerArgs(
+        model_path=MODEL_PATH,
+        mm_enable_dp_encoder=False,
+        mm_attention_backend=args.mm_attention_backend,
+        mm_use_compiled_rope=args.mm_use_compiled_rope,
+        moe_runner_backend="triton",
+    )
+    publish(
+        dummy_args,
+        role="scheduler",
+        ranks=SpawnRanks(world_rank=0, dp_rank=0, gpu_id=0),
+    )
+    # Run this TP=1 comparison with torchrun --standalone --nproc-per-node=1.
     init_distributed_environment()
     initialize_model_parallel()
-    
-    MODEL_PATH = "/mnt/afs/yangdeyu/GameMLLM/VeOmni-Dev/ckpt/0904_llavaomni_30A3B_dynamic_downsample_st0_gametext_4e5/hf_ckpt" 
-    
-    dummy_args = ServerArgs(model_path=MODEL_PATH, mm_enable_dp_encoder=False, mm_attention_backend="fa2")
-    dummy_args.enable_dp_attention = False
-    dummy_args.dp_size = 1
-    dummy_args.moe_dense_tp_size = None
-    dummy_args.attn_cp_size = 1
-    dummy_args.device = "cuda:0"
-    set_global_server_args_for_scheduler(dummy_args)
+    initialize_dp_attention(dummy_args)
+    initialize_moe_config()
 
     print("Initializing models...")
-    from veomni.models.custom.llava_qwen3moe.modeling_llava_qwen3moe_omni import LlavaQwen3MoeForCausalLM
-    from veomni.ops.kernels.moe import apply_veomni_fused_moe_patch
-    apply_veomni_fused_moe_patch(fused_moe_kernel="triton")
-    
-    config = BeeBeeMoEOmniConfig.from_pretrained(MODEL_PATH)
-  
-    class DummyModelConfig:
-        def __init__(self, hidden_size, dtype):
-            self.hidden_size = hidden_size
-            self.dtype = dtype
-
-    dummy_model_config = DummyModelConfig(
-        hidden_size=config.text_config.hidden_size,
-        dtype=torch.bfloat16
+    from veomni.models.custom.llava_qwen3moe.modeling_llava_qwen3moe_omni import (
+        LlavaQwen3MoeForCausalLM,
     )
-    
-    initialize_dp_attention(dummy_args, dummy_model_config)
-    
+    from veomni.ops.kernels.moe import apply_veomni_fused_moe_patch
+
+    apply_veomni_fused_moe_patch(fused_moe_kernel="triton")
+
+    config = BeeBeeMoEOmniConfig.from_pretrained(MODEL_PATH)
+
     # === 定义设备 ===
     device_sgl = torch.device("cuda:0")
     device_orig = torch.device("cuda:1")
 
     # 1. 加载 SGLang 模型到 cuda:0
-    sglang_model = BeeBeeMoEOmniForConditionalGeneration(config).to(torch.bfloat16).to(device_sgl)
+    with set_default_torch_dtype(torch.bfloat16):
+        sglang_model = BeeBeeMoEOmniForConditionalGeneration(config).to(device_sgl)
     sglang_model.eval()
-    print(f"[DEBUG] backend = {sglang_model.image_encoder.blocks[0].attn.qkv_backend.__class__.__name__}")
+    print(
+        f"[DEBUG] backend = {sglang_model.image_encoder.blocks[0].attn.qkv_backend.__class__.__name__}"
+    )
     # 2. 加载 原始模型 到 cuda:1
-    
-    train_model = LlavaQwen3MoeForCausalLM.from_pretrained(MODEL_PATH, torch_dtype=torch.bfloat16).to(device_orig)
+
+    train_model = LlavaQwen3MoeForCausalLM.from_pretrained(
+        MODEL_PATH, torch_dtype=torch.bfloat16
+    ).to(device_orig)
     train_model.eval()
 
     print("Loading weights into SGLang model...")
@@ -875,47 +903,56 @@ if __name__ == "__main__":
         train_emb_ptr = train_model.language_model.model.embed_tokens.weight.data_ptr()
     else:
         train_emb_ptr = None
-    print(f"  训练模型 lm_head 与 embed_tokens 是否 tied: {train_lm_ptr == train_emb_ptr}")
-
+    print(
+        f"  训练模型 lm_head 与 embed_tokens 是否 tied: {train_lm_ptr == train_emb_ptr}"
+    )
 
     # === Check Model Weight ===
     print("Preparing state dicts for comparison...")
     orig_state_dict = {k: v.cpu() for k, v in train_model.state_dict().items()}
     sgl_state_dict = {k: v.cpu() for k, v in sglang_model.state_dict().items()}
 
-    compare_weights(orig_state_dict, sgl_state_dict)
+    if not compare_weights(orig_state_dict, sgl_state_dict):
+        raise RuntimeError(
+            "Model weights differ; fix loading before comparing outputs."
+        )
+    del orig_state_dict, sgl_state_dict
 
     # ---------------------------------------------------------
     # 视觉编码器 (Image Encoder) 精度对比
     # ---------------------------------------------------------
     print("\n--- Testing Vision Encoder ---")
- 
-    is_qwen35_encoder = True
-    if is_qwen35_encoder:
-        vision_hidden = 1536
-    else:
-        vision_hidden = 1176
+
+    vision_hidden = (
+        config.vision_config.in_channels
+        * config.vision_config.temporal_patch_size
+        * config.vision_config.patch_size**2
+    )
     dummy_pixel_values_cpu = torch.randn(1536, vision_hidden, dtype=torch.bfloat16)
     dummy_image_grid_thw_cpu = torch.tensor([[1, 32, 48]], dtype=torch.int32)
 
     with torch.no_grad():
         # SGLang 视觉前向 (cuda:0)
         sgl_vision_out, _ = sglang_model.image_encoder(
-            dummy_pixel_values_cpu.to(device_sgl), 
-            dummy_image_grid_thw_cpu.to(device_sgl)
+            dummy_pixel_values_cpu.to(device_sgl),
+            dummy_image_grid_thw_cpu.to(device_sgl),
         )
-        
+
         # 原模型 视觉前向 (cuda:1)
         orig_vision_out, _ = train_model.image_encoder.lm_encode(
-            dummy_pixel_values_cpu.to(device_orig), 
-            dummy_image_grid_thw_cpu.to(device_orig)
+            dummy_pixel_values_cpu.to(device_orig),
+            dummy_image_grid_thw_cpu.to(device_orig),
         )
 
     # 将结果拉回到 cuda:0 进行对比
     orig_vision_out = orig_vision_out.to(device_sgl)
 
-    v_max_diff = torch.max(torch.abs(sgl_vision_out - orig_vision_out)).item()
-    v_mean_diff = torch.mean(torch.abs(sgl_vision_out - orig_vision_out)).item()
+    v_max_diff = torch.max(
+        torch.abs(sgl_vision_out.float() - orig_vision_out.float())
+    ).item()
+    v_mean_diff = torch.mean(
+        torch.abs(sgl_vision_out.float() - orig_vision_out.float())
+    ).item()
     print(f"Vision Output Shape: {sgl_vision_out.shape}")
     print(f"Vision Max Diff:  {v_max_diff:.6f}")
     print(f"Vision Mean Diff: {v_mean_diff:.6f}")
@@ -934,21 +971,23 @@ if __name__ == "__main__":
     with torch.no_grad():
         # SGLang 音频前向 (cuda:0)
         sgl_audio_out, _ = sglang_model.audio_encoder(
-            dummy_mel_cpu.to(device_sgl), 
-            dummy_mel_lengths_cpu.to(device_sgl)
+            dummy_mel_cpu.to(device_sgl), dummy_mel_lengths_cpu.to(device_sgl)
         )
-        
+
         # 原模型 音频前向 (cuda:1)
         orig_audio_out, _ = train_model.audio_encoder.lm_encode(
-            dummy_mel_cpu.to(device_orig), 
-            dummy_mel_lengths_cpu.to(device_orig)
+            dummy_mel_cpu.to(device_orig), dummy_mel_lengths_cpu.to(device_orig)
         )
 
     # 将结果拉回到 cuda:0 进行对比
     orig_audio_out = orig_audio_out.to(device_sgl)
 
-    a_max_diff = torch.max(torch.abs(sgl_audio_out - orig_audio_out)).item()
-    a_mean_diff = torch.mean(torch.abs(sgl_audio_out - orig_audio_out)).item()
+    a_max_diff = torch.max(
+        torch.abs(sgl_audio_out.float() - orig_audio_out.float())
+    ).item()
+    a_mean_diff = torch.mean(
+        torch.abs(sgl_audio_out.float() - orig_audio_out.float())
+    ).item()
     print(f"Audio Output Shape: {sgl_audio_out.shape}")
     print(f"Audio Max Diff:  {a_max_diff:.6f}")
     print(f"Audio Mean Diff: {a_mean_diff:.6f}")
@@ -957,28 +996,36 @@ if __name__ == "__main__":
     else:
         print("❌ Audio Encoder has significant precision differences.")
 
-
     print("\n--- Testing LLM Backbone Components ---")
-    
-    orig_text_model = train_model.model if hasattr(train_model, "model") else train_model.language_model.model
-    sgl_text_model = sglang_model.model if hasattr(sglang_model, "model") else sglang_model.language_model.model
-    
+
+    orig_text_model = (
+        train_model.model
+        if hasattr(train_model, "model")
+        else train_model.language_model.model
+    )
+    sgl_text_model = (
+        sglang_model.model
+        if hasattr(sglang_model, "model")
+        else sglang_model.language_model.model
+    )
+
     hidden_size = config.text_config.hidden_size
     seq_len = 64
-    
+
     # ---------------------------------------------------------
     # 1. 验证 Token Embedding
     # ---------------------------------------------------------
     print("-> Testing Token Embeddings...")
     dummy_input_ids = torch.randint(0, 32000, (1, seq_len))
-    
+
     with torch.no_grad():
-        orig_embeds = orig_text_model.embed_tokens(dummy_input_ids.to(device_orig)).cpu()
+        orig_embeds = orig_text_model.embed_tokens(
+            dummy_input_ids.to(device_orig)
+        ).cpu()
         sgl_embeds = sgl_text_model.embed_tokens(dummy_input_ids.to(device_sgl)).cpu()
-        
+
     e_max_diff = torch.max(torch.abs(sgl_embeds - orig_embeds)).item()
     print(f"   Embedding Max Diff: {e_max_diff:.6f}")
-
 
     # ---------------------------------------------------------
     # 2. 验证核心 MoE MLP 层 (极其关键：验证专家权重与 Router)
@@ -990,36 +1037,55 @@ if __name__ == "__main__":
     print(f"   Found {num_layers} layers. Starting mathematical alignment check...")
 
     for layer_idx in range(num_layers):
-       
+
         dummy_hidden_cpu = torch.randn(1, seq_len, hidden_size, dtype=torch.bfloat16)
-        
+
         with torch.no_grad():
             # HF Original 模型前向
             orig_mlp = orig_text_model.layers[layer_idx].mlp
             orig_mlp_out = orig_mlp(dummy_hidden_cpu.to(device_orig)).cpu()
-            
+
             sgl_mlp = sgl_text_model.layers[layer_idx].mlp
             dummy_hidden_2d = dummy_hidden_cpu.view(-1, hidden_size).to(device_sgl)
             sgl_mlp_out = sgl_mlp(dummy_hidden_2d).cpu()
             sgl_mlp_out = sgl_mlp_out.view(1, seq_len, hidden_size)
-            
-        m_max_diff = torch.max(torch.abs(sgl_mlp_out - orig_mlp_out)).item()
-        m_mean_diff = torch.mean(torch.abs(sgl_mlp_out - orig_mlp_out)).item()
-        
+
+        m_max_diff = torch.max(
+            torch.abs(sgl_mlp_out.float() - orig_mlp_out.float())
+        ).item()
+        m_mean_diff = torch.mean(
+            torch.abs(sgl_mlp_out.float() - orig_mlp_out.float())
+        ).item()
+
         orig_flat = orig_mlp_out.view(-1).float()
         sgl_flat = sgl_mlp_out.view(-1).float()
-        cos_sim = torch.nn.functional.cosine_similarity(orig_flat, sgl_flat, dim=0).item()
+        cos_sim = torch.nn.functional.cosine_similarity(
+            orig_flat, sgl_flat, dim=0
+        ).item()
 
         # 判断对齐标准：余弦相似度 > 0.99 且 平均误差 < 0.005
-        if cos_sim > 0.99 or m_mean_diff < 0.005:
-            print(f"   [Layer {layer_idx:02d}] ✅ Pass | Max: {m_max_diff:.4f}, Mean: {m_mean_diff:.5f}, CosSim: {cos_sim:.6f}")
+        if cos_sim > 0.99 and m_mean_diff < 0.005:
+            print(
+                f"   [Layer {layer_idx:02d}] ✅ Pass | Max: {m_max_diff:.4f}, Mean: {m_mean_diff:.5f}, CosSim: {cos_sim:.6f}"
+            )
         else:
-            print(f"   [Layer {layer_idx:02d}] ❌ FAIL | Max: {m_max_diff:.4f}, Mean: {m_mean_diff:.5f}, CosSim: {cos_sim:.6f}")
+            print(
+                f"   [Layer {layer_idx:02d}] ❌ FAIL | Max: {m_max_diff:.4f}, Mean: {m_mean_diff:.5f}, CosSim: {cos_sim:.6f}"
+            )
             all_moe_matched = False
 
     if all_moe_matched:
         print("   🎉 所有 MoE 层的数学输出完美对齐！")
     else:
         print("   ⚠️ 存在未对齐的 MoE 层，请检查上方日志排查对应层数。")
-    
+
     print("\nAll tests completed.")
+    torch.distributed.destroy_process_group()
+    if not (
+        v_max_diff < 1e-2
+        and v_mean_diff < 1e-3
+        and a_max_diff < 1e-3
+        and e_max_diff == 0
+        and all_moe_matched
+    ):
+        raise RuntimeError("Model components differ from VeOmni beyond tolerance.")

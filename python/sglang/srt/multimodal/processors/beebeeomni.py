@@ -53,9 +53,22 @@ from sglang.srt.utils.cuda_ipc_transport_utils import (
    
 )
 from sglang.utils import logger
-from sglang.srt.server_args import get_global_server_args
+from sglang.srt.runtime_context import get_mm
 from sglang.srt.mem_cache.multimodal_cache import EmbeddingResult
 from sglang.srt.models.beebee_audio_encoders import _get_feat_extract_output_lengths
+
+class ProcessorCacheEntry(EmbeddingResult):
+    def __init__(
+        self,
+        *,
+        embedding: torch.Tensor,
+        grid_thw: Optional[torch.Tensor] = None,
+        chunk_lens: Optional[List[int]] = None,
+    ):
+        super().__init__(embedding=embedding)
+        self.grid_thw = grid_thw
+        self.chunk_lens = chunk_lens
+
 
 # ── Audio constants (Aligned with LightLLM / Whisper) ─────────────
 WHISPER_SAMPLING_RATE = 16000   
@@ -744,16 +757,11 @@ class BeeBeeOmniProcessor(SGLangBaseProcessor):
 
         pair_hashes = []
         for pair_idx, i in enumerate(range(0, len(image_data), 2)):
-            hasher = hashlib.sha256()
-            item0, item1 = image_data[i], image_data[i + 1]
-            if isinstance(item0, bytes):
-                hasher.update(item0)
-            else:
-                hasher.update(str(item0).encode("utf-8"))
-            if isinstance(item1, bytes):
-                hasher.update(item1)
-            else:
-                hasher.update(str(item1).encode("utf-8"))
+            hasher = hashlib.sha256(b"image-pair")
+            for item in image_data[i:i + 2]:
+                payload = item if isinstance(item, bytes) else str(item).encode("utf-8")
+                hasher.update(len(payload).to_bytes(8, byteorder="big"))
+                hasher.update(payload)
             if per_pair_ratios is not None:
                 hasher.update(str(per_pair_ratios[pair_idx]).encode("utf-8"))
             pair_hashes.append(
@@ -817,7 +825,7 @@ class BeeBeeOmniProcessor(SGLangBaseProcessor):
             t_hash_start = time.perf_counter()
             pair_hashes = self._compute_pair_hashes(image_data, per_pair_ratios)
             for i, h in enumerate(pair_hashes):
-                cached = self._pixel_cache.get_single(h)
+                cached = self._pixel_cache.get_single(h) if self._pixel_cache is not None else None
                 if cached is not None:
                     img_hit_pixels[i] = cached.embedding
                     img_hit_grids[i] = cached.grid_thw
@@ -843,7 +851,7 @@ class BeeBeeOmniProcessor(SGLangBaseProcessor):
         if audio_data:
             audio_hashes = self._compute_audio_hashes(audio_data)
             for i, h in enumerate(audio_hashes):
-                cached = self._pixel_cache.get_single(h)
+                cached = self._pixel_cache.get_single(h) if self._pixel_cache is not None else None
                 if cached is not None:
                     aud_hit[i] = (cached.embedding, getattr(cached, "chunk_lens", None))
                 else:
@@ -921,9 +929,9 @@ class BeeBeeOmniProcessor(SGLangBaseProcessor):
             for i, idx in enumerate(img_miss_pair_indices):
                 pv = miss_pvs[i]
                 grid = miss_grid_thw[i]
-                entry = EmbeddingResult(embedding=pv)
-                entry.grid_thw = grid
-                self._pixel_cache.set(pair_hashes[idx], entry)
+                entry = ProcessorCacheEntry(embedding=pv, grid_thw=grid)
+                if self._pixel_cache is not None:
+                    self._pixel_cache.set(pair_hashes[idx], entry)
                 img_hit_pixels[idx] = pv
                 img_hit_grids[idx] = grid
 
@@ -933,9 +941,9 @@ class BeeBeeOmniProcessor(SGLangBaseProcessor):
             for i, idx in enumerate(aud_miss_indices):
                 mel = miss_mels[i]
                 chunk_lens = miss_chunk_lens[i]
-                entry = EmbeddingResult(embedding=mel)
-                entry.chunk_lens = chunk_lens
-                self._pixel_cache.set(audio_hashes[idx], entry)
+                entry = ProcessorCacheEntry(embedding=mel, chunk_lens=chunk_lens)
+                if self._pixel_cache is not None:
+                    self._pixel_cache.set(audio_hashes[idx], entry)
                 aud_hit[idx] = (mel, chunk_lens)
 
         if img_miss_pair_indices or aud_miss_indices:
