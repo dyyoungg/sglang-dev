@@ -559,7 +559,7 @@ async def main():
         return
 
     client = MultiModalClient(
-        url=os.getenv("API_TEST_URL", "http://127.0.0.1:18004/generate"),
+        url=os.getenv("API_TEST_URL", "http://127.0.0.1:18004/generate_stream"),
         default_sampling_params={
             "max_new_tokens": 2048,
             "temperature": 0.7,
