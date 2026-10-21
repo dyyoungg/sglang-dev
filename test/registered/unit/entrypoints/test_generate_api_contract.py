@@ -2,6 +2,7 @@
 contract that replaced the raw_json passthrough, checked without a server, and
 where the route applies it."""
 
+import json
 import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -148,11 +149,12 @@ class TestGenerateStreamRoute(CustomTestCase):
         self.served = []
         self.cleaned = []
         self.generation_error = None
+        self.generation_error_type = ValueError
 
         async def generate(obj, request):
             self.served.append(obj)
             if self.generation_error is not None:
-                raise ValueError(self.generation_error)
+                raise self.generation_error_type(self.generation_error)
             yield {"text": "first"}
             yield {"text": "first second"}
 
@@ -224,8 +226,6 @@ class TestGenerateStreamRoute(CustomTestCase):
 
     def test_stream_errors_use_the_shared_sse_error_contract(self):
         """A generation failure must reach clients as an SSE error frame."""
-        import json
-
         self.generation_error = "invalid sampling parameters"
         response = self.client.post("/generate_stream", json={"text": "hi"})
         self.assertEqual(response.status_code, 200)
@@ -243,6 +243,19 @@ class TestGenerateStreamRoute(CustomTestCase):
         )
         self.assertEqual(done, "data: [DONE]")
         self.assertEqual(len(self.cleaned), 1)
+
+    def test_stream_runtime_errors_complete_the_sse_response(self):
+        """Unhandled generator exceptions must not truncate chunked SSE."""
+        self.generation_error = "worker failed"
+        self.generation_error_type = RuntimeError
+        response = self.client.post("/generate_stream", json={"text": "hi"})
+        self.assertEqual(response.status_code, 200)
+        frames = response.text.split("\n\n")
+        self.assertEqual(frames[-2], "data: [DONE]")
+        error = json.loads(frames[0].removeprefix("data: "))["error"]
+        self.assertEqual(error["code"], 500)
+        self.assertEqual(error["type"], "server_error")
+        self.assertTrue(error["retryable"])
 
 
 if __name__ == "__main__":

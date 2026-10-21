@@ -306,6 +306,9 @@ pub struct SamplingParams {
     pub beam_width: ::core::option::Option<i64>,
     #[prost(message, optional, tag = "27")]
     pub watermark: ::core::option::Option<WatermarkRequestConfig>,
+    /// Apply repetition/frequency penalties to tokens from the input prompt.
+    #[prost(bool, optional, tag = "28")]
+    pub input_penalty: ::core::option::Option<bool>,
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct WatermarkRequestConfig {

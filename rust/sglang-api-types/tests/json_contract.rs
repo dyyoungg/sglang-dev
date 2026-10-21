@@ -26,6 +26,7 @@ fn sampling_defaults_match_hand_written() {
     assert_eq!(p.skip_special_tokens, Some(true));
     assert_eq!(p.spaces_between_special_tokens, Some(true));
     assert_eq!(p.no_stop_trim, Some(false));
+    assert_eq!(p.input_penalty, Some(false));
 }
 
 /// Protobuf arrival: a prost-decoded (all-unset) SamplingParams reads its
@@ -53,6 +54,18 @@ fn sampling_null_resets_default() {
     assert_eq!(p.temperature, Some(1.0));
     assert_eq!(p.top_k, Some(1 << 30));
     assert_eq!(p.ignore_eos, Some(false));
+}
+
+#[test]
+fn sampling_input_penalty_round_trips_and_requires_bool() {
+    let p = sp(
+        r#"{"input_penalty":true,"frequency_penalty":0.5,"repetition_penalty":1.1}"#,
+    )
+    .unwrap();
+    assert_eq!(p.input_penalty, Some(true));
+    assert_eq!(p.frequency_penalty, Some(0.5));
+    assert_eq!(p.repetition_penalty, Some(1.1));
+    assert!(sp(r#"{"input_penalty":1}"#).is_err());
 }
 
 /// max_new_tokens is the null_is_none field: absent = 128, null = unbounded.

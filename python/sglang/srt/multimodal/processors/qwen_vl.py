@@ -1,3 +1,4 @@
+import json
 import math
 import os
 import re
@@ -1190,9 +1191,11 @@ class QwenVLImageProcessor(MediaArtifactCacheMixin, SGLangBaseProcessor):
                 and not self.uses_media_artifacts_without_cache
             )
         ):
-            return await self._process_mm_data_uncached(
+            output = await self._process_mm_data_uncached(
                 image_data, input_text, request_obj, *args, **kwargs
             )
+            self._log_expanded_chat_prompt(output, request_obj)
+            return output
 
         prepare_artifacts = (
             self.prepare_media_artifacts
@@ -1204,9 +1207,37 @@ class QwenVLImageProcessor(MediaArtifactCacheMixin, SGLangBaseProcessor):
         )
         composed = self.compose_image_artifacts(input_text, artifacts)
         if composed is not None:
+            self._log_expanded_chat_prompt(composed, request_obj)
             return composed
-        return await self._process_mm_data_uncached(
+        output = await self._process_mm_data_uncached(
             image_data, input_text, request_obj, *args, **kwargs
+        )
+        self._log_expanded_chat_prompt(output, request_obj)
+        return output
+
+    def _log_expanded_chat_prompt(self, output, request_obj):
+        if not envs.SGLANG_LOG_CHAT_TEMPLATE.get() or output is None:
+            return
+        input_ids = output.input_ids
+        if input_ids is None:
+            return
+        if isinstance(input_ids, torch.Tensor):
+            input_ids = input_ids.flatten().tolist()
+        logger.info(
+            "[chat-template] %s",
+            json.dumps(
+                {
+                    "stage": "qwen_vl_expanded",
+                    "rid": getattr(request_obj, "rid", None),
+                    "decoded_prompt": self._processor.tokenizer.decode(
+                        input_ids,
+                        skip_special_tokens=False,
+                        clean_up_tokenization_spaces=False,
+                    ),
+                    "input_ids": input_ids,
+                },
+                ensure_ascii=False,
+            ),
         )
 
     def _mark_cuda_ipc_features_for_deferred_reconstruction(self, mm_items):

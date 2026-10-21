@@ -949,7 +949,7 @@ async def serve_generate_request(obj: GenerateReqInput, request: Request):
                     obj, request
                 ):
                     yield b"data: " + dumps_json(out) + b"\n\n"
-            except ValueError as e:
+            except Exception as e:
                 # A client disconnect also surfaces here. It's a client-side
                 # cancellation, not a server error or bad input -- log it and
                 # stop (the request was already aborted upstream) instead of
@@ -957,15 +957,30 @@ async def serve_generate_request(obj: GenerateReqInput, request: Request):
                 if request is not None and await request.is_disconnected():
                     logger.info(f"[http_server] Client disconnected: {e}")
                     return
+                # Exceptions raised after the response headers have been sent
+                # must be converted to an SSE frame. Letting a non-ValueError
+                # escape closes the chunked response early, which clients see
+                # as aiohttp's `Response payload is not completed` rather than
+                # as the actual generation error.
+                status_code = getattr(
+                    e, "status_code", 400 if isinstance(e, ValueError) else 500
+                )
                 out = {
                     "error": {
                         "message": str(e),
-                        "type": "invalid_request_error",
-                        "code": getattr(e, "status_code", 400),
-                        "retryable": False,
+                        "type": (
+                            "invalid_request_error"
+                            if status_code < 500
+                            else "server_error"
+                        ),
+                        "code": status_code,
+                        "retryable": status_code >= 500,
                     }
                 }
-                logger.error(f"[http_server] Error: {e}")
+                if status_code >= 500:
+                    logger.exception("[http_server] Streaming generation failed")
+                else:
+                    logger.error(f"[http_server] Error: {e}")
                 yield b"data: " + dumps_json(out) + b"\n\n"
             yield b"data: [DONE]\n\n"
 

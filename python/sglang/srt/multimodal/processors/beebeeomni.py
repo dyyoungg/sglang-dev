@@ -14,17 +14,20 @@ Modality pipeline
 Position IDs: standard 1-D sequential (no mrope)
 """
 
+import asyncio
+import base64
+import binascii
+import io
 import math
+import os
 import re
 import time
+from collections import defaultdict
 from typing import List, Optional, Tuple, Union, Dict
-import io
-import base64
+
 import cv2
 from urllib.parse import unquote, urlparse
 import requests
-import asyncio
-from collections import defaultdict
 
 
 import numpy as np
@@ -163,6 +166,16 @@ def compute_audio_num_tokens_qwen3(
 
 def fast_load_image_to_numpy(image_file) -> np.ndarray:
 
+    def _decode_base64(value: str) -> bytes:
+        # Accept both the usual data URI and the raw base64 form used by the
+        # BeeBee client. A few clients omit the final padding characters.
+        value = "".join(value.split())
+        value += "=" * (-len(value) % 4)
+        try:
+            return base64.b64decode(value, validate=True)
+        except (binascii.Error, ValueError) as e:
+            raise ValueError("invalid base64 image data") from e
+
     if hasattr(image_file, "url"):
         image_file = image_file.url
 
@@ -172,18 +185,22 @@ def fast_load_image_to_numpy(image_file) -> np.ndarray:
     elif isinstance(image_file, str):
         if image_file.startswith("data:"):
             # 剥离 data:image/jpeg;base64,
-            img_bytes = base64.b64decode(image_file.split(",")[1])
+            img_bytes = _decode_base64(image_file.split(",", 1)[1])
         elif image_file.startswith(("http://", "https://")):
-            img_bytes = requests.get(image_file).content
+            img_bytes = requests.get(image_file, timeout=10).content
         elif image_file.startswith("file://"):
             with open(unquote(urlparse(image_file).path), "rb") as f:
                 img_bytes = f.read()
+        elif os.path.isfile(image_file):
+            # Keep support for relative local paths, while never passing a
+            # huge base64 payload to open() (which raises ENAMETOOLONG).
+            with open(image_file, "rb") as f:
+                img_bytes = f.read()
         else:
-            try:
-                img_bytes = base64.b64decode(image_file)
-            except Exception:
-                with open(image_file, "rb") as f:
-                    img_bytes = f.read()
+            # Bare base64 is a supported HTTP image_data form. Decode it
+            # explicitly instead of falling back to open(value), which turns
+            # malformed/long payloads into a misleading "File name too long".
+            img_bytes = _decode_base64(image_file)
     elif hasattr(image_file, "convert"): 
         if image_file.mode != "RGB":
             image_file = image_file.convert("RGB")
@@ -202,6 +219,8 @@ def fast_load_image_to_numpy(image_file) -> np.ndarray:
         if img.mode != "RGB":
             img = img.convert("RGB")
         return np.asarray(img)
+
+    raise ValueError("Could not decode image bytes")
     
 
 class BeeBeeOmniProcessor(SGLangBaseProcessor):

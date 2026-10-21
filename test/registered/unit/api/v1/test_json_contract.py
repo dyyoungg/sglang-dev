@@ -64,6 +64,7 @@ class TestSamplingParams(CustomTestCase):
         self.assertIs(p.skip_special_tokens, True)
         self.assertIs(p.spaces_between_special_tokens, True)
         self.assertIs(p.no_stop_trim, False)
+        self.assertIs(p.input_penalty, False)
 
     def test_constructor_defaults_match_absent_keys(self):
         """A dataclass built by hand carries the same schema defaults."""
@@ -122,6 +123,17 @@ class TestSamplingParams(CustomTestCase):
     def test_int_key_map(self):
         p = sp('{"logit_bias": {"42": -1}}')
         self.assertEqual(p.logit_bias, {"42": -1.0})
+
+    def test_input_penalty_is_a_boolean_sampling_option(self):
+        p = sp(
+            '{"input_penalty": true, "frequency_penalty": 0.5, '
+            '"repetition_penalty": 1.1}'
+        )
+        self.assertIs(p.input_penalty, True)
+        self.assertEqual(p.frequency_penalty, 0.5)
+        self.assertEqual(p.repetition_penalty, 1.1)
+        with self.assertRaises(JsonContractError):
+            sp('{"input_penalty": 1}')
 
 
 class TestGenerateRequest(CustomTestCase):

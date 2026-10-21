@@ -351,6 +351,8 @@ class Envs:
     SGLANG_LOG_MS = EnvBool(False)
     SGLANG_LOG_REQUEST_EXCEEDED_MS = EnvInt(-1)
     SGLANG_LOG_REQUEST_HEADERS = EnvTuple(tuple())
+    # Opt-in full prompt/token logging for chat-template debugging.
+    SGLANG_LOG_CHAT_TEMPLATE = EnvBool(False)
     SGLANG_LOG_SCHEDULER_STATUS_TARGET = EnvStr("")
     SGLANG_LOG_SCHEDULER_STATUS_INTERVAL = EnvFloat(60.0)
     # Read by JIT kernel headers (sgl_kernel/logging.h): DEBUG | INFO | WARNING | ERROR.

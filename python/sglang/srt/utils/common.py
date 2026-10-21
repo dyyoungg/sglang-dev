@@ -1887,11 +1887,25 @@ def load_audio(
     if sr is None:
         sr = 16000
 
-    # Normalize input: resolve URL / base64 / file:// to bytes or path
+    def _decode_base64_audio(value: str) -> bytes:
+        # Clients may send either a data URI or the encoded payload itself.
+        # Strip whitespace and restore omitted padding before decoding.
+        value = "".join(value.split())
+        value += "=" * (-len(value) % 4)
+        try:
+            return pybase64.b64decode(value, validate=True)
+        except (binascii.Error, ValueError) as e:
+            raise ValueError("invalid base64 audio data") from e
+
+    # Normalize input: resolve URL / base64 / file:// to bytes or path.
     if isinstance(audio_file, bytes):
         source = audio_file
     elif isinstance(audio_file, str) and audio_file.startswith("data:"):
-        source = pybase64.b64decode(audio_file.split(",")[1], validate=True)
+        try:
+            _, encoded = audio_file.split(",", 1)
+        except ValueError as e:
+            raise ValueError("invalid base64 audio data") from e
+        source = _decode_base64_audio(encoded)
     elif isinstance(audio_file, str) and (
         audio_file.startswith("http://") or audio_file.startswith("https://")
     ):
@@ -1899,8 +1913,13 @@ def load_audio(
         source = download_remote_media(audio_file, timeout=timeout)
     elif isinstance(audio_file, str) and audio_file.startswith("file://"):
         source = unquote(urlparse(audio_file).path)
-    elif isinstance(audio_file, str):
+    elif isinstance(audio_file, str) and os.path.isfile(audio_file):
         source = audio_file
+    elif isinstance(audio_file, str):
+        # Raw base64 is used by the multimodal clients. In particular, do not
+        # pass a long encoded payload to open(): it is not a path and raises
+        # ENAMETOOLONG before the decoder can report the real input error.
+        source = _decode_base64_audio(audio_file)
     else:
         raise ValueError(f"Invalid audio format: {audio_file}")
 

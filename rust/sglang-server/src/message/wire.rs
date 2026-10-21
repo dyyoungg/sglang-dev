@@ -146,6 +146,7 @@ impl TryFrom<api::SamplingParams> for SamplingParams {
             frequency_penalty: p.frequency_penalty.unwrap_or(defaults.frequency_penalty),
             presence_penalty: p.presence_penalty.unwrap_or(defaults.presence_penalty),
             repetition_penalty: p.repetition_penalty.unwrap_or(defaults.repetition_penalty),
+            input_penalty: p.input_penalty.unwrap_or(defaults.input_penalty),
             min_new_tokens: p.min_new_tokens.unwrap_or(defaults.min_new_tokens),
             n: p.n.unwrap_or(defaults.n),
             beam_width: p.beam_width,

@@ -188,6 +188,12 @@ class TestAudioContainerDecode(CustomTestCase):
         decoder.assert_not_called()
         self.assertEqual(waveform.shape, (1600,))
 
+    def test_raw_base64_wav_is_decoded(self):
+        """Raw base64 audio must not be treated as a filesystem path."""
+        encoded = base64.b64encode(_encode_wav()).decode()
+        waveform = load_audio(encoded, sr=16000)
+        self.assertEqual(waveform.shape, (1600,))
+
     def test_amr_decodes_despite_wav_data_url_mime(self):
         """Reproduces AMR bytes mislabeled as WAV by production clients."""
         data_url = "data:audio/wav;base64," + base64.b64encode(self.amr).decode()

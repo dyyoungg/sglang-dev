@@ -98,6 +98,11 @@ message SamplingParams {
   // the number of returned sequences (n <= beam_width).
   optional int64 beam_width = 26;
   WatermarkRequestConfig watermark = 27;
+  // Apply repetition/frequency penalties to tokens from the input prompt.
+  optional bool input_penalty = 28 [
+    (sglang.json.v1.field_json).null_policy = NULL_POLICY_RESETS_DEFAULT,
+    (sglang.json.v1.field_json).default_bool = false
+  ];
 }
 
 message WatermarkRequestConfig {

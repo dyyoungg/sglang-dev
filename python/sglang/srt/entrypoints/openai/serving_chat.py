@@ -1832,8 +1832,22 @@ class OpenAIServingChat(OpenAIServingBase):
             if cached is not None:
                 self._chat_template_cache.move_to_end(cache_key)
                 prompt_ids, decoded_prompt = cached
+                if envs.SGLANG_LOG_CHAT_TEMPLATE.get():
+                    logger.info(
+                        "[chat-template] %s",
+                        json.dumps(
+                            {
+                                "stage": "template_cache_hit",
+                                "template_kwargs": template_kwargs,
+                                "decoded_prompt": decoded_prompt,
+                                "input_ids": list(prompt_ids),
+                            },
+                            ensure_ascii=False,
+                        ),
+                    )
                 return list(prompt_ids), decoded_prompt
 
+        rendered_prompt = None
         if self._prompt_text_round_trip_is_lossy:
             # Re-encoding rendered text would drop the template's control tokens.
             prompt_ids = self.tokenizer_manager.tokenizer.apply_chat_template(
@@ -1855,6 +1869,19 @@ class OpenAIServingChat(OpenAIServingBase):
             )
             prompt_ids = parallel_prompt_encode(
                 self.tokenizer_manager.tokenizer, rendered_prompt, encode_kwargs
+            )
+        if envs.SGLANG_LOG_CHAT_TEMPLATE.get():
+            logger.info(
+                "[chat-template] %s",
+                json.dumps(
+                    {
+                        "stage": "template_render",
+                        "template_kwargs": template_kwargs,
+                        "rendered_prompt": rendered_prompt,
+                        "input_ids": prompt_ids,
+                    },
+                    ensure_ascii=False,
+                ),
             )
         decoded_prompt = (
             self.tokenizer_manager.tokenizer.decode(prompt_ids)

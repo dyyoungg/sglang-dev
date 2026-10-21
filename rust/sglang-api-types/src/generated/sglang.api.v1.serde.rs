@@ -967,6 +967,10 @@ impl SamplingParams {
     pub fn no_stop_trim_or_default(&self) -> bool {
         self.no_stop_trim.clone().unwrap_or_else(|| false)
     }
+    /// The schema default when unset (protobuf arrival).
+    pub fn input_penalty_or_default(&self) -> bool {
+        self.input_penalty.clone().unwrap_or_else(|| false)
+    }
     /// Protobuf arrival: unset defaulted fields become their schema
     /// defaults (JSON arrival already baked them at deserialization).
     pub fn apply_absent_defaults(&mut self) {
@@ -1011,6 +1015,9 @@ impl SamplingParams {
         }
         if self.no_stop_trim.is_none() {
             self.no_stop_trim = Some(false);
+        }
+        if self.input_penalty.is_none() {
+            self.input_penalty = Some(false);
         }
     }
 }
@@ -1110,6 +1117,9 @@ impl ::serde::Serialize for SamplingParams {
         if let Some(v) = &self.watermark {
             ::serde::ser::SerializeMap::serialize_entry(&mut map, "watermark", v)?;
         }
+        if let Some(v) = &self.input_penalty {
+            ::serde::ser::SerializeMap::serialize_entry(&mut map, "input_penalty", v)?;
+        }
         ::serde::ser::SerializeMap::end(map)
     }
 }
@@ -1144,6 +1154,7 @@ impl<'de> ::serde::Deserialize<'de> for SamplingParams {
             "custom_params",
             "beam_width",
             "watermark",
+            "input_penalty",
         ];
         struct V;
         impl<'de> ::serde::de::Visitor<'de> for V {
@@ -1182,6 +1193,7 @@ impl<'de> ::serde::Deserialize<'de> for SamplingParams {
                 let mut f_custom_params = None;
                 let mut f_beam_width = None;
                 let mut f_watermark = None;
+                let mut f_input_penalty = None;
                 while let Some(key) = map.next_key::<::std::borrow::Cow<'_, str>>()? {
                     match key.as_ref() {
                         "max_new_tokens" => {
@@ -1394,6 +1406,14 @@ impl<'de> ::serde::Deserialize<'de> for SamplingParams {
                             }
                             f_watermark = Some(map.next_value::<Option<WatermarkRequestConfig>>()?);
                         }
+                        "input_penalty" => {
+                            if f_input_penalty.is_some() {
+                                return Err(::serde::de::Error::duplicate_field("input_penalty"));
+                            }
+                            f_input_penalty = Some(Some(
+                                map.next_value::<Option<bool>>()?.unwrap_or_else(|| false),
+                            ));
+                        }
                         other => {
                             return Err(::serde::de::Error::unknown_field(other, FIELDS));
                         }
@@ -1428,6 +1448,7 @@ impl<'de> ::serde::Deserialize<'de> for SamplingParams {
                     custom_params: f_custom_params.flatten(),
                     beam_width: f_beam_width.flatten(),
                     watermark: f_watermark.flatten(),
+                    input_penalty: f_input_penalty.unwrap_or_else(|| Some(false)),
                 })
             }
         }
