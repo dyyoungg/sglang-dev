@@ -138,7 +138,11 @@ class Qwen2_5_VisionBlock(nn.Module):
             prefix=add_prefix("attn", prefix),
             num_dummy_heads=num_dummy_heads,
             use_data_parallel=use_data_parallel,
-            use_compiled_rope=get_mm().mm_use_compiled_rope,
+            # VeOmni computes vision q/k RoPE in float32 before casting back
+            # to the activation dtype.  Keep this path eager so the Qwen3.5
+            # BeeBee encoder has the same precision regardless of the global
+            # multimodal compiled-RoPE setting.
+            use_compiled_rope=False,
         )
         self.mlp = Qwen2_5_VLMLP(
             dim,
@@ -726,7 +730,9 @@ class Qwen3_VisionBlock(nn.Module):
             use_data_parallel=use_data_parallel,
             use_dp_attention_reduce=is_dp_attention_enabled(),
             workspace_buffer=workspace_buffer,
-            use_compiled_rope=get_mm().mm_use_compiled_rope,
+            # Match the VeOmni Qwen3.5 vision reference: FP32 q/k rotary
+            # application followed by a cast back to the activation dtype.
+            use_compiled_rope=False,
         )
         self.mlp = Qwen3_VisionMLP(
             dim,
@@ -1027,11 +1033,16 @@ class BeeBeeQwen3MoeVisionModel(nn.Module, RotaryPosMixin):
 
         outputs = []
         for t, h, w in grid_thw:
+            # VeOmni's Qwen3.5 reference computes interpolation coordinates in
+            # float64 and only casts the four interpolation weights to the
+            # embedding dtype.  Keeping this precision here avoids a visible
+            # drift in the learned absolute position embedding before the
+            # vision blocks run.
             h_idxs = torch.linspace(
-                0, num_grid_per_side - 1, h, dtype=torch.float32, device=self.device
+                0, num_grid_per_side - 1, h, dtype=torch.float64, device=self.device
             )
             w_idxs = torch.linspace(
-                0, num_grid_per_side - 1, w, dtype=torch.float32, device=self.device
+                0, num_grid_per_side - 1, w, dtype=torch.float64, device=self.device
             )
 
             h_floor = h_idxs.to(torch.long)

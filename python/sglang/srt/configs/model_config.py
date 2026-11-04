@@ -2328,6 +2328,7 @@ multimodal_model_archs = [
     "Qwen4ExpForConditionalGeneration",
     "BeeBeeOmniForConditionalGeneration",
     "BeeBeeMoEOmniForConditionalGeneration",
+    "BeeBeeOmniQwen35ForConditionalGeneration",
     "InternS2PreviewForConditionalGeneration",
     "InternS2MobiusForConditionalGeneration",
     "Qwen3ASRForConditionalGeneration",

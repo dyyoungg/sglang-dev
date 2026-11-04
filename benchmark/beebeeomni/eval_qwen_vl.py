@@ -35,6 +35,25 @@ def sha256(path):
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
 
+def sampling_params(args, index=None):
+    params = {
+        "temperature": args.temperature,
+        "top_p": args.top_p,
+        "repetition_penalty": args.repetition_penalty,
+    }
+    for name in ("top_k", "min_p", "presence_penalty"):
+        value = getattr(args, name)
+        if value is not None:
+            params[name] = value
+    if args.sampling_seed is not None:
+        params["seed"] = (
+            args.sampling_seed
+            if args.fixed_sampling_seed
+            else args.sampling_seed + (index or 0)
+        )
+    return params
+
+
 def crop_segment(path, sample, cache):
     start = max(0.0, float(sample.get("start") or 0))
     end = sample.get("end")
@@ -96,11 +115,9 @@ def prepare(name, index, sample, args):
             {"role": "system", "content": sample.get("system", "You are a helpful assistant.")},
             {"role": "user", "content": content},
         ],
-        "temperature": 0,
-        "top_p": 1,
-        "repetition_penalty": 1.05,
+        **sampling_params(args, index),
         "max_tokens": args.max_tokens,
-        "chat_template_kwargs": {"enable_thinking": False},
+        "chat_template_kwargs": {"enable_thinking": args.enable_thinking},
         "stream": False,
     }
     row = {
@@ -124,12 +141,30 @@ async def request(session, payload, args):
     choice = result["choices"][0]
     if choice.get("finish_reason") not in ("stop", "length"):
         raise RuntimeError(f"Unexpected finish_reason: {choice}")
-    raw = choice["message"].get("content")
-    if not isinstance(raw, str) or not raw.strip():
+    message = choice["message"]
+    raw = message.get("content") or ""
+    if not isinstance(raw, str):
+        raise ValueError(f"Invalid model response: {choice}")
+    if not args.enable_thinking and not raw.strip():
         raise ValueError(f"Empty model response: {choice}")
+    answer = raw
+    reasoning = message.get("reasoning_content")
+    reasoning_complete = None
+    if args.enable_thinking:
+        if reasoning is not None:
+            reasoning_complete = bool(answer.strip())
+        elif "</think>" in raw:
+            reasoning, answer = raw.rsplit("</think>", 1)
+            reasoning_complete = True
+        else:
+            reasoning, answer = raw, ""
+            reasoning_complete = False
     return {
         "status": "success", "raw_answer": raw,
-        "prediction": base.protocol.extract_mcq_answer(raw.strip()),
+        "final_answer": answer.strip(),
+        "reasoning_content": reasoning,
+        "reasoning_complete": reasoning_complete,
+        "prediction": base.protocol.extract_mcq_answer(answer.strip()),
         "elapsed_seconds": time.monotonic() - started,
         "finish_reason": choice.get("finish_reason"),
         "usage": result.get("usage", {}),
@@ -149,6 +184,8 @@ def summarize(rows, planned, full_count):
         "coverage": len(good) / planned if planned else None,
         "invalid_predictions": sum(not r["output"]["prediction"] for r in good),
         "truncated_answers": sum(r["output"].get("finish_reason") == "length" for r in good),
+        "incomplete_reasoning": sum(r["output"].get("reasoning_complete") is False for r in good),
+        "completion_tokens_mean": float(np.mean([r["output"]["usage"].get("completion_tokens", 0) for r in good])) if good else None,
         "request_latency_seconds": {"mean": float(np.mean(latency)), "p50": float(np.percentile(latency, 50)), "p95": float(np.percentile(latency, 95))} if latency else {},
         "prepare_seconds_mean": float(np.mean(prepare_time)) if prepare_time else None,
         "prompt_tokens_mean": float(np.mean([r["output"]["usage"].get("prompt_tokens", 0) for r in good])) if good else None,
@@ -173,7 +210,16 @@ async def run(args):
     config = {
         "model": args.model, "url": args.url, "seed": args.seed, "limit": args.limit,
         "concurrency": args.concurrency, "max_tokens": args.max_tokens,
-        "protocol": "native Qwen chat; enable_thinking=false; frozen VeOmni question and MCQ extraction",
+        "sampling_params": sampling_params(args),
+        "sampling_seed_rule": (
+            "fixed seed"
+            if args.sampling_seed is not None and args.fixed_sampling_seed
+            else "base seed + dataset index"
+            if args.sampling_seed is not None
+            else None
+        ),
+        "protocol": f"native Qwen chat; enable_thinking={str(args.enable_thinking).lower()}; frozen VeOmni question and MCQ extraction applied only to final answer",
+        "enable_thinking": args.enable_thinking,
         "instruction": INSTRUCTION, "image_preprocessing": "ratio=1, factor=32, 65536..2027520 pixels, RGB JPEG quality=75, one image per input",
         "video_preprocessing": "native server config recorded in server-info.json; segments cropped with lossless ffv1; no subtitles",
         "script_sha256": sha256(__file__), "reference_protocol_sha256": sha256(base.protocol.__file__),
@@ -240,6 +286,15 @@ if __name__ == "__main__":
     p.add_argument("--seed", type=int, default=20261020)
     p.add_argument("--concurrency", type=int, default=1)
     p.add_argument("--max-tokens", type=int, default=64)
+    p.add_argument("--temperature", type=float, default=0)
+    p.add_argument("--top-p", type=float, default=1)
+    p.add_argument("--top-k", type=int)
+    p.add_argument("--min-p", type=float)
+    p.add_argument("--presence-penalty", type=float)
+    p.add_argument("--repetition-penalty", type=float, default=1.05)
+    p.add_argument("--sampling-seed", type=int)
+    p.add_argument("--fixed-sampling-seed", action="store_true")
+    p.add_argument("--enable-thinking", action="store_true")
     p.add_argument("--retry-errors", action="store_true")
     args = p.parse_args()
     if args.limit < 0 or args.concurrency < 1 or args.max_tokens < 1:

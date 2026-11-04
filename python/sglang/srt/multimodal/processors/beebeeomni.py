@@ -11,7 +11,7 @@ Modality pipeline
 
   Video  : Removed (Inference is Image-only)
 
-Position IDs: standard 1-D sequential (no mrope)
+Position IDs: dynamic-resolution 3-D M-RoPE for each paired-image grid.
 """
 
 import asyncio
@@ -59,6 +59,65 @@ from sglang.utils import logger
 from sglang.srt.runtime_context import get_mm
 from sglang.srt.mem_cache.multimodal_cache import EmbeddingResult
 from sglang.srt.models.beebee_audio_encoders import _get_feat_extract_output_lengths
+
+
+def compute_beebee_dynamic_mrope_positions(input_ids, mm_items, spatial_merge_size=2,
+                                           default_downsample_ratio=4):
+    """Build dynamic 3-D M-RoPE positions from paired image metadata."""
+    import math
+
+    if hasattr(input_ids, "tolist"):
+        input_ids = input_ids.reshape(-1).tolist()
+    positions = torch.zeros((3, len(input_ids)), dtype=torch.long)
+    image_items = sorted(
+        (item for item in mm_items if item.modality == Modality.IMAGE),
+        key=lambda item: item.offsets[0][0] if item.offsets else -1,
+    )
+    cursor = 0
+    current = 0
+    for item in image_items:
+        if not item.offsets:
+            continue
+        if len(item.offsets) != 1:
+            raise ValueError(
+                "BeeBee dynamic M-RoPE requires one contiguous image-pair "
+                f"offset per item, got {item.offsets!r}"
+            )
+        grid = item.model_specific_data.get("image_grid_thw")
+        if grid is None:
+            continue
+        t, h, w = [int(v) for v in torch.as_tensor(grid).reshape(-1, 3)[0].tolist()]
+        ratio = float(item.model_specific_data.get("downsample_ratio", default_downsample_ratio))
+        mh = max(1, int(np.round((h // spatial_merge_size) / math.sqrt(ratio))))
+        nw = max(1, int(np.round((w // spatial_merge_size) / math.sqrt(ratio))))
+        start, end = item.offsets[0]
+        end += 1
+        if start < cursor or end <= start or end > len(input_ids):
+            raise ValueError(
+                f"Invalid/overlapping image offset [{start}, {end}); "
+                f"previous cursor={cursor}, sequence length={len(input_ids)}"
+            )
+        if start > cursor:
+            n = start - cursor
+            positions[:, cursor:start] = torch.arange(n).expand(3, -1) + current
+            current += n
+        expected = t * mh * nw
+        if end - start != expected:
+            raise ValueError(
+                f"Image placeholder span has {end-start} tokens, expected {expected} "
+                f"from grid/downsample metadata (grid={t}x{h}x{w}, ratio={ratio})."
+            )
+        ti = torch.arange(t).repeat_interleave(mh * nw) + current
+        hi = torch.arange(mh).repeat_interleave(nw).repeat(t) + current
+        wi = torch.arange(nw).repeat(mh * t) + current
+        positions[:, start:end] = torch.stack((ti, hi, wi))
+        current += max(t, mh, nw)
+        cursor = end
+    if cursor < len(input_ids):
+        n = len(input_ids) - cursor
+        positions[:, cursor:] = torch.arange(n).expand(3, -1) + current
+    delta = torch.tensor([int(positions.max()) + 1 - len(input_ids)], dtype=torch.long)
+    return positions, delta
 
 class ProcessorCacheEntry(EmbeddingResult):
     def __init__(
@@ -227,9 +286,11 @@ class BeeBeeOmniProcessor(SGLangBaseProcessor):
 
     from sglang.srt.models.beebee_omni import BeeBeeOmniForConditionalGeneration
     from sglang.srt.models.beebee_omni_moe import BeeBeeMoEOmniForConditionalGeneration
+    from sglang.srt.models.beebee_omni_qwen35 import BeeBeeOmniQwen35ForConditionalGeneration
 
     models = [BeeBeeOmniForConditionalGeneration,
-              BeeBeeMoEOmniForConditionalGeneration]
+              BeeBeeMoEOmniForConditionalGeneration,
+              BeeBeeOmniQwen35ForConditionalGeneration]
     gpu_image_decode = False
 
     def __init__(self, hf_config, server_args, _processor, *args, **kwargs):
@@ -287,6 +348,15 @@ class BeeBeeOmniProcessor(SGLangBaseProcessor):
 
         self._patch_size = getattr(
             self._processor.image_processor, "patch_size", 14
+        )
+
+    def compute_mrope_positions(self, input_ids, mm_items):
+        """Build dynamic-resolution 3D positions from each paired-image item."""
+        return compute_beebee_dynamic_mrope_positions(
+            input_ids,
+            mm_items,
+            spatial_merge_size=self._spatial_merge_size,
+            default_downsample_ratio=self.image_downsample_ratio,
         )
 
     def _compute_audio_tokens(self, raw_waveform_lengths: List[List[int]]) -> List[int]:
@@ -524,6 +594,8 @@ class BeeBeeOmniProcessor(SGLangBaseProcessor):
 
           
             grid_h, grid_w = int(bucket_thw[0, 1]), int(bucket_thw[0, 2])
+            # Temporal patching is folded into the feature/channel dimension;
+            # the flattened row count is grid_t * H * W (grid_t=1 for a pair).
             stride = grid_h * grid_w
 
             for i, p in enumerate(bucket_pairs):
@@ -707,14 +779,25 @@ class BeeBeeOmniProcessor(SGLangBaseProcessor):
             for i in range(len(img_grid_thw)):
                 off1 = image_offsets[i * 2]
                 off2 = image_offsets[i * 2 + 1]
+                if off2[0] != off1[1] + 1:
+                    raise ValueError(
+                        "BeeBee image pairs must occupy two contiguous <image> "
+                        "spans inside one vision segment; got offsets "
+                        f"{off1} and {off2}."
+                    )
+                pair_offsets = [(off1[0], off2[1])]
                 num_tokens = off2[1] - off1[0] + 1
                 embedding_slice = img_embedding[img_consumed : img_consumed + num_tokens]
                 img_consumed += num_tokens
                 mm_items.append(
                     MultimodalDataItem(
                         modality=Modality.IMAGE,
-                        offsets=[(off1[0], off2[1])],
+                        offsets=pair_offsets,
                         precomputed_embeddings=embedding_slice,
+                        model_specific_data={
+                            "image_grid_thw": torch.as_tensor(img_grid_thw[i]).reshape(1, 3),
+                            "downsample_ratio": per_pair_ratios[i],
+                        },
                     )
                 )
 
@@ -734,6 +817,9 @@ class BeeBeeOmniProcessor(SGLangBaseProcessor):
                     )
                 )
 
+        mrope_positions, mrope_position_delta = self.compute_mrope_positions(
+            input_ids, mm_items
+        )
         return MultimodalProcessorOutput(
             input_ids=input_ids,
             mm_items=mm_items,
@@ -742,8 +828,8 @@ class BeeBeeOmniProcessor(SGLangBaseProcessor):
             im_token_id=self.image_token_id,
             video_token_id=None,
             audio_token_id=self.audio_token_id,
-            mrope_positions=None,
-            mrope_position_delta=None,
+            mrope_positions=mrope_positions,
+            mrope_position_delta=mrope_position_delta,
         )
 
     # ── Processor pixel cache helpers ────────────────────────────────────
@@ -819,7 +905,7 @@ class BeeBeeOmniProcessor(SGLangBaseProcessor):
 
         # ═══ Per-pair downsample ratios ═══
         per_pair_ratios = getattr(request_obj, 'image_downsample_ratios', None)
-        num_pairs = len(image_data) // 2 if image_data else 0
+        num_pairs = (len(image_data) + 1) // 2 if image_data else 0
         if per_pair_ratios is None:
             per_pair_ratios = [self.image_downsample_ratio] * num_pairs
         else:
@@ -1014,12 +1100,18 @@ class BeeBeeOmniProcessor(SGLangBaseProcessor):
                 thw = image_grid_thw[i].unsqueeze(0)
                 off1 = image_offsets[i * 2]
                 off2 = image_offsets[i * 2 + 1]
-                new_offset = (off1[0], off2[1])
+                if off2[0] != off1[1] + 1:
+                    raise ValueError(
+                        "BeeBee image pairs must occupy two contiguous <image> "
+                        "spans inside one vision segment; got offsets "
+                        f"{off1} and {off2}."
+                    )
+                pair_offsets = [(off1[0], off2[1])]
                 feat = pixel_values_list[i] if pixel_values_list is not None else None
 
                 mm_items.append(MultimodalDataItem(
                     modality=Modality.IMAGE,
-                    offsets=[new_offset],
+                    offsets=pair_offsets,
                     feature=feat,
                     hash=pair_hashes[i],
                     model_specific_data={
@@ -1047,6 +1139,9 @@ class BeeBeeOmniProcessor(SGLangBaseProcessor):
             f"{1e3*t_total:.1f}ms total"
         )
 
+        mrope_positions, mrope_position_delta = self.compute_mrope_positions(
+            expanded_ids, mm_items
+        )
         return MultimodalProcessorOutput(
             input_ids=expanded_ids,
             mm_items=mm_items,
@@ -1055,8 +1150,8 @@ class BeeBeeOmniProcessor(SGLangBaseProcessor):
             im_token_id=self.image_token_id,
             video_token_id=None,
             audio_token_id=self.audio_token_id,
-            mrope_positions=None,
-            mrope_position_delta=None,
+            mrope_positions=mrope_positions,
+            mrope_position_delta=mrope_position_delta,
         )
 
     async def process_mm_data_async_origin(
@@ -1072,7 +1167,7 @@ class BeeBeeOmniProcessor(SGLangBaseProcessor):
         loop = asyncio.get_running_loop()
 
         # ═══ Per-pair downsample ratios ═══
-        num_pairs = len(image_data) // 2 if image_data else 0
+        num_pairs = (len(image_data) + 1) // 2 if image_data else 0
         per_pair_ratios = getattr(request_obj, 'image_downsample_ratios', None)
         if per_pair_ratios is None:
             per_pair_ratios = [self.image_downsample_ratio] * num_pairs
@@ -1141,12 +1236,18 @@ class BeeBeeOmniProcessor(SGLangBaseProcessor):
                 thw = image_grid_thw[i].unsqueeze(0)
                 off1 = image_offsets[i * 2]
                 off2 = image_offsets[i * 2 + 1]
-                new_offset = (off1[0], off2[1])
+                if off2[0] != off1[1] + 1:
+                    raise ValueError(
+                        "BeeBee image pairs must occupy two contiguous <image> "
+                        "spans inside one vision segment; got offsets "
+                        f"{off1} and {off2}."
+                    )
+                pair_offsets = [(off1[0], off2[1])]
                 feat = pixel_values[i] if pixel_values is not None else None
                 
                 mm_items.append(MultimodalDataItem(
                     modality=Modality.IMAGE,
-                    offsets=[new_offset],
+                    offsets=pair_offsets,
                     feature=feat,
                     hash=None,
                     model_specific_data={
@@ -1173,6 +1274,9 @@ class BeeBeeOmniProcessor(SGLangBaseProcessor):
         t_total = time.perf_counter() - t0
         logger.debug(f"[BeeBeeLlavaProcessor Perf] Process completed in {1e3*t_total:.1f}ms")
 
+        mrope_positions, mrope_position_delta = self.compute_mrope_positions(
+            expanded_ids, mm_items
+        )
         return MultimodalProcessorOutput(
             input_ids=expanded_ids,
             mm_items=mm_items,
@@ -1181,6 +1285,6 @@ class BeeBeeOmniProcessor(SGLangBaseProcessor):
             im_token_id=self.image_token_id,
             video_token_id=None,
             audio_token_id=self.audio_token_id,
-            mrope_positions=None,
-            mrope_position_delta=None,
+            mrope_positions=mrope_positions,
+            mrope_position_delta=mrope_position_delta,
         )

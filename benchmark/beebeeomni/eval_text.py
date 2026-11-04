@@ -20,6 +20,8 @@ from pathlib import Path
 import aiohttp
 import numpy as np
 
+ANSWER_SUFFIX = "\n请直接输出正确选项的字母（只输出 A、B、C、D 或 E 之一），不要解释。"
+
 
 def atomic_json(path: Path, value):
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -33,7 +35,12 @@ def answer_letter(text: str, candidates: list[str]) -> str | None:
     if not isinstance(text, str):
         return None
     allowed = "".join(re.escape(x) for x in candidates)
-    match = re.search(rf"(?<![A-Za-z])([{allowed}])(?![A-Za-z])", text.upper())
+    match = re.search(
+        rf"(?:答案|answer|选项)?\s*[:：是为]?\s*([{allowed}])(?:[.)。：：]|$)",
+        text.strip().upper(),
+    )
+    if match is None:
+        match = re.search(rf"(?<![A-Za-z])([{allowed}])(?![A-Za-z])", text.upper())
     return match.group(1) if match else None
 
 
@@ -43,7 +50,10 @@ def messages(sample: dict) -> list[dict]:
         role = {"Human": "user", "Assistant": "assistant"}.get(item["role"])
         if role is None:
             raise ValueError(f"Unsupported role: {item['role']!r}")
-        result.append({"role": role, "content": item["value"]})
+        content = item["value"]
+        if role == "user" and item is sample["question"][-1]:
+            content += ANSWER_SUFFIX
+        result.append({"role": role, "content": content})
     return result
 
 

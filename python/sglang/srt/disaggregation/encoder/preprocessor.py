@@ -189,7 +189,7 @@ class EncoderPreprocessor:
 
         # BeeBeeOmni consumes two images as one vision item and relies on the
         # optimized Qwen VL processor's pair-compatible patch layout.
-        if self.model_type in ("llavaqwen2_omni", "llavaqwen3moe_omni"):
+        if self.model_type in ("llavaqwen2_omni", "llavaqwen3moe_omni", "llavaqwen35_omni"):
             try:
                 from sglang.srt.multimodal.image_processor_opt import (
                     Qwen25VLImageProcessorOptimized,
