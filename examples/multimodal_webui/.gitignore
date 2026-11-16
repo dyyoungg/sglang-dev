@@ -1,0 +1,5 @@
+.venv/
+.data/
+services.local.json
+__pycache__/
+*.log

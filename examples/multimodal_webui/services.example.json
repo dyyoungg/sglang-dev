@@ -1,0 +1,17 @@
+{
+  "services": [
+    {
+      "url": "http://127.0.0.1:18006",
+      "name": "27B · 1106 微调模型",
+      "adapter": "beebee",
+      "tokenizer_path": "/mnt/afs/yangdeyu/VeOmni/ckpt/1106_llava_27B_gametext_omnisft_adamw_1e5_8k/hf_ckpt",
+      "capabilities": ["text", "image", "video", "audio"]
+    },
+    {
+      "url": "http://127.0.0.1:18005",
+      "name": "第二个本地模型",
+      "adapter": "openai",
+      "capabilities": ["text", "image", "video"]
+    }
+  ]
+}

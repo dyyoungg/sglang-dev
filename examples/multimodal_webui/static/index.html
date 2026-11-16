@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#171821"><title>Omni Studio · 多模态对话</title>
+  <link rel="stylesheet" href="/static/style.css"><script src="/static/app.js?v=20261112-2" defer></script>
+</head>
+<body>
+<div class="app-shell">
+  <aside class="sidebar" id="sidebar">
+    <a class="brand" href="/" aria-label="Omni Studio 首页"><span class="brand-mark">o<span>✳</span></span><span>omni<span class="brand-light">studio</span><small>LOCAL INTELLIGENCE</small></span></a>
+    <button class="new-chat" id="newChat"><span>＋</span> 新建对话 <kbd>⌘ K</kbd></button>
+    <div class="section-label">工作空间 <span>PRIVATE & LOCAL</span></div>
+    <nav class="nav"><button class="active" id="chatNav"><span>◈</span> 多模态对话 <span class="nav-pill">LAB</span></button><button id="servicesNav"><span>▦</span> 模型服务 <span id="serviceCount" class="count">0</span></button></nav>
+    <div class="history-heading"><span>最近对话</span><button id="clearHistory" class="icon-button" title="清空对话记录" aria-label="清空对话记录">⌫</button></div>
+    <div id="history" class="history"></div>
+    <div class="sidebar-bottom"><div class="local-status"><i class="dot"></i><span>在你的服务器上运行</span></div><p>模型、媒体与对话，留在本地。</p><div class="profile"><span class="avatar">Y</span><div>本地工作空间<small>Omni Studio / v1.0</small></div><span class="profile-spark">✳</span></div></div>
+  </aside>
+
+  <main class="workspace">
+    <header class="topbar">
+      <button class="icon-button mobile-menu" id="menuToggle" aria-label="打开导航">☰</button>
+      <div class="model-control"><span class="model-symbol">◈</span><div><label for="modelSelect">当前模型</label><select id="modelSelect" aria-label="选择模型服务"><option value="">正在发现本地模型…</option></select></div><i class="dot" id="modelDot"></i></div>
+      <div class="top-actions"><span id="connectionLabel" class="connection-label">每 10 秒自动发现</span><button class="icon-button" id="refreshModels" title="刷新模型服务" aria-label="刷新模型服务">⟳</button><span class="divider"></span><button class="settings-button" id="settingsToggle" aria-expanded="false"><span>☷</span> 对话设置</button></div>
+    </header>
+
+    <div class="work-body">
+      <div class="chat-column">
+        <div class="chat-scroll" id="chatScroll">
+          <section class="welcome" id="welcome">
+            <div class="welcome-badge"><i class="dot"></i> 你的本地多模态工作台</div>
+            <div class="hero-glyph" aria-hidden="true"><div></div><span>✳</span><i></i></div>
+            <h1>让每一种输入，<br><span>都有回应。</span></h1>
+            <p class="hero-description">一张图、一段视频，或一段声音。<br>选择你的模型，从这里开始探索。</p>
+            <div class="suggestions">
+              <button class="suggestion" data-kind="image"><span class="card-icon lavender">▧</span><strong>读懂一张图</strong><span>识别文字，理解细节与场景</span><i>↗</i></button>
+              <button class="suggestion" data-kind="video"><span class="card-icon peach">▷</span><strong>探索一段视频</strong><span>梳理情节，捕捉关键时刻</span><i>↗</i></button>
+              <button class="suggestion" data-kind="audio"><span class="card-icon mint">≋</span><strong>听见更多信息</strong><span>转录语音，总结音频内容</span><i>↗</i></button>
+            </div>
+            <div class="welcome-foot"><span>✧</span> 支持多轮对话 · 随时切换本地模型</div>
+          </section>
+          <section id="messages" class="messages" aria-live="polite" aria-label="对话消息"></section>
+        </div>
+        <div class="composer-wrap">
+          <div id="notice" class="notice" hidden></div>
+          <div class="composer" id="dropZone">
+            <div class="attachment-tray" id="attachments"></div>
+            <textarea id="prompt" rows="2" placeholder="输入你的问题，或拖入图片、视频、音频…" aria-label="消息内容"></textarea>
+            <div class="composer-toolbar"><div class="composer-tools"><button id="attach" class="icon-button attach-button" title="添加图片、视频或音频" aria-label="添加附件">＋</button><button id="thinkingToggle" class="mode-chip" aria-pressed="false">✧ <span>深度思考</span></button><span class="composer-separator"></span><span id="mediaHint" class="media-hint">图像 · 视频 · 音频</span></div><div class="send-tools"><span class="key-hint">Enter 发送</span><button id="send" class="send-button" aria-label="发送消息">↑</button></div></div>
+            <input id="fileInput" type="file" multiple hidden accept=".jpg,.jpeg,.png,.webp,.gif,.bmp,.mp4,.mov,.webm,.mkv,.wav,.mp3,.m4a,.flac,.ogg">
+          </div>
+          <footer class="composer-footer"><span><i class="tiny-lock">▣</i> 本地推理，媒体不经第三方服务</span><span id="settingsSummary">Non-thinking · 1024 tokens · Down 4</span></footer>
+        </div>
+      </div>
+      <aside class="settings-panel" id="settingsPanel" hidden>
+        <div class="panel-heading"><div><small>MAKE IT YOURS</small><h2>对话设置</h2></div><button class="icon-button" id="closeSettings" aria-label="关闭设置">×</button></div>
+        <p class="panel-description">调整下一次回复的生成方式。</p>
+        <label class="field">输出长度 <span>tokens</span><select id="maxTokens"><option>512</option><option selected>1024</option><option>2048</option><option>4096</option><option>8192</option><option>16384</option><option>32768</option></select></label>
+        <label class="field">图像下采样 <span>BeeBee</span><select id="downsample"><option value="1">Down 1 · 保留细节</option><option value="4" selected>Down 4 · 均衡</option><option value="12">Down 12 · 节省 token</option><option value="16">Down 16 · 最低 token</option></select></label>
+        <label class="field">Temperature <output id="temperatureValue">0.7</output><input id="temperature" type="range" min="0" max="2" step="0.1" value="0.7"></label>
+        <label class="field">Top P <output id="topPValue">0.8</output><input id="topP" type="range" min="0.1" max="1" step="0.05" value="0.8"></label>
+        <label class="field">Presence penalty <output id="penaltyValue">1.5</output><input id="penalty" type="range" min="-2" max="2" step="0.1" value="1.5"></label>
+        <div class="field-divider"></div><h3>媒体处理</h3>
+        <label class="field">视频采样帧数<select id="videoFrames"><option>8</option><option selected>16</option><option>32</option><option>64</option></select></label>
+        <label class="field">视频采样 FPS<select id="videoFps"><option value="2" selected>2 FPS</option><option value="4">4 FPS</option><option value="6">6 FPS</option></select></label>
+        <label class="field">BeeBee 视频标记<select id="videoLayout"><option value="fps_groups" selected>按 FPS 分组 · 27B</option><option value="single_segment">整段包裹 · 14B</option></select></label>
+        <label class="field">图像最长边<select id="maxEdge"><option>672</option><option>1024</option><option selected>1280</option><option>2048</option></select></label>
+        <label class="checkbox-field"><input type="checkbox" id="videoAudio"> 同时读取视频音轨</label>
+        <p class="field-help">视频按所选 FPS 均匀采样，并受采样帧数上限约束。27B 模式每组 FPS 张图使用一组视觉边界，不复制帧；14B 模式将全部帧放在一组视觉边界内。</p>
+        <div class="field-divider"></div><label class="field">系统提示词<textarea id="systemPrompt" rows="4" placeholder="留空使用模型原生默认模板"></textarea></label>
+        <p class="field-help">Thinking 使用模型原生开关；若模型输出空推理，会如实显示。Downsample 仅对 BeeBee 服务生效。</p>
+      </aside>
+    </div>
+  </main>
+</div>
+<dialog id="servicesDialog"><div class="dialog-heading"><div><small>CONNECTED LOCALLY</small><h2>模型服务</h2></div><button class="icon-button" id="closeServices" aria-label="关闭模型服务">×</button></div><p class="dialog-description">自动发现本机模型服务。也可以添加固定地址，并设置易读的名称。</p><div id="serviceList" class="service-list"></div><form id="addServiceForm"><label>服务地址<input id="serviceUrl" placeholder="http://127.0.0.1:18006" required></label><label>显示名称（可选）<input id="serviceName" placeholder="例如：27B · 微调模型"></label><button class="primary-button" type="submit">添加并发现服务 <span>↗</span></button></form><p class="field-help">标准服务需提供 /v1/models 和 /v1/chat/completions；BeeBee 自动使用原生接口。</p></dialog>
+<div id="toast" class="toast" role="status" hidden></div>
+</body></html>

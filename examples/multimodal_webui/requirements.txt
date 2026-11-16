@@ -1,0 +1,7 @@
+fastapi>=0.115,<1
+uvicorn>=0.30,<1
+httpx>=0.27,<1
+python-multipart>=0.0.20
+pillow>=10
+# Only needed by native BeeBee services; not imported by the OpenAI adapter.
+transformers>=4.57,<6
