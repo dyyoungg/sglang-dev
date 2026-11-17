@@ -559,9 +559,10 @@ async def main():
         return
 
     client = MultiModalClient(
-        url=os.getenv("API_TEST_URL", "http://127.0.0.1:18004/generate_stream"),
+        url=os.getenv("API_TEST_URL", "http://127.0.0.1:18005/generate_stream"),
         default_sampling_params={
             "max_new_tokens": 2048,
+            "input_penalty": True,
             "temperature": 0.7,
             "top_p": 0.8,
             "top_k": 20,
@@ -611,7 +612,7 @@ async def main():
     first_time = 0
     async for token in client.generate(
         prompt, images=images, target_sizes=target_sizes,
-        image_downsample_ratios=[4],
+        # image_downsample_ratios=[4],
     ):
         if first_time == 0:
             first_time = time.time() - t1

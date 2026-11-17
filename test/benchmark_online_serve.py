@@ -20,6 +20,7 @@ import time
 import io
 import base64
 import math
+from pathlib import Path
 from typing import AsyncGenerator, List, Tuple, Optional, Union, Dict
 
 import aiohttp
@@ -29,7 +30,8 @@ import soundfile as sf
 from transformers import AutoTokenizer
 import concurrent.futures
 
-REQUEST_LATENCY: List[Tuple[str, int, int, float, float]] = []
+REQUEST_LATENCY: List[Dict[str, Union[str, int, float, None]]] = []
+_RANDOM_TOKEN_POOLS: Dict[int, List[int]] = {}
 
 
 def log_request_token_budget(
@@ -69,24 +71,48 @@ def log_request_token_budget(
         flush=True,
     )
 
-def get_tokenizer(tokenizer_name: str, *args, **kwargs):
+def get_tokenizer(tokenizer_name: str, **kwargs):
     kwargs["use_fast"] = True
-    return AutoTokenizer.from_pretrained(tokenizer_name, *args, **kwargs)
+    return AutoTokenizer.from_pretrained(tokenizer_name, **kwargs)
 
 def gen_random_input_text(target_token_len: int, tokenizer, rng=None) -> str:
-    """生成随机文本，并实施严格的特殊占位符清洗"""
-    if target_token_len <= 0: return ""
+    """生成重新编码后长度精确的随机文本，避免碰撞控制标签。"""
+    if target_token_len <= 0:
+        return ""
     rng = rng or random
-    random_ids = [rng.randint(512, 8192) for _ in range(target_token_len)]
-    text = tokenizer.decode(random_ids)
-    
-    # 核心修复 1：严格防止随机生成的文本恰好碰撞出系统的关键控制标签
-    # 否则会导致 SGLang 在解析 Prompt 和 Media 资产时长度对不上！
-    text = text.replace("<image>", "") \
-               .replace("<audio>", "") \
-               .replace("<|im_end|>", "") \
-               .replace("<|im_start|>", "")
-    return text
+    tokenizer_key = id(tokenizer)
+    token_pool = _RANDOM_TOKEN_POOLS.get(tokenizer_key)
+    if token_pool is None:
+        special_ids = set(tokenizer.all_special_ids)
+        vocab_size = getattr(tokenizer, "vocab_size", None) or len(tokenizer)
+        token_pool = [
+            i
+            for i in range(min(512, vocab_size), min(8192, vocab_size))
+            if i not in special_ids
+        ]
+        _RANDOM_TOKEN_POOLS[tokenizer_key] = token_pool
+    if not token_pool:
+        raise ValueError("Tokenizer has no non-special IDs in the random text range")
+    token_ids = [rng.choice(token_pool) for _ in range(target_token_len)]
+
+    def decode(ids):
+        text = tokenizer.decode(ids, clean_up_tokenization_spaces=False)
+        for reserved in ("<image>", "<audio>", "<|im_end|>", "<|im_start|>"):
+            text = text.replace(reserved, "")
+        return text
+
+    for _ in range(64):
+        text = decode(token_ids)
+        actual = len(tokenizer.encode(text))
+        if actual == target_token_len:
+            return text
+        token_ids = tokenizer.encode(text, add_special_tokens=False)
+        difference = target_token_len - actual
+        if difference > 0:
+            token_ids.extend(rng.choices(token_pool, k=difference))
+        else:
+            token_ids = token_ids[: max(0, len(token_ids) + difference)]
+    raise RuntimeError(f"Unable to generate exactly {target_token_len} text tokens")
 
 def get_adaptive_pool_size(M, N, scale=16):
     r = 1 / math.sqrt(scale)
@@ -120,6 +146,19 @@ def get_audio_token_count(audio_sec: float) -> int:
     audio_downsample_ratio = 10
     data_len = int(16000 * audio_sec)
     return (math.ceil(data_len / 320) + audio_downsample_ratio) // audio_downsample_ratio
+
+
+def format_image_placeholders(count: int, vision_format: str) -> str:
+    if count <= 0:
+        return ""
+    if vision_format == "pair":
+        if count % 2:
+            raise ValueError(f"Pair vision format requires an even image count, got {count}")
+        return "".join(
+            "<|vision_start|><image><image><|vision_end|>"
+            for _ in range(count // 2)
+        )
+    return "<|vision_start|>" + "<image>" * count + "<|vision_end|>"
 
 def apply_eviction_policies(
     history_text: str, 
@@ -191,6 +230,7 @@ def apply_eviction_policies(
                 new_parts.append(parts[i + 1])
         history_images = new_images
         history_text = "".join(new_parts)
+        history_text = history_text.replace("<|vision_start|><|vision_end|>", "")
 
     # Verify the hard bound and multimodal alignment after pruning.
     final_img_tokens = sum(img["tokens"] for img in history_images)
@@ -225,6 +265,43 @@ def apply_eviction_policies(
             
         history_text = "<|im_start|>".join(blocks)
         
+    # Enforce the actual per-request context limit, including system prompt and
+    # multimodal tokens. Keep the system prompt and newest user turn intact.
+    max_input_tokens = args.max_context_len - args.max_output_token
+    if max_input_tokens <= 0:
+        raise ValueError("max-context-len must exceed max_output_token")
+
+    def count_total_tokens(text, images, audios):
+        text_tokens = len(
+            tokenizer.encode(text.replace("<image>", "").replace("<audio>", ""))
+        )
+        return text_tokens + sum(img["tokens"] for img in images) + sum(
+            audio["tokens"] for audio in audios
+        )
+
+    blocks = history_text.split("<|im_start|>")
+    while count_total_tokens(history_text, history_images, history_audios) > max_input_tokens:
+        # blocks[0] is empty, blocks[1] is system, and the last block is the
+        # current assistant generation prefix. Retain the newest user turn.
+        if len(blocks) <= 4:
+            raise ValueError(
+                "System prompt plus newest turn exceeds max-context-len: "
+                f"{count_total_tokens(history_text, history_images, history_audios)} "
+                f"input tokens + up to {args.max_output_token} output tokens > "
+                f"{args.max_context_len}"
+            )
+        dropped = "<|im_start|>" + blocks.pop(2)
+        dropped_images = dropped.count("<image>")
+        dropped_audios = dropped.count("<audio>")
+        if dropped_images > len(history_images) or dropped_audios > len(history_audios):
+            raise AssertionError("Conversation eviction lost media/tag alignment")
+        history_images = history_images[dropped_images:]
+        history_audios = history_audios[dropped_audios:]
+        history_text = "<|im_start|>".join(blocks)
+
+    final_total = count_total_tokens(history_text, history_images, history_audios)
+    if final_total + args.max_output_token > args.max_context_len:
+        raise AssertionError("Context eviction failed to reserve generation tokens")
     return history_text, history_images, history_audios
 
 
@@ -337,31 +414,61 @@ async def send_request_sglang(
     if audios_b64_list:
         pload["audio_data"] = audios_b64_list
 
-    request_start_time = time.time()
-    first_token_time, output_token_len = 0, 0
+    request_start_time = time.perf_counter()
+    first_token_time, last_token_time, output_token_len = 0, 0, 0
+    request_error = None
+    cached_token_count = None
     
     async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=3*3600)) as session:
         try:
             async with session.post(api_url, headers=headers, json=pload) as response:
+                response.raise_for_status()
                 async for line in response.content:
                     if line:
                         data = line.decode().strip()
                         if data.startswith("data:"):
-                            if first_token_time == 0: first_token_time = time.time() - request_start_time
                             line = data[5:].strip()
                             if "[DONE]" in line: break
                             try:
                                 json_data = json.loads(line)
-                                if "meta_info" in json_data and "completion_tokens" in json_data["meta_info"]:
-                                    output_token_len = json_data["meta_info"]["completion_tokens"]
-                            except: pass
+                                if "error" in json_data:
+                                    raise RuntimeError(str(json_data["error"]))
+                                meta = json_data.get("meta_info", {})
+                                completion_tokens = meta.get("completion_tokens")
+                                if "cached_tokens" in meta:
+                                    cached_token_count = int(meta["cached_tokens"])
+                                if completion_tokens is not None:
+                                    output_token_len = int(completion_tokens)
+                                    if output_token_len > 0:
+                                        now = time.perf_counter() - request_start_time
+                                        if first_token_time == 0:
+                                            first_token_time = now
+                                        last_token_time = now
+                            except json.JSONDecodeError:
+                                pass
         except Exception as e:
+            request_error = repr(e)
             print(f"Request failed: {e}")
                                            
-    request_latency = time.time() - request_start_time
+    request_latency = time.perf_counter() - request_start_time
+    if request_error is None and output_token_len == 0:
+        request_error = "stream completed without output tokens"
     if req_type == "interactive":
         print(f"[{req_type.upper()}] PromptLen: {prompt_len}, OutputLen: {output_token_len}, TTFT: {first_token_time:.3f}s")
-    REQUEST_LATENCY.append((req_type, prompt_len, output_token_len, request_latency, first_token_time))
+    REQUEST_LATENCY.append({
+        "type": req_type,
+        "prompt_tokens": int(prompt_len),
+        "output_tokens": int(output_token_len),
+        "cached_tokens": cached_token_count,
+        "latency_s": request_latency,
+        "ttft_s": first_token_time or None,
+        "tpot_s": (
+            (last_token_time - first_token_time) / (output_token_len - 1)
+            if output_token_len > 1 and last_token_time >= first_token_time > 0
+            else None
+        ),
+        "error": request_error,
+    })
     return output_token_len
 
 
@@ -383,9 +490,11 @@ async def simulated_user_session(
     
     system_prompt_body = "You are a helpful assistant.\n"
     if args.system_prompt_tokens > 0:
-        system_prompt_body += gen_random_input_text(
-            args.system_prompt_tokens, tokenizer, text_rng
-        )
+        # Identical system prefixes let the serving radix cache share KV across users.
+        system_rng = random.Random(f"{args.seed}:shared_system_prompt")
+        system_padding = gen_random_input_text(args.system_prompt_tokens, tokenizer, system_rng)
+        assert len(tokenizer.encode(system_padding)) == args.system_prompt_tokens
+        system_prompt_body += system_padding
     history_text = f"<|im_start|>system\n{system_prompt_body}<|im_end|>\n"
     history_images = [] 
     history_audios = [] 
@@ -419,7 +528,9 @@ async def simulated_user_session(
                 )
                 # print(f"get {len(turn_images)} random image time:", time.perf_counter() - t1)
 
-            turn_text = ("<image>" * proactive_image_count) + "\n<|im_start|>assistant\n"
+            turn_text = format_image_placeholders(
+                proactive_image_count, args.vision_format
+            ) + "\n<|im_start|>assistant\n"
             current_prompt = history_text + turn_text
 
             current_images = history_images + turn_images
@@ -483,7 +594,12 @@ async def simulated_user_session(
                 )
                 # print(f"get {len(turn_warmup_images)} random image time:", time.perf_counter() - t1)
 
-            stage_1_text = history_text + f"<|im_start|>user\n" + ("<image>" * warmup_images_count) + "\n"
+            stage_1_text = (
+                history_text
+                + "<|im_start|>user\n"
+                + format_image_placeholders(warmup_images_count, args.vision_format)
+                + "\n"
+            )
             stage_1_images = history_images + turn_warmup_images
             stage_1_text, stage_1_images, stage_1_audios = apply_eviction_policies(
                 stage_1_text,
@@ -555,7 +671,9 @@ async def simulated_user_session(
                 speak_duration, turn_num_audios, rng=media_rng
             )
 
-            stage_2_append_tags = ("<image>" * active_image_count) + ("<audio>" * turn_num_audios)
+            stage_2_append_tags = format_image_placeholders(
+                active_image_count, args.vision_format
+            ) + ("<audio>" * turn_num_audios)
 
             if user_spoken_text:
                 stage_2_text = stage_1_text + stage_2_append_tags + "\n" + user_spoken_text + "<|im_end|>\n<|im_start|>assistant\n"
@@ -616,7 +734,8 @@ async def run_benchmark(args):
     # still depend on response latency in this closed-loop benchmark.
     startup_rng = np.random.default_rng(args.seed)
     api_url = f"http://{args.host}:{args.port}/generate_stream"
-    tokenizer = get_tokenizer(args.tokenizer, "fast")
+    tokenizer = get_tokenizer(args.tokenizer)
+    tokenizer.model_max_length = args.max_context_len
 
     # 从 token 数动态计算图像分辨率
     args.small_image_width, args.small_image_height = compute_image_resolution(
@@ -633,12 +752,19 @@ async def run_benchmark(args):
     print(f"Random Seed: {args.seed} (closed-loop; arrival times are response-dependent)")
     print(f"Test Duration: {args.active_time} seconds")
     print(f"Max Context Limit: {args.max_context_len} tokens")
+    print(
+        f"Max output reservation: {args.max_output_token}; "
+        f"text history budget: {args.text_token_bucket}; "
+        f"image budget: {args.image_token_bucket}",
+        flush=True,
+    )
     print(f"Patch Size: {args.patch_size}, Downsample Ratio: {args.downsample_ratio}")
+    print(f"Vision Placeholder Format: {args.vision_format}")
     print(f"Small Image: {args.small_image_width}x{args.small_image_height} ({args.small_image_tokens} tokens)")
     print(f"Large Image: {args.large_image_width}x{args.large_image_height} ({args.large_image_tokens} tokens)")
    
     
-    benchmark_start_time = time.time()
+    benchmark_start_time = time.perf_counter()
     
     tasks = []
     for i in range(args.num_users):
@@ -654,36 +780,93 @@ async def run_benchmark(args):
         
     await asyncio.gather(*tasks)
     
-    benchmark_time = time.time() - benchmark_start_time
+    benchmark_time = time.perf_counter() - benchmark_start_time
     print(f"\n{'='*50}")
     print(f"Benchmark finished in {benchmark_time:.2f} s")
     
-    interactive_reqs = [r for r in REQUEST_LATENCY if r[0] == "interactive"]
+    completed_requests = [r for r in REQUEST_LATENCY if r["error"] is None]
+    interactive_reqs = [
+        r for r in completed_requests if r["type"] == "interactive"
+    ]
     if not interactive_reqs:
         print("No interactive requests completed.")
-        return
         
     print("\n--- [Stage 2] Multi-Turn Interactive Generation Stats ---")
-    interactive_ttft = [r[4] for r in interactive_reqs if r[4] > 0]
-    interactive_tpot = [(r[3] - r[4]) / r[2] for r in interactive_reqs if r[2] > 1 and r[4] > 0]
-    
+    interactive_ttft = [r["ttft_s"] for r in interactive_reqs if r["ttft_s"] is not None]
+    interactive_tpot = [r["tpot_s"] for r in interactive_reqs if r["tpot_s"] is not None]
+
     print(f"Completed interactive turns: {len(interactive_reqs)}")
-    if interactive_ttft:
-        print(f"Average TTFT: {np.mean(interactive_ttft):.4f} s")
-        print("TTFT Quantiles:")
-        for q, val in zip([0.5, 0.90, 0.99], np.quantile(interactive_ttft, [0.5, 0.90, 0.99])):
-            print(f"  P{int(q*100)}: {val:.4f} s")
-            
-    if interactive_tpot:
-        avg_tpot = np.mean(interactive_tpot)
-        print(f"\nAverage TPOT (Time Per Output Token): {avg_tpot * 1000:.2f} ms")
-        print(f"Equivalent Output Speed: {1 / avg_tpot:.1f} tokens/s")
+
+    def metric_summary(values):
+        if not values:
+            return None
+        return {
+            "mean": float(np.mean(values)),
+            "p50": float(np.quantile(values, 0.50)),
+            "p95": float(np.quantile(values, 0.95)),
+        }
+
+    interactive_output_tokens = sum(r["output_tokens"] for r in interactive_reqs)
+    cache_observed = [r for r in completed_requests if r["cached_tokens"] is not None]
+    cache_hits = [r for r in cache_observed if r["cached_tokens"] > 0]
+    total_output_tokens = sum(r["output_tokens"] for r in completed_requests)
+    summary = {
+        "request_mode": args.request_mode,
+        "num_users": args.num_users,
+        "active_time_s_per_user": args.active_time,
+        "max_context_len": args.max_context_len,
+        "system_prompt_tokens": args.system_prompt_tokens,
+        "benchmark_wall_time_s": benchmark_time,
+        "total_requests": len(REQUEST_LATENCY),
+        "successful_requests": len(completed_requests),
+        "failed_requests": len(REQUEST_LATENCY) - len(completed_requests),
+        "request_throughput_req_s": len(completed_requests) / benchmark_time,
+        "output_throughput_tokens_s": total_output_tokens / benchmark_time,
+        "interactive_requests": len(interactive_reqs),
+        "interactive_output_tokens": interactive_output_tokens,
+        "requests_with_cache_metadata": len(cache_observed),
+        "cache_hit_requests": len(cache_hits),
+        "cache_hit_request_fraction": len(cache_hits) / len(cache_observed)
+        if cache_observed else None,
+        "mean_cached_tokens_per_interactive_request": float(np.mean([
+            r["cached_tokens"] for r in interactive_reqs if r["cached_tokens"] is not None
+        ])) if any(r["cached_tokens"] is not None for r in interactive_reqs) else None,
+        "interactive_request_throughput_req_s": len(interactive_reqs) / benchmark_time,
+        "interactive_output_throughput_tokens_s": interactive_output_tokens / benchmark_time,
+        "interactive_ttft_s": metric_summary(interactive_ttft),
+        "interactive_tpot_s": metric_summary(interactive_tpot),
+    }
+    print(f"Interactive request throughput: {summary['interactive_request_throughput_req_s']:.4f} req/s")
+    print(f"Interactive output throughput: {summary['interactive_output_throughput_tokens_s']:.2f} tokens/s")
+    for name, values in [("TTFT", interactive_ttft), ("TPOT", interactive_tpot)]:
+        stats = metric_summary(values)
+        if stats:
+            unit = "s" if name == "TTFT" else "ms/token"
+            scale = 1 if name == "TTFT" else 1000
+            print(
+                f"{name}: mean={stats['mean']*scale:.4f} {unit}, "
+                f"P50={stats['p50']*scale:.4f}, P95={stats['p95']*scale:.4f}"
+            )
+    print(
+        f"All-request throughput: {summary['request_throughput_req_s']:.4f} req/s; "
+        f"output throughput: {summary['output_throughput_tokens_s']:.2f} tokens/s; "
+        f"errors: {summary['failed_requests']}"
+    )
+    if args.result_file:
+        result_path = Path(args.result_file)
+        result_path.parent.mkdir(parents=True, exist_ok=True)
+        result_path.write_text(
+            json.dumps({"summary": summary, "requests": REQUEST_LATENCY}, indent=2) + "\n"
+        )
+        print(f"Saved results: {result_path}")
 
 def main():
     parser = argparse.ArgumentParser(description="Multi-Turn Stateful Benchmark for MLLM (SGLang)")
     parser.add_argument("--host", type=str, default="localhost")
     parser.add_argument("--port", type=int, default=8000)
     parser.add_argument("--tokenizer", type=str, required=True)
+    parser.add_argument("--result-file", type=str, default=None,
+                        help="Write per-request latency/errors and aggregate metrics as JSON")
     
     # Session 宏观参数
     parser.add_argument("--num-users", type=int, default=2)
@@ -714,6 +897,8 @@ def main():
     # 视觉编码器参数
     parser.add_argument("--patch-size", type=int, default=14, help="视觉编码器 patch size")
     parser.add_argument("--downsample-ratio", type=int, default=16, help="视觉编码器下采样比例")
+    parser.add_argument("--vision-format", choices=["pair", "single"], default="single",
+                        help="pair=每两张图独立 vision_start/end；single=全部图像共用一组")
     
     # 音频与对数正态分布参数
     parser.add_argument("--num-audios", type=int, default=1)
@@ -739,6 +924,12 @@ def main():
     args = parser.parse_args()
     if args.seed < 0:
         parser.error("--seed must be non-negative")
+    if args.num_users <= 0:
+        parser.error("--num-users must be positive")
+    if args.max_context_len <= args.max_output_token:
+        parser.error("--max-context-len must exceed --max_output_token")
+    if args.system_prompt_tokens < 0:
+        parser.error("--system-prompt-tokens must be non-negative")
     asyncio.run(run_benchmark(args))
 
 if __name__ == "__main__":

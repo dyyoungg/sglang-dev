@@ -2403,6 +2403,23 @@ def _execute_server_warmup(server_args: ServerArgs):
             "stream": False,
             "temperature": 0.0,
         }
+        # BeeBee Omni Qwen3.5 checkpoints trained with paired vision frames
+        # require two adjacent image spans inside one vision segment. The
+        # generic OpenAI warmup sends one image, which the paired processor
+        # cannot map to a complete image pair.
+        if "BeeBeeOmniQwen35ForConditionalGeneration" in (
+            model_info.get("architectures") or []
+        ):
+            request_name = "/generate"
+            image = "data:image/png;base64," + MINIMUM_PNG_PICTURE_BASE64
+            json_data = {
+                "text": "<|vision_start|><image><image><|vision_end|>Describe the image.",
+                "image_data": [image, image],
+                "sampling_params": {
+                    "temperature": 0.0,
+                    "max_new_tokens": max_new_tokens,
+                },
+            }
     else:
         json_data["text"] = [
             "The capital city of France is"
