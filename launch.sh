@@ -15,6 +15,7 @@ export SGLANG_MM_SHM_COPY_THREADS=10 # for pro 5000，else 0
 MODEL_PATH=${1:?Usage: bash launch.sh MODEL_PATH TP_SIZE PORT}
 TP_SIZE=${2:?Usage: bash launch.sh MODEL_PATH TP_SIZE PORT}
 PORT=${3:?Usage: bash launch.sh MODEL_PATH TP_SIZE PORT}
+shift 3
 echo "Starting SGLang server..."
 sglang serve \
    --model-path "$MODEL_PATH" \
@@ -39,4 +40,5 @@ sglang serve \
    --max-image-bs 32 \
    --no-mm-use-compiled-rope \
    --mm-enable-dp-encoder \
-   --sampling-backend legacy_top_kp
+   --sampling-backend legacy_top_kp \
+   "$@"
